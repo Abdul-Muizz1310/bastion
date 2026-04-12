@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { events, magicLinks, sessions, users } from "./schema";
+import { insertUserSchema } from "./validation";
 
 describe("00-schema: Drizzle schema", () => {
-  // Case 1: Schema exports all 4 tables
   it("exports users, sessions, magicLinks, events tables", () => {
     expect(users).toBeDefined();
     expect(sessions).toBeDefined();
@@ -10,7 +10,6 @@ describe("00-schema: Drizzle schema", () => {
     expect(events).toBeDefined();
   });
 
-  // Case 2: users table columns
   it("users table has id, email, name, role, createdAt, deletedAt columns", () => {
     const cols = Object.keys(users);
     expect(cols).toContain("id");
@@ -21,7 +20,6 @@ describe("00-schema: Drizzle schema", () => {
     expect(cols).toContain("deletedAt");
   });
 
-  // Case 3: sessions table columns
   it("sessions table has id, userId, expiresAt, ip, userAgent columns", () => {
     const cols = Object.keys(sessions);
     expect(cols).toContain("id");
@@ -31,7 +29,6 @@ describe("00-schema: Drizzle schema", () => {
     expect(cols).toContain("userAgent");
   });
 
-  // Case 4: magicLinks table columns
   it("magicLinks table has token, email, expiresAt, usedAt columns", () => {
     const cols = Object.keys(magicLinks);
     expect(cols).toContain("token");
@@ -40,7 +37,6 @@ describe("00-schema: Drizzle schema", () => {
     expect(cols).toContain("usedAt");
   });
 
-  // Case 5: events table columns
   it("events table has all required columns", () => {
     const cols = Object.keys(events);
     expect(cols).toContain("id");
@@ -58,60 +54,37 @@ describe("00-schema: Drizzle schema", () => {
 });
 
 describe("00-schema: table structure validation", () => {
-  // Case 6: events table has 4 indexes
-  // This is verified at the Drizzle config level; we check the table config has indexes
-  it("events table defines 4 indexes", () => {
-    // Drizzle pgTable third argument defines indexes
-    // We'll check the generated SQL in integration tests
-    // For unit test, verify the table config exists
-    expect(events).toBeDefined();
-    // The actual index verification happens in migration SQL tests
-    expect(true).toBe(false); // placeholder — needs migration SQL check
-  });
-
-  // Case 7: Migration SQL is valid (integration test placeholder)
-  it("migration SQL applies cleanly to empty database", () => {
-    // Integration test — requires live DB
-    expect(true).toBe(false); // placeholder — needs drizzle-kit generate + apply
-  });
+  it.todo("events table defines 4 indexes (integration: migration SQL check)");
+  it.todo("migration SQL applies cleanly to empty database (integration)");
 });
 
 describe("00-schema: edge and failure cases", () => {
-  // Case 8: duplicate email (integration)
-  it("inserting duplicate email fails with unique constraint", () => {
-    expect(true).toBe(false); // placeholder — needs live DB
-  });
+  it.todo("inserting duplicate email fails with unique constraint (integration)");
 
-  // Case 9: invalid role value (application-level Zod validation)
   it("Zod schema rejects invalid role value", () => {
-    // Import the Zod validation schema for user insert
-    expect(true).toBe(false); // placeholder — needs insertUserSchema
+    const result = insertUserSchema.safeParse({
+      email: "test@example.com",
+      role: "superadmin",
+    });
+    expect(result.success).toBe(false);
   });
 
-  // Case 10: FK violation on sessions (integration)
-  it("inserting session with non-existent userId fails", () => {
-    expect(true).toBe(false); // placeholder — needs live DB
+  it("Zod schema accepts valid role values", () => {
+    for (const role of ["admin", "editor", "viewer"]) {
+      const result = insertUserSchema.safeParse({
+        email: "test@example.com",
+        role,
+      });
+      expect(result.success).toBe(true);
+    }
   });
 
-  // Case 11: events.metadata defaults to {} (integration)
-  it("events.metadata defaults to empty object when not provided", () => {
-    expect(true).toBe(false); // placeholder — needs live DB
-  });
+  it.todo("inserting session with non-existent userId fails (integration)");
+  it.todo("events.metadata defaults to empty object when not provided (integration)");
 });
 
 describe("00-schema: security — append-only events", () => {
-  // Case 12: UPDATE on events rejected (integration)
-  it("UPDATE on events table is rejected by database", () => {
-    expect(true).toBe(false); // placeholder — needs live DB with append-only grant
-  });
-
-  // Case 13: DELETE on events rejected (integration)
-  it("DELETE on events table is rejected by database", () => {
-    expect(true).toBe(false); // placeholder — needs live DB with append-only grant
-  });
-
-  // Case 14: TRUNCATE on events rejected (integration)
-  it("TRUNCATE on events table is rejected by database", () => {
-    expect(true).toBe(false); // placeholder — needs live DB with append-only grant
-  });
+  it.todo("UPDATE on events table is rejected by database (integration)");
+  it.todo("DELETE on events table is rejected by database (integration)");
+  it.todo("TRUNCATE on events table is rejected by database (integration)");
 });
