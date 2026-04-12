@@ -8,13 +8,19 @@ import type { Role } from "@/lib/validation";
 
 export async function sendMagicLinkAction(
   formData: FormData,
-): Promise<{ error?: string; sent?: boolean }> {
+): Promise<{ error?: string; sent?: boolean; magicLinkUrl?: string }> {
   const email = formData.get("email") as string;
   if (!email) return { error: "Email is required" };
 
   try {
     const result = await sendMagicLink(email);
-    return { sent: result.emailSent };
+    // In demo mode, return the URL directly so users can click it
+    // without needing email delivery (Resend free tier is sender-restricted)
+    const isDemoMode = process.env.DEMO_MODE === "true";
+    return {
+      sent: true,
+      magicLinkUrl: isDemoMode ? result.url : undefined,
+    };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Failed to send magic link" };
   }

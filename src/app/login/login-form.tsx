@@ -6,7 +6,10 @@ import type { Role } from "@/lib/validation";
 
 export function LoginForm({ demoMode }: { demoMode: boolean }) {
   const [state, formAction, isPending] = useActionState(
-    async (_prev: { error?: string; sent?: boolean }, formData: FormData) => {
+    async (
+      _prev: { error?: string; sent?: boolean; magicLinkUrl?: string },
+      formData: FormData,
+    ) => {
       return sendMagicLinkAction(formData);
     },
     {},
@@ -16,10 +19,23 @@ export function LoginForm({ demoMode }: { demoMode: boolean }) {
     return (
       <div className="terminal-glow rounded-xl border border-border bg-surface p-6 text-center">
         <div className="mb-3 text-2xl">✉️</div>
-        <p className="font-mono text-sm text-foreground">Check your email</p>
-        <p className="mt-2 font-mono text-xs text-fg-muted">
-          We sent a magic link. Click it to sign in.
-        </p>
+        <p className="font-mono text-sm text-foreground">Magic link created</p>
+        {state.magicLinkUrl ? (
+          <div className="mt-3 space-y-3">
+            <p className="font-mono text-xs text-fg-muted">Demo mode — click below to sign in:</p>
+            <a
+              href={state.magicLinkUrl}
+              className="inline-block rounded-lg bg-gradient-to-r from-accent-violet to-accent-rose px-5 py-2 font-mono text-sm font-semibold text-background transition-all hover:shadow-[0_0_30px_rgb(167_139_250_/_0.25)]"
+            >
+              open magic link
+            </a>
+            <p className="font-mono text-[10px] text-fg-faint break-all">{state.magicLinkUrl}</p>
+          </div>
+        ) : (
+          <p className="mt-2 font-mono text-xs text-fg-muted">
+            Check your email and click the link to sign in.
+          </p>
+        )}
       </div>
     );
   }
