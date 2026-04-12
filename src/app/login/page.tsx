@@ -2,7 +2,19 @@ import { LoginForm } from "./login-form";
 
 const DEMO_MODE = process.env.DEMO_MODE === "true";
 
-export default function LoginPage() {
+const ERROR_MESSAGES: Record<string, string> = {
+  invalid_token: "Magic link is invalid or has expired. Please try again.",
+  server_error: "Something went wrong. Please try again.",
+};
+
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
+  const errorMessage = error ? (ERROR_MESSAGES[error] ?? "An error occurred.") : undefined;
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background bg-grid bg-scanlines px-4">
       <div className="w-full max-w-md space-y-8">
@@ -26,6 +38,12 @@ export default function LoginPage() {
           <h1 className="font-mono text-3xl font-semibold tracking-tight">bastion</h1>
           <p className="mt-2 font-mono text-sm text-fg-muted">control plane · identity · audit</p>
         </div>
+
+        {errorMessage && (
+          <div className="rounded-lg border border-error/30 bg-error/5 px-4 py-3 text-center">
+            <p className="font-mono text-xs text-error">{errorMessage}</p>
+          </div>
+        )}
 
         <LoginForm demoMode={DEMO_MODE} />
 

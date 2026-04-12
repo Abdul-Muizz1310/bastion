@@ -2,7 +2,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { consumeMagicLink, demoSignIn, sendMagicLink } from "@/lib/auth";
+import { demoSignIn, sendMagicLink } from "@/lib/auth";
 import { COOKIE_NAME } from "@/lib/session";
 import type { Role } from "@/lib/validation";
 
@@ -14,8 +14,6 @@ export async function sendMagicLinkAction(
 
   try {
     const result = await sendMagicLink(email);
-    // In demo mode, return the URL directly so users can click it
-    // without needing email delivery (Resend free tier is sender-restricted)
     const isDemoMode = process.env.DEMO_MODE === "true";
     return {
       sent: true,
@@ -28,21 +26,6 @@ export async function sendMagicLinkAction(
 
 export async function demoSignInAction(role: Role): Promise<void> {
   const result = await demoSignIn(role);
-  const jar = await cookies();
-  jar.set(COOKIE_NAME, result.session.cookie, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 24 * 60 * 60,
-  });
-  redirect("/dashboard");
-}
-
-export async function consumeCallbackToken(token: string): Promise<{ error?: string }> {
-  const result = await consumeMagicLink(token);
-  if (!result) return { error: "Invalid or expired token" };
-
   const jar = await cookies();
   jar.set(COOKIE_NAME, result.session.cookie, {
     httpOnly: true,
