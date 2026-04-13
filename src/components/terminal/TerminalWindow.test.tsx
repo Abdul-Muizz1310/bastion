@@ -6,7 +6,7 @@ import { TerminalWindow } from "./TerminalWindow";
 describe("TerminalWindow", () => {
   it("renders with title and children", () => {
     const html = renderToString(
-      createElement(TerminalWindow, { title: "test-title" }, "hello content"),
+      createElement(TerminalWindow, { title: "test-title", children: "hello content" }),
     );
     expect(html).toContain("test-title");
     expect(html).toContain("hello content");
