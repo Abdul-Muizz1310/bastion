@@ -184,8 +184,7 @@ describe("01-session: DB-dependent tests", () => {
   });
 
   it("cookie has secure: true in production (integration)", async () => {
-    const origEnv = process.env.NODE_ENV;
-    process.env.NODE_ENV = "production";
+    vi.stubEnv("NODE_ENV", "production");
 
     // Re-import to pick up the env change — but since getCookieOptions reads
     // process.env.NODE_ENV at call time, we just need to call createSession
@@ -193,7 +192,7 @@ describe("01-session: DB-dependent tests", () => {
     const result = await createSession("user-123", null, null);
     expect(result.cookieOptions.secure).toBe(true);
 
-    process.env.NODE_ENV = origEnv;
+    vi.unstubAllEnvs();
   });
 
   it("getSession with expired session returns null (integration)", async () => {

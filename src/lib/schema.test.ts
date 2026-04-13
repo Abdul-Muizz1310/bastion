@@ -93,7 +93,7 @@ describe("00-schema: edge and failure cases", () => {
   it("inserting duplicate email fails with unique constraint (integration)", () => {
     // Structural: users table email column has .unique() constraint
     // We verify the schema defines email as unique by checking the column config
-    const emailCol = (users as Record<string, unknown>).email;
+    const emailCol = (users as unknown as Record<string, unknown>).email;
     expect(emailCol).toBeDefined();
     // The unique constraint is enforced at the DB level; here we verify
     // the column exists and would be part of the schema migration
@@ -120,7 +120,7 @@ describe("00-schema: edge and failure cases", () => {
 
   it("inserting session with non-existent userId fails (integration)", () => {
     // Structural: sessions.userId references users.id with a foreign key
-    const userIdCol = (sessions as Record<string, unknown>).userId;
+    const userIdCol = (sessions as unknown as Record<string, unknown>).userId;
     expect(userIdCol).toBeDefined();
     // The FK constraint is in the schema definition:
     // userId: uuid("user_id").notNull().references(() => users.id)
@@ -129,7 +129,7 @@ describe("00-schema: edge and failure cases", () => {
 
   it("events.metadata defaults to empty object when not provided (integration)", () => {
     // Structural: the schema defines metadata with .default({})
-    const metadataCol = (events as Record<string, unknown>).metadata;
+    const metadataCol = (events as unknown as Record<string, unknown>).metadata;
     expect(metadataCol).toBeDefined();
     // The default is set in schema.ts: jsonb("metadata").notNull().default({})
     // We verify the column exists; the default is enforced by the DB
