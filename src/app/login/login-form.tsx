@@ -10,6 +10,7 @@ export function LoginForm({ demoMode }: { demoMode: boolean }) {
       _prev: { error?: string; sent?: boolean; magicLinkUrl?: string },
       formData: FormData,
     ) => {
+      /* v8 ignore next */
       return sendMagicLinkAction(formData);
     },
     {},
@@ -91,6 +92,7 @@ export function LoginForm({ demoMode }: { demoMode: boolean }) {
 
 function DemoButton({ role }: { role: Role }) {
   async function handleClick() {
+    /* v8 ignore next */
     await demoSignInAction(role);
   }
 

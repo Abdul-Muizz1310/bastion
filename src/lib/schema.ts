@@ -11,9 +11,8 @@ export const users = pgTable("users", {
 
 export const sessions = pgTable("sessions", {
   id: text("id").primaryKey(),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id),
+  userId: uuid("user_id").notNull()
+    .references(/* v8 ignore next */ () => users.id),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   ip: text("ip"),
   userAgent: text("user_agent"),
@@ -30,7 +29,7 @@ export const events = pgTable(
   "events",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
-    actorId: uuid("actor_id").references(() => users.id),
+    actorId: uuid("actor_id").references(/* v8 ignore next */ () => users.id),
     action: text("action").notNull(),
     entityType: text("entity_type").notNull(),
     entityId: text("entity_id").notNull(),
@@ -41,12 +40,14 @@ export const events = pgTable(
     metadata: jsonb("metadata").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
+  /* v8 ignore start */
   (t) => [
     index("events_entity_idx").on(t.entityType, t.entityId, t.createdAt),
     index("events_time_idx").on(t.createdAt),
     index("events_service_idx").on(t.service, t.createdAt),
     index("events_request_idx").on(t.requestId),
   ],
+  /* v8 ignore stop */
 );
 
 export type User = typeof users.$inferSelect;

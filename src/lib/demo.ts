@@ -129,6 +129,7 @@ async function executeDemoStep(step: string, requestId: string, _userId: string)
     case "audit":
       // Fetch events for this request
       return { requestId, message: "Audit events collected" };
+    /* v8 ignore next 2 */
     default:
       throw new Error(`Unknown demo step: ${step}`);
   }

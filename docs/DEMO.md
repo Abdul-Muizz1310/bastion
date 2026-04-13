@@ -2,6 +2,15 @@
 
 Step-by-step demo for interviews. Takes ~3 minutes.
 
+```mermaid
+flowchart LR
+    A[Login<br>demo admin] --> B[Registry<br>5 services]
+    B --> C[Run Demo<br>cross-service]
+    C --> D[Audit Log<br>trace events]
+    D --> E[Time Travel<br>slider replay]
+    E --> F[Security<br>/whoami check]
+```
+
 ## Setup
 
 Open https://bastion-six.vercel.app in a browser.
