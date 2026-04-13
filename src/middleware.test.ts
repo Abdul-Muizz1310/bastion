@@ -2,17 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 
 // Mock next/server
 vi.mock("next/server", () => {
-  class MockNextResponse {
-    static next() {
-      return { type: "next" };
-    }
-    static json(body: unknown, init?: { status?: number }) {
-      return { type: "json", body, status: init?.status ?? 200 };
-    }
-    static redirect(url: URL) {
-      return { type: "redirect", url: url.toString() };
-    }
-  }
+  const MockNextResponse = {
+    next: () => ({ type: "next" }),
+    json: (body: unknown, init?: { status?: number }) => ({
+      type: "json",
+      body,
+      status: init?.status ?? 200,
+    }),
+    redirect: (url: URL) => ({ type: "redirect", url: url.toString() }),
+  };
 
   return { NextResponse: MockNextResponse, NextRequest: class {} };
 });
