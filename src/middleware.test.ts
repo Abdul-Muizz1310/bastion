@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 // Mock next/server
 vi.mock("next/server", () => {
@@ -25,7 +25,7 @@ function makeRequest(pathname: string, cookies: Record<string, string> = {}) {
       pathname,
       searchParams: new URLSearchParams(),
     },
-    url: "http://localhost:3000" + pathname,
+    url: `http://localhost:3000${pathname}`,
     cookies: {
       get(name: string) {
         return cookies[name] ? { value: cookies[name] } : undefined;

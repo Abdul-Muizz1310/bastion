@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
+import { describe, expect, it } from "vitest";
 import { TerminalWindow } from "./TerminalWindow";
 
 describe("TerminalWindow", () => {
@@ -13,30 +13,22 @@ describe("TerminalWindow", () => {
   });
 
   it("renders green status dot", () => {
-    const html = renderToString(
-      createElement(TerminalWindow, { status: "green" }, "content"),
-    );
+    const html = renderToString(createElement(TerminalWindow, { status: "green" }, "content"));
     expect(html).toContain("bg-mac-green");
   });
 
   it("renders yellow status dot", () => {
-    const html = renderToString(
-      createElement(TerminalWindow, { status: "yellow" }, "content"),
-    );
+    const html = renderToString(createElement(TerminalWindow, { status: "yellow" }, "content"));
     expect(html).toContain("bg-mac-yellow");
   });
 
   it("renders red status dot", () => {
-    const html = renderToString(
-      createElement(TerminalWindow, { status: "red" }, "content"),
-    );
+    const html = renderToString(createElement(TerminalWindow, { status: "red" }, "content"));
     expect(html).toContain("bg-mac-red");
   });
 
   it("renders fallback dot color when no status", () => {
-    const html = renderToString(
-      createElement(TerminalWindow, {}, "content"),
-    );
+    const html = renderToString(createElement(TerminalWindow, {}, "content"));
     // no pulse-ring for undefined status — the status span won't render
     expect(html).toContain("content");
   });

@@ -38,7 +38,7 @@ describe("05-rate-limit: edge and failure cases", () => {
   it("exceeding limit returns failure with retryAfter (integration: needs Redis)", async () => {
     // Mock Upstash Redis for this test
     const mockLimit = vi.fn();
-    const mockRatelimit = {
+    const _mockRatelimit = {
       limit: mockLimit,
     };
 

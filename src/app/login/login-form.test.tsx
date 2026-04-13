@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // We need to mock useActionState which is imported from react by login-form
 const mockUseActionState = vi.fn();
@@ -62,32 +62,20 @@ describe("LoginForm", () => {
   });
 
   it("renders sent state without magic link URL (production)", () => {
-    mockUseActionState.mockReturnValueOnce([
-      { sent: true },
-      vi.fn(),
-      false,
-    ]);
+    mockUseActionState.mockReturnValueOnce([{ sent: true }, vi.fn(), false]);
     const html = renderToString(createElement(LoginForm, { demoMode: false }));
     expect(html).toContain("Magic link created");
     expect(html).toContain("Check your email");
   });
 
   it("renders error state", () => {
-    mockUseActionState.mockReturnValueOnce([
-      { error: "Email is required" },
-      vi.fn(),
-      false,
-    ]);
+    mockUseActionState.mockReturnValueOnce([{ error: "Email is required" }, vi.fn(), false]);
     const html = renderToString(createElement(LoginForm, { demoMode: false }));
     expect(html).toContain("Email is required");
   });
 
   it("renders pending state", () => {
-    mockUseActionState.mockReturnValueOnce([
-      {},
-      vi.fn(),
-      true,
-    ]);
+    mockUseActionState.mockReturnValueOnce([{}, vi.fn(), true]);
     const html = renderToString(createElement(LoginForm, { demoMode: false }));
     expect(html).toContain("sending...");
   });

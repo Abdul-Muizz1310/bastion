@@ -11,7 +11,8 @@ export const users = pgTable("users", {
 
 export const sessions = pgTable("sessions", {
   id: text("id").primaryKey(),
-  userId: uuid("user_id").notNull()
+  userId: uuid("user_id")
+    .notNull()
     .references(/* v8 ignore next */ () => users.id),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   ip: text("ip"),

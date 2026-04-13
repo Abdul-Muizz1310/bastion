@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
+import { describe, expect, it } from "vitest";
 import { StatusBar } from "./StatusBar";
 
 describe("StatusBar", () => {
@@ -11,7 +11,9 @@ describe("StatusBar", () => {
   });
 
   it("renders with custom left and right text", () => {
-    const html = renderToString(createElement(StatusBar, { left: "custom-left", right: "custom-right" }));
+    const html = renderToString(
+      createElement(StatusBar, { left: "custom-left", right: "custom-right" }),
+    );
     expect(html).toContain("custom-left");
     expect(html).toContain("custom-right");
   });

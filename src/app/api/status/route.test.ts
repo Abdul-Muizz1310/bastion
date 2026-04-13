@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/registry", () => ({
-  getAggregatedStatus: vi.fn().mockResolvedValue([
-    { id: "paper-trail", healthy: true, latencyMs: 100 },
-  ]),
+  getAggregatedStatus: vi
+    .fn()
+    .mockResolvedValue([{ id: "paper-trail", healthy: true, latencyMs: 100 }]),
 }));
 
 import { GET } from "./route";

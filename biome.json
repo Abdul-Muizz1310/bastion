@@ -33,9 +33,24 @@
       "recommended": true,
       "correctness": {
         "noUnusedImports": "error"
+      },
+      "suspicious": {
+        "noExplicitAny": "warn"
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["**/*.test.ts", "**/*.test.tsx"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noExplicitAny": "off"
+          }
+        }
+      }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "double"

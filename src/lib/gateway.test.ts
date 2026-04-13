@@ -50,10 +50,10 @@ describe("09-gateway: JWT minting - missing key", () => {
 describe("09-gateway: JWT minting", () => {
   it("mintPlatformJwt returns a valid JWT string (needs BASTION_SIGNING_KEY_PRIVATE)", async () => {
     // Generate an Ed25519 key pair for testing
-    const { privateKey } = await crypto.subtle.generateKey("Ed25519", true, [
+    const { privateKey } = (await crypto.subtle.generateKey("Ed25519", true, [
       "sign",
       "verify",
-    ]) as CryptoKeyPair;
+    ])) as CryptoKeyPair;
 
     const exported = await crypto.subtle.exportKey("pkcs8", privateKey);
     const b64 = Buffer.from(exported).toString("base64");
@@ -75,10 +75,10 @@ describe("09-gateway: JWT minting", () => {
   });
 
   it("JWT contains sub, role, service, kid, exp within 60s of iat (needs signing key)", async () => {
-    const { privateKey } = await crypto.subtle.generateKey("Ed25519", true, [
+    const { privateKey } = (await crypto.subtle.generateKey("Ed25519", true, [
       "sign",
       "verify",
-    ]) as CryptoKeyPair;
+    ])) as CryptoKeyPair;
 
     const exported = await crypto.subtle.exportKey("pkcs8", privateKey);
     const b64 = Buffer.from(exported).toString("base64");
@@ -111,10 +111,10 @@ describe("09-gateway: JWT minting", () => {
   });
 
   it("JWT is verifiable using the public key (needs signing key)", async () => {
-    const { privateKey, publicKey } = await crypto.subtle.generateKey("Ed25519", true, [
+    const { privateKey, publicKey } = (await crypto.subtle.generateKey("Ed25519", true, [
       "sign",
       "verify",
-    ]) as CryptoKeyPair;
+    ])) as CryptoKeyPair;
 
     const exported = await crypto.subtle.exportKey("pkcs8", privateKey);
     const b64 = Buffer.from(exported).toString("base64");

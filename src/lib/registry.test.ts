@@ -47,7 +47,9 @@ describe("registry: checkServiceHealth", () => {
   it("handles non-JSON response body gracefully", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: () => { throw new Error("not json"); },
+      json: () => {
+        throw new Error("not json");
+      },
     });
     const { checkServiceHealth } = await import("./registry");
     const result = await checkServiceHealth("magpie");

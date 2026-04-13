@@ -39,7 +39,9 @@ describe("sendMagicLinkAction", () => {
   });
 
   it("calls sendMagicLink and returns sent:true on success", async () => {
-    mockSendMagicLink.mockResolvedValueOnce({ url: "http://localhost:3000/auth/callback?token=abc" });
+    mockSendMagicLink.mockResolvedValueOnce({
+      url: "http://localhost:3000/auth/callback?token=abc",
+    });
     const { sendMagicLinkAction } = await import("./actions");
     const formData = new FormData();
     formData.set("email", "test@example.com");
@@ -50,7 +52,9 @@ describe("sendMagicLinkAction", () => {
 
   it("returns magicLinkUrl in demo mode", async () => {
     process.env.DEMO_MODE = "true";
-    mockSendMagicLink.mockResolvedValueOnce({ url: "http://localhost:3000/auth/callback?token=abc" });
+    mockSendMagicLink.mockResolvedValueOnce({
+      url: "http://localhost:3000/auth/callback?token=abc",
+    });
     const { sendMagicLinkAction } = await import("./actions");
     const formData = new FormData();
     formData.set("email", "test@example.com");
@@ -61,7 +65,9 @@ describe("sendMagicLinkAction", () => {
 
   it("does not return magicLinkUrl when not in demo mode", async () => {
     process.env.DEMO_MODE = "false";
-    mockSendMagicLink.mockResolvedValueOnce({ url: "http://localhost:3000/auth/callback?token=abc" });
+    mockSendMagicLink.mockResolvedValueOnce({
+      url: "http://localhost:3000/auth/callback?token=abc",
+    });
     const { sendMagicLinkAction } = await import("./actions");
     const formData = new FormData();
     formData.set("email", "test@example.com");

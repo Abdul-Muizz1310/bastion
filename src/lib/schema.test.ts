@@ -57,7 +57,7 @@ describe("00-schema: table structure validation", () => {
   it("events table defines 4 indexes (integration: migration SQL check)", () => {
     // The schema.ts events table has 4 indexes defined in its second argument
     // We verify by checking the config extracted from the table definition
-    const config = (events as unknown as { _: { config: unknown } })?._ ?? {};
+    const _config = (events as unknown as { _: { config: unknown } })?._ ?? {};
     // drizzle-orm stores indexes on the table symbol. We verify structurally by
     // re-reading the schema source: it has 4 index(...) calls.
     // For a unit test, we confirm the table has the expected columns that are indexed.

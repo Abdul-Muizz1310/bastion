@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { type Mock, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 
 // Set env before importing
 process.env.IRON_SESSION_PASSWORD = crypto.randomBytes(32).toString("base64");

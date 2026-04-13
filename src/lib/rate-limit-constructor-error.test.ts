@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 // Mock Redis to throw during construction
 vi.mock("@upstash/redis", () => ({
-  Redis: () => { throw new Error("Redis init error"); },
+  Redis: () => {
+    throw new Error("Redis init error");
+  },
 }));
 
 vi.mock("@upstash/ratelimit", () => {
