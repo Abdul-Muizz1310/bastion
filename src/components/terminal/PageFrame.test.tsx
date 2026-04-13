@@ -13,14 +13,16 @@ import { PageFrame } from "./PageFrame";
 describe("PageFrame", () => {
   it("renders children within nav and status bar", () => {
     const html = renderToString(
-      createElement(PageFrame, { active: "registry" }, "page-content-here"),
+      createElement(PageFrame, { active: "registry", children: "page-content-here" }),
     );
     expect(html).toContain("page-content-here");
     expect(html).toContain("bastion");
   });
 
   it("passes statusRight to StatusBar", () => {
-    const html = renderToString(createElement(PageFrame, { statusRight: "5 services" }, "content"));
+    const html = renderToString(
+      createElement(PageFrame, { statusRight: "5 services", children: "content" }),
+    );
     expect(html).toContain("5 services");
   });
 });

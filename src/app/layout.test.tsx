@@ -12,7 +12,7 @@ import RootLayout from "./layout";
 
 describe("RootLayout", () => {
   it("renders children within html body", () => {
-    const html = renderToString(createElement(RootLayout, {}, "child-content-here"));
+    const html = renderToString(createElement(RootLayout, { children: "child-content-here" }));
     expect(html).toContain("child-content-here");
     expect(html).toContain("mock-geist-sans");
     expect(html).toContain("mock-geist-mono");
