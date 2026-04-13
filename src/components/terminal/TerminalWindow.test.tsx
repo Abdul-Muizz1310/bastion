@@ -13,23 +13,28 @@ describe("TerminalWindow", () => {
   });
 
   it("renders green status dot", () => {
-    const html = renderToString(createElement(TerminalWindow, { status: "green" }, "content"));
+    const html = renderToString(
+      createElement(TerminalWindow, { status: "green", children: "content" }),
+    );
     expect(html).toContain("bg-mac-green");
   });
 
   it("renders yellow status dot", () => {
-    const html = renderToString(createElement(TerminalWindow, { status: "yellow" }, "content"));
+    const html = renderToString(
+      createElement(TerminalWindow, { status: "yellow", children: "content" }),
+    );
     expect(html).toContain("bg-mac-yellow");
   });
 
   it("renders red status dot", () => {
-    const html = renderToString(createElement(TerminalWindow, { status: "red" }, "content"));
+    const html = renderToString(
+      createElement(TerminalWindow, { status: "red", children: "content" }),
+    );
     expect(html).toContain("bg-mac-red");
   });
 
   it("renders fallback dot color when no status", () => {
-    const html = renderToString(createElement(TerminalWindow, {}, "content"));
-    // no pulse-ring for undefined status — the status span won't render
+    const html = renderToString(createElement(TerminalWindow, { children: "content" }));
     expect(html).toContain("content");
   });
 });
