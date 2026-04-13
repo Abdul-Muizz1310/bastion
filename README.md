@@ -11,7 +11,7 @@
 ![drizzle](https://img.shields.io/badge/Drizzle-ORM-c5f74f?style=flat-square)
 ![neon](https://img.shields.io/badge/Neon-Postgres-00e599?style=flat-square&logo=postgresql&logoColor=white)
 ![upstash](https://img.shields.io/badge/Upstash-Redis-dc382d?style=flat-square)
-![tests](https://img.shields.io/badge/tests-68%20vitest-6e9f18?style=flat-square)
+![tests](https://img.shields.io/badge/tests-256%20vitest-6e9f18?style=flat-square)
 ![vercel](https://img.shields.io/badge/Vercel-deployed-000000?style=flat-square&logo=vercel&logoColor=white)
 [![ci](https://github.com/Abdul-Muizz1310/bastion/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdul-Muizz1310/bastion/actions/workflows/ci.yml)
 ![license](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)
@@ -50,7 +50,7 @@ It is **not** a landing page. It is a real control plane with real auth, real RB
 - 🎬 Integrated 5-step demo runner (scrape → sign → debate → measure → audit)
 - 🛡️ 11-item security checklist (RBAC, CSRF double-submit, rate limiting, CSP, httpOnly, no PII in cookies)
 - ⏱️ Rate limiting via Upstash Redis sliding window
-- 🧪 68 unit tests (Vitest)
+- 🧪 256 unit tests (Vitest), 100% line coverage
 - 🚀 Deployed on Vercel
 
 ---
@@ -160,7 +160,7 @@ src/
 | **Database** | Neon Postgres via Drizzle ORM (4 tables: users, sessions, magic_links, events) |
 | **Rate limiting** | Upstash Redis sliding window |
 | **JWT** | Ed25519 via jose |
-| **Testing** | Vitest (68 unit tests) |
+| **Testing** | Vitest (256 unit tests, 100% coverage) |
 | **Lint / Format** | Biome |
 | **Hosting** | Vercel |
 
@@ -224,7 +224,8 @@ pnpm test -- --run           # CI single-run
 
 | Metric | Value |
 |---|---|
-| **Unit tests** | 68 (Vitest) |
+| **Unit tests** | 256 (Vitest) |
+| **Line coverage** | **100%** |
 | **Methodology** | Red-first spec-TDD. Failing test before every feature. |
 
 ---
