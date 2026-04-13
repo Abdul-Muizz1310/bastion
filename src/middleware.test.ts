@@ -119,7 +119,9 @@ describe("middleware", () => {
   });
 
   it("rejects forged session cookie for API route", () => {
-    const result = middleware(makeRequest("/api/proxy/magpie", { bastion_session: "forged-value" }));
+    const result = middleware(
+      makeRequest("/api/proxy/magpie", { bastion_session: "forged-value" }),
+    );
     expect(result).toEqual({ type: "json", body: { error: "Unauthorized" }, status: 401 });
   });
 

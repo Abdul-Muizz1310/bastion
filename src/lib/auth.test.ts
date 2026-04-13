@@ -156,7 +156,9 @@ describe("02-auth: magic link", () => {
       { id: "user-1", email: "user@example.com", role: "viewer" },
     ]);
 
-    const mockUpdateReturning = vi.fn().mockResolvedValue([{ token: "valid-token", usedAt: new Date() }]);
+    const mockUpdateReturning = vi
+      .fn()
+      .mockResolvedValue([{ token: "valid-token", usedAt: new Date() }]);
     const mockUpdateWhere = vi.fn().mockReturnValue({ returning: mockUpdateReturning });
     mocks.mockSet.mockReturnValue({ where: mockUpdateWhere });
 
