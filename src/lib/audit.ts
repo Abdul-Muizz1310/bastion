@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, like, lte } from "drizzle-orm";
 import { getDb } from "./db";
 import { events } from "./schema";
 import { type EventInput, eventInputSchema } from "./validation";
@@ -59,6 +59,9 @@ export async function queryEvents(options: QueryEventsOptions = {}) {
   }
   if (options.actorId) {
     conditions.push(eq(events.actorId, options.actorId));
+  }
+  if (options.actionPrefix) {
+    conditions.push(like(events.action, `${options.actionPrefix}%`));
   }
 
   const query = db

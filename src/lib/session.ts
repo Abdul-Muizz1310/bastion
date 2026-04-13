@@ -63,7 +63,9 @@ function unsealSid(cookie: string): string | null {
   const hmac = crypto.createHmac("sha256", getPassword());
   hmac.update(sid);
   const expected = hmac.digest("base64url");
-  if (sig !== expected) return null;
+  const sigBuf = Buffer.from(sig, "base64url");
+  const expBuf = Buffer.from(expected, "base64url");
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) return null;
   return sid;
 }
 

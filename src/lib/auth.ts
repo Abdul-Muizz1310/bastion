@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import { getDb } from "./db";
 import { magicLinks, users } from "./schema";
 import { createSession } from "./session";
@@ -58,7 +58,7 @@ export async function sendMagicLink(email: string): Promise<MagicLinkResult> {
     console.error("Failed to send magic link email:", err);
   }
 
-  return { token, url, emailSent };
+  return { token: "[redacted]", url: emailSent ? "[redacted]" : url, emailSent };
 }
 
 export async function consumeMagicLink(token: string): Promise<AuthResult | null> {
@@ -71,15 +71,19 @@ export async function consumeMagicLink(token: string): Promise<AuthResult | null
 
   const link = rows[0];
 
-  // Check if already used
-  if (link.usedAt) return null;
-
-  // Check if expired
-  if (link.expiresAt < new Date()) return null;
-
-  // Mark as used
+  // Atomic check-and-mark: prevents TOCTOU race on concurrent requests.
+  // WHERE includes usedAt IS NULL and expiresAt > now so only the first
+  // concurrent caller wins, and expired tokens are never consumed.
   const now = new Date();
-  await db.update(magicLinks).set({ usedAt: now }).where(eq(magicLinks.token, token));
+  const updated = await db
+    .update(magicLinks)
+    .set({ usedAt: now })
+    .where(
+      and(eq(magicLinks.token, token), isNull(magicLinks.usedAt), gt(magicLinks.expiresAt, now)),
+    )
+    .returning();
+
+  if (updated.length === 0) return null;
 
   // Find or create user
   let userRows = await db.select().from(users).where(eq(users.email, link.email)).limit(1);
@@ -99,9 +103,15 @@ export async function consumeMagicLink(token: string): Promise<AuthResult | null
   };
 }
 
+const DEMO_ALLOWED_ROLES: Role[] = ["viewer", "editor"];
+
 export async function demoSignIn(role: Role): Promise<AuthResult> {
   if (process.env.DEMO_MODE !== "true") {
     throw new Error("Demo mode is not enabled");
+  }
+
+  if (!DEMO_ALLOWED_ROLES.includes(role)) {
+    throw new Error(`Role "${role}" is not permitted in demo mode`);
   }
 
   const email = `demo-${role}@bastion.local`;

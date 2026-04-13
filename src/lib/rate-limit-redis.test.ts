@@ -65,7 +65,8 @@ describe("rate-limit: Redis-connected paths", () => {
     expect(result.success).toBe(false);
     expect(result.remaining).toBe(0);
     expect(result.retryAfter).toBeDefined();
-    expect(result.retryAfter).toBe(Math.ceil(resetTime / 1000));
+    expect(result.retryAfter).toBeGreaterThanOrEqual(1);
+    expect(result.retryAfter).toBeLessThanOrEqual(31);
   });
 
   it("check fails open when Redis ratelimit.limit() throws", async () => {

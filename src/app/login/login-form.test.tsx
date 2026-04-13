@@ -38,7 +38,7 @@ describe("LoginForm", () => {
 
   it("renders demo role buttons when demoMode is true", () => {
     const html = renderToString(createElement(LoginForm, { demoMode: true }));
-    expect(html).toContain("admin");
+    expect(html).not.toContain("admin");
     expect(html).toContain("editor");
     expect(html).toContain("viewer");
     expect(html).toContain("or sign in as");

@@ -1,4 +1,16 @@
+import crypto from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
+
+// Set test session password (must be >= 32 chars for verifySessionCookie)
+const TEST_PASSWORD = "test-password-that-is-at-least-32-chars-long!!";
+process.env.IRON_SESSION_PASSWORD = TEST_PASSWORD;
+
+function makeValidCookie(sid: string): string {
+  const hmac = crypto.createHmac("sha256", TEST_PASSWORD);
+  hmac.update(sid);
+  const sig = hmac.digest("base64url");
+  return `${sid}.${sig}`;
+}
 
 // Mock next/server
 vi.mock("next/server", () => {
@@ -89,14 +101,26 @@ describe("middleware", () => {
     expect((result as any).url).toContain("/login");
   });
 
-  it("allows authenticated page route with session cookie", () => {
-    const result = middleware(makeRequest("/dashboard", { bastion_session: "some-value" }));
+  it("allows authenticated page route with valid session cookie", () => {
+    const cookie = makeValidCookie("test-session-id");
+    const result = middleware(makeRequest("/dashboard", { bastion_session: cookie }));
     expect(result).toEqual({ type: "next" });
   });
 
-  it("allows authenticated API route with session cookie", () => {
-    const result = middleware(makeRequest("/api/proxy/magpie", { bastion_session: "some-value" }));
+  it("allows authenticated API route with valid session cookie", () => {
+    const cookie = makeValidCookie("test-session-id");
+    const result = middleware(makeRequest("/api/proxy/magpie", { bastion_session: cookie }));
     expect(result).toEqual({ type: "next" });
+  });
+
+  it("rejects forged session cookie for page route", () => {
+    const result = middleware(makeRequest("/dashboard", { bastion_session: "forged-value" }));
+    expect(result).toMatchObject({ type: "redirect" });
+  });
+
+  it("rejects forged session cookie for API route", () => {
+    const result = middleware(makeRequest("/api/proxy/magpie", { bastion_session: "forged-value" }));
+    expect(result).toEqual({ type: "json", body: { error: "Unauthorized" }, status: 401 });
   });
 
   it("empty session cookie value triggers redirect", () => {

@@ -63,6 +63,7 @@ export async function getTimeTravelState(options: TimeTravelOptions): Promise<Ti
     WHERE created_at <= ${options.asOf}
     ${options.service ? sql`AND service = ${options.service}` : sql``}
     ORDER BY entity_type, entity_id, created_at DESC
+    LIMIT 1000
   `);
 
   const rowData = rows as unknown as Record<string, unknown>[];

@@ -30,7 +30,11 @@ vi.mock("./db", () => {
   mockLimit.mockResolvedValue([]);
 
   mockUpdate.mockReturnValue({ set: mockSet });
-  mockSet.mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+  mockSet.mockReturnValue({
+    where: vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue([{ token: "valid-token", usedAt: new Date() }]),
+    }),
+  });
 
   return {
     getDb: () => db,
@@ -93,7 +97,11 @@ describe("02-auth: magic link", () => {
     mocks.mockWhere.mockReturnValue({ limit: mocks.mockLimit });
     mocks.mockLimit.mockResolvedValue([]);
     mocks.mockUpdate.mockReturnValue({ set: mocks.mockSet });
-    mocks.mockSet.mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+    mocks.mockSet.mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([{ token: "valid-token", usedAt: new Date() }]),
+      }),
+    });
 
     process.env.RESEND_API_KEY = "re_test_key";
   });
@@ -101,8 +109,7 @@ describe("02-auth: magic link", () => {
   it("sendMagicLink sends email and inserts magic_links row (integration)", async () => {
     const { sendMagicLink } = await import("./auth");
     const result = await sendMagicLink("user@example.com");
-    expect(result.token).toBeDefined();
-    expect(result.url).toContain("/auth/callback?token=");
+    expect(result.token).toBe("[redacted]");
     expect(result.emailSent).toBe(true);
     expect(mocks.mockInsert).toHaveBeenCalled();
     expect(mocks.mockValues).toHaveBeenCalledWith(
@@ -112,11 +119,10 @@ describe("02-auth: magic link", () => {
     );
   });
 
-  it("magic link URL is {SITE_URL}/auth/callback?token={token} (integration)", async () => {
+  it("magic link URL is redacted when email is sent (integration)", async () => {
     const { sendMagicLink } = await import("./auth");
     const result = await sendMagicLink("user@example.com");
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-    expect(result.url).toBe(`${siteUrl}/auth/callback?token=${result.token}`);
+    expect(result.url).toBe("[redacted]");
   });
 
   it("consumeMagicLink with valid token creates session (integration)", async () => {
@@ -150,7 +156,8 @@ describe("02-auth: magic link", () => {
       { id: "user-1", email: "user@example.com", role: "viewer" },
     ]);
 
-    const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
+    const mockUpdateReturning = vi.fn().mockResolvedValue([{ token: "valid-token", usedAt: new Date() }]);
+    const mockUpdateWhere = vi.fn().mockReturnValue({ returning: mockUpdateReturning });
     mocks.mockSet.mockReturnValue({ where: mockUpdateWhere });
 
     const { consumeMagicLink } = await import("./auth");
@@ -214,8 +221,11 @@ describe("02-auth: demo mode", () => {
 
   it("demoSignIn creates session without email (integration)", async () => {
     process.env.DEMO_MODE = "true";
+    mocks.mockReturning.mockResolvedValueOnce([
+      { id: "demo-editor-1", email: "demo-editor@bastion.local", role: "editor" },
+    ]);
     const { demoSignIn } = await import("./auth");
-    const result = await demoSignIn("admin");
+    const result = await demoSignIn("editor");
     expect(result.session.sid).toBe("session-123");
     expect(result.user.email).toContain("demo-");
     expect(result.redirectTo).toBe("/dashboard");
@@ -240,14 +250,19 @@ describe("02-auth: edge and failure cases", () => {
     const dbMod = await import("./db");
     mocks = (dbMod as unknown as { __mocks: Record<string, Mock> }).__mocks;
     mocks.mockInsert.mockReturnValue({ values: mocks.mockValues });
-    mocks.mockValues.mockReturnValue({ returning: mocks.mockReturning });
-    mocks.mockValues.mockResolvedValue(undefined);
+    mocks.mockValues.mockImplementation(() =>
+      Object.assign(Promise.resolve(undefined), { returning: mocks.mockReturning }),
+    );
     mocks.mockSelect.mockReturnValue({ from: mocks.mockFrom });
     mocks.mockFrom.mockReturnValue({ where: mocks.mockWhere });
     mocks.mockWhere.mockReturnValue({ limit: mocks.mockLimit });
     mocks.mockLimit.mockResolvedValue([]);
     mocks.mockUpdate.mockReturnValue({ set: mocks.mockSet });
-    mocks.mockSet.mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+    mocks.mockSet.mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([{ token: "valid-token", usedAt: new Date() }]),
+      }),
+    });
   });
 
   it("consumeMagicLink with expired token returns null (integration)", async () => {
@@ -260,6 +275,12 @@ describe("02-auth: edge and failure cases", () => {
         usedAt: null,
       },
     ]);
+    // Atomic UPDATE won't match expired token — returns empty
+    mocks.mockSet.mockReturnValueOnce({
+      where: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([]),
+      }),
+    });
 
     const { consumeMagicLink } = await import("./auth");
     const result = await consumeMagicLink("expired-token");
@@ -276,6 +297,12 @@ describe("02-auth: edge and failure cases", () => {
         usedAt: new Date(),
       },
     ]);
+    // Atomic UPDATE won't match used token (usedAt IS NULL fails) — returns empty
+    mocks.mockSet.mockReturnValueOnce({
+      where: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([]),
+      }),
+    });
 
     const { consumeMagicLink } = await import("./auth");
     const result = await consumeMagicLink("used-token");

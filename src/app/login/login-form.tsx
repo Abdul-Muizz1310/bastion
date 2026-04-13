@@ -80,7 +80,7 @@ export function LoginForm({ demoMode }: { demoMode: boolean }) {
             <div className="h-px flex-1 bg-border" />
           </div>
           <div className="grid grid-cols-3 gap-2">
-            {(["admin", "editor", "viewer"] as const).map((role) => (
+            {(["editor", "viewer"] as const).map((role) => (
               <DemoButton key={role} role={role} />
             ))}
           </div>

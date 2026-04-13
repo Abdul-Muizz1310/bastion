@@ -15,7 +15,7 @@ export type RateLimitResult = {
   retryAfter?: number;
 };
 
-export function createRateLimiter(config: RateLimitConfig) {
+export function createRateLimiter(config: RateLimitConfig & { failClosed?: boolean }) {
   let ratelimit: Ratelimit | null = null;
 
   try {
@@ -32,14 +32,18 @@ export function createRateLimiter(config: RateLimitConfig) {
       });
     }
   } catch {
-    // Fail-open: if Redis is unreachable, allow all requests
-    console.warn("Rate limiter: Redis unavailable, failing open");
+    // Fail-open: if Redis is unreachable at init, allow requests (unless failClosed)
+    console.warn("Rate limiter: Redis unavailable at init");
   }
+
+  const failClosed = config.failClosed ?? false;
 
   return {
     async check(key: string): Promise<RateLimitResult> {
       if (!ratelimit) {
-        // Fail-open
+        if (failClosed) {
+          return { success: false, limit: config.max, remaining: 0 };
+        }
         return { success: true, limit: config.max, remaining: config.max };
       }
 
@@ -49,11 +53,15 @@ export function createRateLimiter(config: RateLimitConfig) {
           success: result.success,
           limit: result.limit,
           remaining: result.remaining,
-          retryAfter: result.success ? undefined : Math.ceil(result.reset / 1000),
+          retryAfter: result.success
+            ? undefined
+            : Math.max(1, Math.ceil((result.reset - Date.now()) / 1000)),
         };
       } catch {
-        // Fail-open on error
-        console.warn("Rate limiter: check failed, failing open");
+        console.warn("Rate limiter: check failed");
+        if (failClosed) {
+          return { success: false, limit: config.max, remaining: 0 };
+        }
         return { success: true, limit: config.max, remaining: config.max };
       }
     },
@@ -61,6 +69,7 @@ export function createRateLimiter(config: RateLimitConfig) {
 }
 
 // Pre-configured limiters
-export const authLimiter = createRateLimiter({ max: 10, windowMs: 60_000 });
+// Auth limiter fails CLOSED — Redis outage must not bypass auth rate limiting
+export const authLimiter = createRateLimiter({ max: 10, windowMs: 60_000, failClosed: true });
 export const gatewayLimiter = createRateLimiter({ max: 60, windowMs: 60_000 });
 export const csrfLimiter = createRateLimiter({ max: 30, windowMs: 60_000 });
