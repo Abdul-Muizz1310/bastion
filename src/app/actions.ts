@@ -2,8 +2,9 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { demoSignIn, sendMagicLink } from "@/lib/auth";
-import { COOKIE_NAME } from "@/lib/session";
+import { demoSignIn, sendMagicLink } from "@/lib/auth/magic-link";
+import { getSafeReturnTo } from "@/lib/auth/return-to";
+import { COOKIE_NAME } from "@/lib/auth/session";
 import type { Role } from "@/lib/validation";
 
 export async function sendMagicLinkAction(
@@ -12,8 +13,11 @@ export async function sendMagicLinkAction(
   const email = formData.get("email") as string;
   if (!email) return { error: "Email is required" };
 
+  const rawReturnTo = formData.get("returnTo");
+  const returnTo = typeof rawReturnTo === "string" ? rawReturnTo : undefined;
+
   try {
-    const result = await sendMagicLink(email);
+    const result = await sendMagicLink(email, returnTo);
     const isDemoMode = process.env.DEMO_MODE === "true";
     return {
       sent: true,
@@ -24,7 +28,7 @@ export async function sendMagicLinkAction(
   }
 }
 
-export async function demoSignInAction(role: Role): Promise<void> {
+export async function demoSignInAction(role: Role, returnTo?: string): Promise<void> {
   const result = await demoSignIn(role);
   const jar = await cookies();
   jar.set(COOKIE_NAME, result.session.cookie, {
@@ -34,5 +38,5 @@ export async function demoSignInAction(role: Role): Promise<void> {
     path: "/",
     maxAge: 24 * 60 * 60,
   });
-  redirect("/dashboard");
+  redirect(getSafeReturnTo(returnTo, "/dashboard"));
 }

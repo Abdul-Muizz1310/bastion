@@ -1,4 +1,4 @@
-import { SERVICES } from "./services";
+import { SERVICES } from "@/lib/gateway/services";
 
 export type ServiceHealthResult = {
   id: string;
