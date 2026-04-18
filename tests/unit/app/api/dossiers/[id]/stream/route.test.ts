@@ -43,9 +43,11 @@ vi.mock("@/features/dossier/server/query", () => ({
   listDossierEvents: (...args: unknown[]) => mockListEvents(...args),
 }));
 
+import type { Dossier } from "@/lib/db/schema";
+
 const DOSSIER_UUID = "550e8400-e29b-41d4-a716-446655440000";
 
-function makeDossier(overrides: Record<string, unknown> = {}) {
+function makeDossier(overrides: Partial<Dossier> = {}): Dossier {
   return {
     id: DOSSIER_UUID,
     userId: "user-1",
