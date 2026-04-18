@@ -99,7 +99,7 @@ export function DossierPrompt({ canRun, roleLabel }: Props) {
           required
           value={claim}
           onChange={(e) => setClaim(e.target.value)}
-          disabled={!canRun || submitting}
+          disabled={submitting}
           maxLength={1024}
           rows={3}
           placeholder="what should the dossier adjudicate?"
@@ -120,7 +120,7 @@ export function DossierPrompt({ canRun, roleLabel }: Props) {
                 key={s.id}
                 type="button"
                 onClick={() => toggleSource(s.id)}
-                disabled={!canRun || submitting}
+                disabled={submitting}
                 className={`rounded-lg border px-3 py-1.5 font-mono text-xs transition-colors ${
                   selected
                     ? "border-accent-violet/60 bg-accent-violet-soft text-accent-violet"
@@ -146,7 +146,7 @@ export function DossierPrompt({ canRun, roleLabel }: Props) {
                 key={m.id}
                 type="button"
                 onClick={() => setMode(m.id)}
-                disabled={!canRun || submitting}
+                disabled={submitting}
                 className={`rounded-lg border px-3 py-2 text-center font-mono text-xs transition-colors ${
                   selected
                     ? "border-accent-violet/60 bg-accent-violet-soft text-accent-violet"
