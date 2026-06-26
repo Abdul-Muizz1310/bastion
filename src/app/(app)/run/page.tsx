@@ -1,17 +1,27 @@
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { PageFrame } from "@/components/terminal/PageFrame";
 import { TerminalWindow } from "@/components/terminal/TerminalWindow";
+import { RunDemoButton } from "@/features/dossier/components/RunDemoButton";
+import { COOKIE_NAME, getSession } from "@/lib/auth/session";
 
-const STEPS = [
-  { name: "magpie", label: "Scrape HN article", icon: "▶" },
-  { name: "inkprint", label: "Sign C2PA certificate", icon: "▶" },
-  { name: "paper-trail", label: "Run AI debate", icon: "▶" },
-  { name: "slowquery", label: "Capture slow queries", icon: "▶" },
-  { name: "audit", label: "Collect audit trail", icon: "▶" },
-];
+export default async function RunPage() {
+  const cookieStore = await cookies();
+  const session = await getSession(cookieStore.get(COOKIE_NAME)?.value);
+  if (!session) {
+    redirect("/login?returnTo=%2Frun");
+  }
 
-export default function RunPage() {
+  const canRun = session.user.role === "admin" || session.user.role === "editor";
+
   return (
-    <PageFrame active="demo">
+    <PageFrame
+      active="demo"
+      role={session.user.role}
+      userEmail={session.user.email}
+      statusLeft={`role · ${session.user.role}`}
+      statusRight="integrated demo"
+    >
       <div className="space-y-8">
         <div>
           <p className="font-mono text-xs text-fg-faint">{"// integrated_demo"}</p>
@@ -24,39 +34,7 @@ export default function RunPage() {
         </div>
 
         <TerminalWindow title="demo_runner" status="green">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              {STEPS.map((step, i) => (
-                <div
-                  key={step.name}
-                  className="flex items-center gap-3 rounded-lg border border-border bg-background/40 px-4 py-3 transition-colors hover:border-border-bright"
-                >
-                  <span className="font-mono text-xs text-fg-faint">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <span className="text-fg-faint">{step.icon}</span>
-                  <div className="flex-1">
-                    <span className="font-mono text-sm font-semibold">{step.name}</span>
-                    <span className="ml-2 font-mono text-xs text-fg-muted">{step.label}</span>
-                  </div>
-                  <span className="rounded-md border border-border px-2 py-0.5 font-mono text-[10px] text-fg-faint">
-                    pending
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              className="w-full rounded-lg bg-gradient-to-r from-accent-violet to-accent-rose px-4 py-3 font-mono text-sm font-semibold text-background transition-all hover:shadow-[0_0_30px_rgb(167_139_250_/_0.25)]"
-            >
-              ▶ Run end-to-end platform demo
-            </button>
-
-            <p className="text-center font-mono text-[11px] text-fg-faint">
-              requires admin or editor role · calls all services via gateway
-            </p>
-          </div>
+          <RunDemoButton canRun={canRun} roleLabel={session.user.role} />
         </TerminalWindow>
       </div>
     </PageFrame>
