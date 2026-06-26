@@ -140,6 +140,16 @@ export async function getSession(
   };
 }
 
+export async function getSessionExpiry(sid: string): Promise<Date | null> {
+  const db = getDb();
+  const rows = await db
+    .select({ expiresAt: sessions.expiresAt })
+    .from(sessions)
+    .where(eq(sessions.id, sid))
+    .limit(1);
+  return rows[0]?.expiresAt ?? null;
+}
+
 export async function destroySession(sid: string): Promise<void> {
   const db = getDb();
   await db.delete(sessions).where(eq(sessions.id, sid));

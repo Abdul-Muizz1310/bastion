@@ -1,9 +1,38 @@
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { PageFrame } from "@/components/terminal/PageFrame";
 import { TerminalWindow } from "@/components/terminal/TerminalWindow";
+import { COOKIE_NAME, getSession, getSessionExpiry } from "@/lib/auth/session";
 
-export default function WhoamiPage() {
+function formatExpiry(expiresAt: Date | null): string {
+  if (!expiresAt) return "unknown";
+  const ms = expiresAt.getTime() - Date.now();
+  if (ms <= 0) return "expired";
+  const totalMinutes = Math.floor(ms / 60_000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `in ${hours}h ${minutes}m`;
+}
+
+export default async function WhoamiPage() {
+  const cookieStore = await cookies();
+  const session = await getSession(cookieStore.get(COOKIE_NAME)?.value);
+  if (!session) {
+    redirect("/login?returnTo=%2Fwhoami");
+  }
+
+  const expiresAt = await getSessionExpiry(session.sid);
+  const expiryLabel = formatExpiry(expiresAt);
+  const sidShort = `${session.sid.slice(0, 8)}…`;
+
   return (
-    <PageFrame active="whoami">
+    <PageFrame
+      active="whoami"
+      role={session.user.role}
+      userEmail={session.user.email}
+      statusLeft={`role · ${session.user.role}`}
+      statusRight={`sid · ${session.sid.slice(0, 8)}`}
+    >
       <div className="space-y-8">
         <div>
           <p className="font-mono text-xs text-fg-faint">{"// whoami"}</p>
@@ -20,21 +49,21 @@ export default function WhoamiPage() {
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-fg-muted">user</span>
-                <span className="text-accent-violet">demo-admin@bastion.local</span>
+                <span className="text-accent-violet">{session.user.email}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-fg-muted">role</span>
                 <span className="rounded-md border border-accent-violet/30 bg-accent-violet-soft px-2 py-0.5 text-xs text-accent-violet">
-                  admin
+                  {session.user.role}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-fg-muted">session id</span>
-                <span className="text-fg-faint">a1b2c3d4-…</span>
+                <span className="text-fg-faint">{sidShort}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-fg-muted">expires</span>
-                <span className="text-fg-faint">in 23h 42m</span>
+                <span className="text-fg-faint">{expiryLabel}</span>
               </div>
             </div>
           </TerminalWindow>
@@ -45,7 +74,7 @@ export default function WhoamiPage() {
                 <p className="text-xs text-fg-muted">bastion_session cookie:</p>
                 <div className="mt-1 overflow-x-auto rounded-md border border-border bg-background/60 p-2">
                   <code className="text-[11px] text-fg-faint break-all">
-                    {'{ sid: "a1b2c3d4-..." }'}
+                    {`{ sid: "${sidShort}" }`}
                   </code>
                 </div>
               </div>
