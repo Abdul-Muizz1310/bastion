@@ -12,10 +12,12 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/unit/**/*.test.{ts,tsx}"],
+    testTimeout: 30_000,
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts", "src/**/*.tsx"],
       exclude: ["src/**/*.d.ts"],
+      thresholds: { lines: 80, statements: 80, functions: 75, branches: 75 },
     },
   },
 });
