@@ -36,21 +36,21 @@ flowchart TD
 
 | Component | Purpose | Key files |
 |---|---|---|
-| Middleware | Route-level auth gating, public path allowlist | `src/middleware.ts` |
+| Proxy | Route-level auth gating, public path allowlist | `src/proxy.ts` |
 | Pages | UI rendering via React Server Components | `src/app/*/page.tsx` |
-| Server Actions | Auth, RBAC, CSRF enforcement, all mutations | `src/lib/auth.ts`, `src/lib/rbac.ts`, `src/lib/csrf.ts` |
-| Session | HMAC-sealed cookie with DB-backed validation | `src/lib/session.ts` |
-| Auth | Magic link request/callback, demo-mode bypass | `src/lib/auth.ts` |
-| RBAC | `withRole()` defense-in-depth wrapper | `src/lib/rbac.ts` |
-| CSRF | Double-submit token generation and verification | `src/lib/csrf.ts` |
-| Rate Limit | Upstash sliding window, fail-open on error | `src/lib/rate-limit.ts` |
-| Audit | Append-only event log, `appendEvent()` | `src/lib/audit.ts` |
-| Replay | Time-travel query over immutable events | `src/lib/replay.ts` |
-| Gateway | JWT minting, request ID injection, service proxy | `src/lib/gateway.ts` |
-| Registry | Service manifest, parallel health checks | `src/lib/registry.ts`, `src/lib/services.ts` |
-| Demo | End-to-end cross-service workflow runner | `src/lib/demo.ts` |
-| Schema | Drizzle ORM table definitions, append-only grant | `src/lib/schema.ts` |
-| Validation | Shared Zod schemas for form inputs | `src/lib/validation.ts` |
+| Server Actions | Auth, RBAC, CSRF enforcement, all mutations | `src/app/actions.ts`, `src/lib/auth/rbac.ts`, `src/lib/auth/csrf.ts` |
+| Session | HMAC-sealed cookie with DB-backed validation | `src/lib/auth/session.ts` |
+| Auth | Magic link request/callback, demo-mode bypass | `src/lib/auth/magic-link.ts`, `src/lib/auth/return-to.ts` |
+| RBAC | `withRole()` defense-in-depth wrapper | `src/lib/auth/rbac.ts` |
+| CSRF | Double-submit token generation and verification | `src/lib/auth/csrf.ts` |
+| Rate Limit | Upstash sliding window, fail-open on error | `src/lib/rate-limit/index.ts` |
+| Audit | Append-only event log, `appendEvent()` | `src/lib/audit/write.ts` |
+| Replay | Time-travel query over immutable events | `src/lib/audit/replay.ts` |
+| Gateway | JWT minting, request ID injection, service proxy | `src/lib/gateway/jwt.ts`, `src/lib/gateway/client.ts` |
+| Registry | Service manifest, parallel health checks | `src/lib/registry.ts`, `src/lib/gateway/services.ts` |
+| Demo | End-to-end cross-service dossier workflow runner | `src/features/dossier/server/pipeline.ts`, `src/features/dossier/server/create.ts` |
+| Schema | Drizzle ORM table definitions, append-only grant | `src/lib/db/schema.ts` |
+| Validation | Shared Zod schemas for form inputs | `src/lib/validation.ts`, `src/features/dossier/schemas.ts` |
 
 ## Database schema
 
@@ -164,4 +164,4 @@ Middleware (route gating)
           -> Neon Postgres
 ```
 
-Controllers (Server Actions) never touch the database directly — they go through `session.ts`, `audit.ts`, or `gateway.ts`. Pages never mutate state. The schema module owns all table definitions and the append-only invariant. Rate limiting and JWT minting are gateway-internal concerns invisible to the rest of the app.
+Controllers (Server Actions) never touch the database directly — they go through `lib/auth/session.ts`, `lib/audit/write.ts`, or `lib/gateway/`. Pages never mutate state. The schema module owns all table definitions and the append-only invariant. Rate limiting and JWT minting are gateway-internal concerns invisible to the rest of the app.

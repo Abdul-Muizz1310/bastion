@@ -117,34 +117,37 @@ flowchart TD
 
 ```
 src/
+├── proxy.ts                          # Route-level auth gating + public-path allowlist
 ├── app/
-│   ├── page.tsx                    # Dashboard — service registry + health
-│   ├── layout.tsx                  # Root layout + session provider
-│   ├── login/page.tsx              # Magic link login form
-│   ├── auth/callback/route.ts      # Magic link callback handler
-│   ├── audit/page.tsx              # Append-only audit log viewer
-│   ├── time-travel/page.tsx        # DISTINCT ON replay UI
-│   ├── run/page.tsx                # 5-step demo runner
-│   └── whoami/page.tsx             # Current session info
-├── actions/
-│   ├── auth.ts                     # Login, logout, session
-│   ├── gateway.ts                  # Ed25519 JWT mint + proxy
-│   ├── demo.ts                     # 5-step cross-service runner
-│   └── audit.ts                    # Append event + time-travel query
-├── middleware.ts                    # Auth + RBAC + CSRF + rate limit
-├── db/
-│   ├── schema.ts                   # Drizzle schema (users, sessions, magic_links, events)
-│   └── client.ts                   # Neon connection
+│   ├── page.tsx                      # Landing
+│   ├── layout.tsx                    # Root layout + session provider
+│   ├── actions.ts                    # Server actions (all mutations)
+│   ├── (app)/                        # Authenticated routes
+│   │   ├── dashboard/page.tsx        # Service registry + health
+│   │   ├── audit/page.tsx            # Append-only audit log viewer
+│   │   ├── audit/[requestId]/page.tsx
+│   │   ├── time-travel/page.tsx      # DISTINCT ON replay UI
+│   │   ├── run/page.tsx              # Integrated demo runner
+│   │   ├── dossiers/[id]/page.tsx    # Signed dossier detail
+│   │   ├── services/[id]/page.tsx    # Per-service view
+│   │   └── whoami/page.tsx           # Current session info
+│   ├── (public)/                     # Login + magic-link callback
+│   │   ├── login/page.tsx
+│   │   └── auth/callback/route.ts
+│   └── api/                          # Route handlers (health, proxy, public-key, dossiers, status)
 ├── lib/
-│   ├── session.ts                  # iron-session config
-│   ├── rbac.ts                     # withRole() guard
-│   ├── rate-limit.ts               # Upstash Redis sliding window
-│   └── jwt.ts                      # Ed25519 sign/verify via jose
+│   ├── auth/                         # session, magic-link, rbac, csrf, return-to
+│   ├── audit/                        # write (appendEvent), replay (time-travel)
+│   ├── gateway/                      # jwt (Ed25519), client (proxy), services
+│   ├── db/                           # Drizzle schema + Neon client
+│   ├── rate-limit/                   # Upstash sliding window
+│   ├── registry.ts                   # Service manifest + health checks
+│   └── validation.ts                 # Shared Zod schemas
+├── features/
+│   ├── dossier/                      # Cross-service dossier pipeline (server + components)
+│   └── audit/                        # Audit query
 └── components/
-    ├── ServiceCard.tsx              # Health-checked service tile
-    ├── AuditTable.tsx               # Event log viewer
-    ├── TimeTravelSlider.tsx         # Timestamp picker + replay
-    └── DemoRunner.tsx               # Step-by-step demo UI
+    └── terminal/                     # AppNav, PageFrame, StatusBar, TerminalWindow
 ```
 
 ---
@@ -236,10 +239,10 @@ pnpm test -- --run           # CI single-run
 |---|---|
 | 🧪 **Spec-TDD** | Every feature ships with a red test first. |
 | 🛡️ **Negative-space programming** | Append-only audit (illegal states unrepresentable at DB level), `Literal` role types, Zod at every Server Action boundary. |
-| 🏗️ **Separation of concerns** | `app/` thin pages · `actions/` Server Actions · `lib/` pure helpers · `db/` data layer. No cross-layer reaches. |
+| 🏗️ **Separation of concerns** | `app/` thin pages + Server Actions · `lib/` pure helpers (`auth/`, `audit/`, `gateway/`, `db/`) · `features/` domain logic. No cross-layer reaches. |
 | 🔤 **Typed everything** | TypeScript strict. Drizzle typed schema. Zod-inferred types. No `any`. |
 | 🌊 **Pure core, imperative shell** | RBAC checks, JWT mint, time-travel queries = pure. DB/Redis/Resend calls at edges only. |
-| 🎯 **One responsibility per module** | `auth.ts` does auth. `gateway.ts` does gateway. `audit.ts` does audit. Never "and". |
+| 🎯 **One responsibility per module** | `lib/auth/` does auth. `lib/gateway/` does the gateway. `lib/audit/` does audit. Never "and". |
 
 ---
 
