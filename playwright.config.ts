@@ -1,9 +1,8 @@
 /**
  * Playwright config — scaffolded in Block 13.
  *
- * To activate:
- *   pnpm add -D @playwright/test
- *   npx playwright install chromium
+ * To activate (@playwright/test is a committed devDependency — just install browsers):
+ *   pnpm exec playwright install chromium
  *   pnpm build && pnpm start          # terminal 1
  *   pnpm test:e2e                      # terminal 2
  *

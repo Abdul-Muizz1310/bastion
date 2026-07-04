@@ -24,7 +24,6 @@
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.37.0",
     "drizzle-orm": "^0.45.2",
-    "iron-session": "^8.0.4",
     "jose": "^6.2.2",
     "next": "16.2.3",
     "postgres": "^3.4.9",
@@ -35,6 +34,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.11",
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
