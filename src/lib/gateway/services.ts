@@ -23,7 +23,8 @@ export const SERVICES: Service[] = [
       process.env.PAPER_TRAIL_BACKEND_URL ?? "https://paper-trail-backend-jjpf.onrender.com",
     // Verified-live Vercel host (recovered from the dashboard 2026-07-04). The
     // bare `paper-trail-frontend.vercel.app` slug serves an unrelated app.
-    frontendUrl: process.env.PAPER_TRAIL_FRONTEND_URL ?? "https://paper-trail-frontend-sable.vercel.app",
+    frontendUrl:
+      process.env.PAPER_TRAIL_FRONTEND_URL ?? "https://paper-trail-frontend-sable.vercel.app",
     healthPath: "/health",
     versionPath: "/version",
     metricsPath: "/metrics",
