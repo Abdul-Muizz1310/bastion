@@ -10,16 +10,19 @@ import { expect, test } from "@playwright/test";
  */
 
 test.describe("13-e2e: page RBAC", () => {
+  // A bare /login visit carries no returnTo, so the demo sign-in action lands
+  // on its default redirect target /dashboard. Awaiting that URL also makes
+  // sure the session cookie is set before the test navigates elsewhere.
   async function signInAsViewer(page: import("@playwright/test").Page) {
     await page.goto("/login");
     await page.getByRole("button", { name: "viewer" }).click();
-    await expect(page).toHaveURL(/\/(?:\?.*)?$/);
+    await expect(page).toHaveURL(/\/dashboard/);
   }
 
   async function signInAsEditor(page: import("@playwright/test").Page) {
     await page.goto("/login");
     await page.getByRole("button", { name: "editor" }).click();
-    await expect(page).toHaveURL(/\/(?:\?.*)?$/);
+    await expect(page).toHaveURL(/\/dashboard/);
   }
 
   test("viewer hitting /time-travel sees the styled 403", async ({ page }) => {
@@ -36,10 +39,10 @@ test.describe("13-e2e: page RBAC", () => {
   });
 
   test("viewer home page shows read-only footer and disabled start button", async ({ page }) => {
-    await page.goto("/login");
-    await page.getByRole("button", { name: "viewer" }).click();
+    await signInAsViewer(page);
     await page.goto("/");
-    await expect(page.getByText(/read-only/i)).toBeVisible();
+    // .first(): both DossierPrompt and RunDemoButton render a read-only note.
+    await expect(page.getByText(/read-only/i).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /start dossier/i })).toBeDisabled();
   });
 });

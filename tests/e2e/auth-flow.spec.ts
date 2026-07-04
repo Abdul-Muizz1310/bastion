@@ -18,7 +18,11 @@ test.describe("13-e2e: auth flow", () => {
   });
 
   test("demo-mode viewer sign-in lands back on home with role pill", async ({ page }) => {
-    await page.goto("/login");
+    // Arrive at /login the way a real visitor does: bounced from home, so the
+    // returnTo param is set and the sign-in action redirects back to "/".
+    // (A bare /login visit has no returnTo and lands on /dashboard instead.)
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/login\?returnTo=%2F/);
 
     // Demo-mode quick-sign-in buttons. The "viewer" button submits the guest action.
     const viewerButton = page.getByRole("button", { name: "viewer" });
@@ -31,9 +35,10 @@ test.describe("13-e2e: auth flow", () => {
     // Nav should render the role pill (not the login link)
     await expect(page.getByText(/viewer/i).first()).toBeVisible();
 
-    // Home should show the dossier console heading + read-only footer
+    // Home should show the dossier console heading + read-only footer.
+    // (.first(): both DossierPrompt and RunDemoButton render a read-only note.)
     await expect(page.locator("h1")).toContainText(/initiate a dossier/i);
-    await expect(page.getByText(/read-only/i)).toBeVisible();
+    await expect(page.getByText(/read-only/i).first()).toBeVisible();
 
     // "start dossier" button should be disabled for viewer
     const start = page.getByRole("button", { name: /start dossier/i });
