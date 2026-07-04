@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
-// Set test session password (must be >= 32 chars for verifySessionCookie)
+// Set test session password (must be >= 32 chars for verifySealedCookie)
 const TEST_PASSWORD = "test-password-that-is-at-least-32-chars-long!!";
 process.env.IRON_SESSION_PASSWORD = TEST_PASSWORD;
 

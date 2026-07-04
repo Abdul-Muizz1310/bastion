@@ -2,8 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock next/headers
 const mockCookieSet = vi.fn();
+const mockHeaderGet = vi.fn().mockReturnValue(null);
 vi.mock("next/headers", () => ({
   cookies: vi.fn().mockResolvedValue({ set: mockCookieSet }),
+  headers: vi.fn().mockResolvedValue({ get: (name: string) => mockHeaderGet(name) }),
+}));
+
+// Mock the fail-closed auth rate limiter — allow by default, deny per-test.
+const mockAuthCheck = vi.fn().mockResolvedValue({ success: true, limit: 10, remaining: 9 });
+vi.mock("@/lib/rate-limit", () => ({
+  authLimiter: { check: (...args: unknown[]) => mockAuthCheck(...args) },
 }));
 
 // Mock next/navigation
@@ -31,11 +39,31 @@ describe("sendMagicLinkAction", () => {
     delete process.env.DEMO_MODE;
   });
 
-  it("returns error when email is missing", async () => {
+  it("returns validation error when email is missing", async () => {
     const { sendMagicLinkAction } = await import("@/app/actions");
     const formData = new FormData();
     const result = await sendMagicLinkAction(formData);
-    expect(result).toEqual({ error: "Email is required" });
+    expect(result).toEqual({ error: "A valid email address is required" });
+    expect(mockSendMagicLink).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed email at the Zod boundary (never calls sendMagicLink)", async () => {
+    const { sendMagicLinkAction } = await import("@/app/actions");
+    const formData = new FormData();
+    formData.set("email", "not-an-email");
+    const result = await sendMagicLinkAction(formData);
+    expect(result).toEqual({ error: "A valid email address is required" });
+    expect(mockSendMagicLink).not.toHaveBeenCalled();
+  });
+
+  it("blocks the send when the auth rate limiter denies (fail-closed)", async () => {
+    mockAuthCheck.mockResolvedValueOnce({ success: false, limit: 10, remaining: 0 });
+    const { sendMagicLinkAction } = await import("@/app/actions");
+    const formData = new FormData();
+    formData.set("email", "test@example.com");
+    const result = await sendMagicLinkAction(formData);
+    expect(result.error).toMatch(/too many requests/i);
+    expect(mockSendMagicLink).not.toHaveBeenCalled();
   });
 
   it("calls sendMagicLink and returns sent:true on success", async () => {
@@ -99,13 +127,13 @@ describe("sendMagicLinkAction", () => {
     expect(result.magicLinkUrl).toBeUndefined();
   });
 
-  it("returns error message on Error thrown", async () => {
-    mockSendMagicLink.mockRejectedValueOnce(new Error("Invalid email address"));
+  it("returns error message on Error thrown by sendMagicLink", async () => {
+    mockSendMagicLink.mockRejectedValueOnce(new Error("Resend is down"));
     const { sendMagicLinkAction } = await import("@/app/actions");
     const formData = new FormData();
-    formData.set("email", "bad");
+    formData.set("email", "valid@example.com");
     const result = await sendMagicLinkAction(formData);
-    expect(result).toEqual({ error: "Invalid email address" });
+    expect(result).toEqual({ error: "Resend is down" });
   });
 
   it("returns generic error on non-Error thrown", async () => {

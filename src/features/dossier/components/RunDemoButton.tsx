@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { StepTimeline } from "@/features/dossier/components/StepTimeline";
 import { dossierCreateResponseSchema } from "@/features/dossier/schemas";
+import { postWithCsrf } from "@/lib/csrf-client";
 
 // A one-click integrated demo: a fixed claim run through all five services via
 // the gateway. The heavy lifting (pipeline, SSE, live step rendering) is the
@@ -36,10 +37,10 @@ export function RunDemoButton({ canRun, roleLabel }: Props) {
     setError(null);
     setSubmitting(true);
     try {
-      const response = await fetch("/api/dossiers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claim: DEMO_CLAIM, sources: DEMO_SOURCES, mode: DEMO_MODE }),
+      const response = await postWithCsrf("/api/dossiers", {
+        claim: DEMO_CLAIM,
+        sources: DEMO_SOURCES,
+        mode: DEMO_MODE,
       });
 
       if (!response.ok) {

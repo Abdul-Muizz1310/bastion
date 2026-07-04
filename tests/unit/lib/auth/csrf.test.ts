@@ -23,11 +23,10 @@ describe("04-csrf: happy path", () => {
     expect(() => validateCsrf(token, token)).not.toThrow();
   });
 
-  it("GET requests are exempt from CSRF validation", () => {
-    // GET is exempt — validateCsrf is only called on mutating operations
-    // This is a structural guarantee, not a runtime check
-    expect(true).toBe(true);
-  });
+  // GET exemption is structural: the mutating route handler (POST /api/dossiers)
+  // only calls validateCsrf, and GET handlers never invoke it. That behavior is
+  // asserted at the integration level in the dossiers route test, not here — no
+  // tautological `expect(true)` placeholder.
 });
 
 describe("04-csrf: edge and failure cases", () => {

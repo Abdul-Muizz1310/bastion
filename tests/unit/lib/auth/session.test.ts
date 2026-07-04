@@ -10,6 +10,7 @@ vi.mock("@/lib/db/client", () => {
   const mockSelect = vi.fn();
   const mockDelete = vi.fn();
   const mockFrom = vi.fn();
+  const mockInnerJoin = vi.fn();
   const mockWhere = vi.fn();
   const mockLimit = vi.fn();
   const mockValues = vi.fn();
@@ -24,7 +25,10 @@ vi.mock("@/lib/db/client", () => {
   mockValues.mockResolvedValue(undefined);
 
   mockSelect.mockReturnValue({ from: mockFrom });
-  mockFrom.mockReturnValue({ where: mockWhere });
+  // `from` supports both a plain `.where()` (getSessionExpiry) and a chained
+  // `.innerJoin().where()` (getSession's single-round-trip join).
+  mockFrom.mockReturnValue({ where: mockWhere, innerJoin: mockInnerJoin });
+  mockInnerJoin.mockReturnValue({ where: mockWhere });
   mockWhere.mockReturnValue({ limit: mockLimit });
   mockLimit.mockResolvedValue([]);
 
@@ -38,6 +42,7 @@ vi.mock("@/lib/db/client", () => {
       mockSelect,
       mockDelete,
       mockFrom,
+      mockInnerJoin,
       mockWhere,
       mockLimit,
       mockValues,
@@ -100,7 +105,8 @@ describe("01-session: DB-dependent tests", () => {
     mocks.mockInsert.mockReturnValue({ values: mocks.mockValues });
     mocks.mockValues.mockResolvedValue(undefined);
     mocks.mockSelect.mockReturnValue({ from: mocks.mockFrom });
-    mocks.mockFrom.mockReturnValue({ where: mocks.mockWhere });
+    mocks.mockFrom.mockReturnValue({ where: mocks.mockWhere, innerJoin: mocks.mockInnerJoin });
+    mocks.mockInnerJoin.mockReturnValue({ where: mocks.mockWhere });
     mocks.mockWhere.mockReturnValue({ limit: mocks.mockLimit });
     mocks.mockLimit.mockResolvedValue([]);
     mocks.mockDelete.mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
@@ -128,14 +134,16 @@ describe("01-session: DB-dependent tests", () => {
     // Create a session first to get a valid cookie
     const created = await createSession("user-123", "127.0.0.1", "agent");
 
-    // Mock DB to return the session row when queried
+    // Single joined round-trip: session + user hydrated in one row.
     const futureExpiry = new Date(Date.now() + 86400000);
     mocks.mockLimit.mockResolvedValueOnce([
-      { id: created.sid, userId: "user-123", expiresAt: futureExpiry, ip: "127.0.0.1" },
-    ]);
-    // Mock user hydration
-    mocks.mockLimit.mockResolvedValueOnce([
-      { id: "user-123", email: "test@example.com", role: "admin", name: "Test User" },
+      {
+        expiresAt: futureExpiry,
+        userId: "user-123",
+        email: "test@example.com",
+        role: "admin",
+        name: "Test User",
+      },
     ]);
 
     const session = await getSession(created.cookie);
@@ -150,10 +158,13 @@ describe("01-session: DB-dependent tests", () => {
     const created = await createSession("user-456", null, null);
     const futureExpiry = new Date(Date.now() + 86400000);
     mocks.mockLimit.mockResolvedValueOnce([
-      { id: created.sid, userId: "user-456", expiresAt: futureExpiry },
-    ]);
-    mocks.mockLimit.mockResolvedValueOnce([
-      { id: "user-456", email: "editor@example.com", role: "editor", name: "Editor" },
+      {
+        expiresAt: futureExpiry,
+        userId: "user-456",
+        email: "editor@example.com",
+        role: "editor",
+        name: "Editor",
+      },
     ]);
 
     const session = await getSession(created.cookie);

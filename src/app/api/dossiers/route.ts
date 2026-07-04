@@ -2,6 +2,8 @@ import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { dossierCreateRequestSchema } from "@/features/dossier/schemas";
 import { createDossier } from "@/features/dossier/server/create";
+import { appendEvent } from "@/lib/audit/write";
+import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME, CsrfError, validateCsrf } from "@/lib/auth/csrf";
 import { AccessDeniedError } from "@/lib/auth/rbac";
 import { COOKIE_NAME, getSession } from "@/lib/auth/session";
 import { gatewayLimiter } from "@/lib/rate-limit";
@@ -19,6 +21,28 @@ export async function POST(request: NextRequest) {
   const session = await getSession(cookieStore.get(COOKIE_NAME)?.value);
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // 1b. CSRF double-submit — plain route handlers do not get Next's Server
+  // Action origin check, so this is the only defense beyond SameSite=Lax.
+  try {
+    validateCsrf(
+      cookieStore.get(CSRF_COOKIE_NAME)?.value,
+      request.headers.get(CSRF_HEADER_NAME) ?? undefined,
+    );
+  } catch (err) {
+    if (err instanceof CsrfError) {
+      await appendEvent({
+        actorId: session.user.id,
+        action: "security.csrf_failed",
+        entityType: "session",
+        entityId: session.sid,
+        service: "bastion",
+        metadata: { reason: err.message },
+      });
+      return NextResponse.json({ error: "CSRF validation failed" }, { status: 403 });
+    }
+    throw err;
   }
 
   // 2. Parse body

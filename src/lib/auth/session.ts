@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { sessions, users } from "@/lib/db/schema";
 import type { Role } from "@/lib/validation";
+import { sealSid, unsealSid } from "./seal";
 
 const COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? "bastion_session";
 const TTL_HOURS = Number(process.env.SESSION_TTL_HOURS ?? "24");
@@ -47,28 +48,6 @@ function getCookieOptions() {
   };
 }
 
-function sealSid(sid: string): string {
-  // Simple HMAC-based seal using IRON_SESSION_PASSWORD
-  const hmac = crypto.createHmac("sha256", getPassword());
-  hmac.update(sid);
-  const sig = hmac.digest("base64url");
-  return `${sid}.${sig}`;
-}
-
-function unsealSid(cookie: string): string | null {
-  const dotIndex = cookie.lastIndexOf(".");
-  if (dotIndex === -1) return null;
-  const sid = cookie.slice(0, dotIndex);
-  const sig = cookie.slice(dotIndex + 1);
-  const hmac = crypto.createHmac("sha256", getPassword());
-  hmac.update(sid);
-  const expected = hmac.digest("base64url");
-  const sigBuf = Buffer.from(sig, "base64url");
-  const expBuf = Buffer.from(expected, "base64url");
-  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) return null;
-  return sid;
-}
-
 export async function createSession(
   userId: string,
   ip: string | null,
@@ -110,32 +89,40 @@ export async function getSession(
   if (!sid) return null;
 
   const db = getDb();
-  const rows = await db.select().from(sessions).where(eq(sessions.id, sid)).limit(1);
+  // Single round-trip: join sessions -> users and hydrate in one query. An
+  // inner join naturally returns no row if the session is missing OR its user
+  // row is gone, so both map to "return null".
+  const rows = await db
+    .select({
+      expiresAt: sessions.expiresAt,
+      userId: users.id,
+      email: users.email,
+      role: users.role,
+      name: users.name,
+    })
+    .from(sessions)
+    .innerJoin(users, eq(users.id, sessions.userId))
+    .where(eq(sessions.id, sid))
+    .limit(1);
 
   if (rows.length === 0) return null;
 
-  const session = rows[0];
+  const row = rows[0];
 
   // Check expiry
-  if (session.expiresAt < new Date()) {
+  if (row.expiresAt < new Date()) {
     // Clean up expired session
     await db.delete(sessions).where(eq(sessions.id, sid));
     return null;
   }
 
-  // Hydrate user
-  const userRows = await db.select().from(users).where(eq(users.id, session.userId)).limit(1);
-
-  if (userRows.length === 0) return null;
-
-  const user = userRows[0];
   return {
     sid,
     user: {
-      id: user.id,
-      email: user.email,
-      role: user.role as Role,
-      name: user.name,
+      id: row.userId,
+      email: row.email,
+      role: row.role as Role,
+      name: row.name,
     },
   };
 }

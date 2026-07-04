@@ -58,6 +58,27 @@ vi.mock("@/lib/rate-limit", () => ({
   createRateLimiter: vi.fn(),
 }));
 
+// Mock CSRF — validateCsrf passes by default; individual tests can make it throw.
+const mockValidateCsrf = vi.fn();
+class MockCsrfError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CsrfError";
+  }
+}
+vi.mock("@/lib/auth/csrf", () => ({
+  validateCsrf: (...args: unknown[]) => mockValidateCsrf(...args),
+  CsrfError: MockCsrfError,
+  CSRF_COOKIE_NAME: "bastion_csrf",
+  CSRF_HEADER_NAME: "x-csrf-token",
+}));
+
+// Mock audit write (CSRF-failure path logs a security event)
+const mockAppendEvent = vi.fn().mockResolvedValue(1);
+vi.mock("@/lib/audit/write", () => ({
+  appendEvent: (...args: unknown[]) => mockAppendEvent(...args),
+}));
+
 function makeRequest(body: unknown, headers: Record<string, string> = {}): any {
   return {
     method: "POST",
@@ -210,5 +231,28 @@ describe("16-dossier-route: POST /api/dossiers", () => {
     const res = await POST(makeRequest({ claim: "t", sources: ["hackernews"] }));
     const body = (res as any)._jsonBody;
     expect(body.stream_url).toContain(body.dossier_id);
+  });
+
+  it("valid request passes the CSRF cookie + header to validateCsrf", async () => {
+    const { POST } = await import("@/app/api/dossiers/route");
+    await POST(
+      makeRequest({ claim: "t", sources: ["hackernews"] }, { "x-csrf-token": "tok-123" }),
+    );
+    // cookieStore.get(CSRF_COOKIE_NAME).value is "valid-cookie" per primeAuth.
+    expect(mockValidateCsrf).toHaveBeenCalledWith("valid-cookie", "tok-123");
+  });
+
+  it("CSRF failure returns 403 and never creates a dossier", async () => {
+    mockValidateCsrf.mockImplementationOnce(() => {
+      throw new MockCsrfError("CSRF token mismatch");
+    });
+    const { POST } = await import("@/app/api/dossiers/route");
+    const res = await POST(makeRequest({ claim: "t", sources: ["hackernews"] }));
+    expect(res.status).toBe(403);
+    expect((res as any)._jsonBody).toEqual({ error: "CSRF validation failed" });
+    expect(mockCreateDossier).not.toHaveBeenCalled();
+    expect(mockAppendEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "security.csrf_failed" }),
+    );
   });
 });

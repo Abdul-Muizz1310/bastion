@@ -7,6 +7,7 @@ import {
   type DossierMode,
   dossierCreateResponseSchema,
 } from "@/features/dossier/schemas";
+import { postWithCsrf } from "@/lib/csrf-client";
 
 const AVAILABLE_SOURCES = [
   { id: "hackernews", label: "hackernews" },
@@ -53,11 +54,7 @@ export function DossierPrompt({ canRun, roleLabel }: Props) {
 
     setSubmitting(true);
     try {
-      const response = await fetch("/api/dossiers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claim: claim.trim(), sources, mode }),
-      });
+      const response = await postWithCsrf("/api/dossiers", { claim: claim.trim(), sources, mode });
 
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));

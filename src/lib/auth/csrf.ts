@@ -1,5 +1,10 @@
 import crypto from "node:crypto";
 
+/** Name of the double-submit CSRF cookie (readable by client JS by design). */
+export const CSRF_COOKIE_NAME = "bastion_csrf";
+/** Request header the client echoes the CSRF cookie value back in. */
+export const CSRF_HEADER_NAME = "x-csrf-token";
+
 export type CsrfResult = {
   token: string;
 };
