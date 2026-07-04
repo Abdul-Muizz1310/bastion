@@ -1,3 +1,4 @@
+import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import { insertUserSchema } from "@/lib/validation";
 import { events, magicLinks, sessions, users } from "@/lib/db/schema";
@@ -54,23 +55,16 @@ describe("00-schema: Drizzle schema", () => {
 });
 
 describe("00-schema: table structure validation", () => {
-  it("events table defines 4 indexes (integration: migration SQL check)", () => {
-    // The schema.ts events table has 4 indexes defined in its second argument
-    // We verify by checking the config extracted from the table definition
-    const _config = (events as unknown as { _: { config: unknown } })?._ ?? {};
-    // drizzle-orm stores indexes on the table symbol. We verify structurally by
-    // re-reading the schema source: it has 4 index(...) calls.
-    // For a unit test, we confirm the table has the expected columns that are indexed.
-    const cols = Object.keys(events);
-    expect(cols).toContain("entityType");
-    expect(cols).toContain("entityId");
-    expect(cols).toContain("createdAt");
-    expect(cols).toContain("service");
-    expect(cols).toContain("requestId");
-    // These 5 columns cover the 4 indexes:
-    // events_entity_idx(entityType, entityId, createdAt), events_time_idx(createdAt),
-    // events_service_idx(service, createdAt), events_request_idx(requestId)
-    expect(true).toBe(true);
+  it("events table defines exactly 4 indexes", () => {
+    // Read the real index config drizzle extracts from the table definition,
+    // not a stand-in assertion: events_entity_idx, events_time_idx,
+    // events_service_idx, events_request_idx.
+    const { indexes } = getTableConfig(events);
+    expect(indexes).toHaveLength(4);
+    const indexed = getTableConfig(events).columns.map((c) => c.name);
+    expect(indexed).toEqual(
+      expect.arrayContaining(["entity_type", "entity_id", "created_at", "service", "request_id"]),
+    );
   });
 
   it("migration SQL applies cleanly to empty database (integration)", () => {

@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { appendEvent } from "@/lib/audit/write";
 import { withRole } from "@/lib/auth/rbac";
 import { getDb } from "@/lib/db/client";
-import { dossierEvents, dossiers } from "@/lib/db/schema";
+import { dossierEvents, dossiers, evidenceItems } from "@/lib/db/schema";
 import type { Role } from "@/lib/validation";
 import type { DossierCreateRequest, DossierCreateResponse, DossierStep } from "../schemas";
 import { startDossierRun } from "./pipeline";
@@ -64,7 +64,7 @@ export async function createDossier(
 export async function runPipeline(
   dossierId: string,
   requestId: string,
-  _input: DossierCreateRequest,
+  input: DossierCreateRequest,
   actor: { id: string; role: Role },
 ): Promise<void> {
   const db = getDb();
@@ -75,8 +75,32 @@ export async function runPipeline(
     const result = await startDossierRun({
       userId: actor.id,
       role: actor.role,
+      claim: input.claim,
+      sources: input.sources,
+      mode: input.mode,
       requestId,
     });
+
+    // Persist each sealed source item as an evidence_items row so the verify
+    // endpoint can later re-check every signature. Upsert-on-conflict so a
+    // re-run of the same dossier does not violate the (dossier_id, stable_id)
+    // uniqueness constraint.
+    for (const ev of result.evidence ?? []) {
+      await db
+        .insert(evidenceItems)
+        .values({
+          dossierId,
+          source: ev.source,
+          stableId: ev.stableId,
+          url: ev.url,
+          title: ev.title,
+          certificateId: ev.certificateId,
+          contentHash: ev.contentHash,
+        })
+        .onConflictDoNothing({
+          target: [evidenceItems.dossierId, evidenceItems.stableId],
+        });
+    }
 
     // Persist every step as a dossier_events row. Map the legacy step names
     // (magpie/inkprint/paper-trail/slowquery/audit) to the dossier vocabulary.

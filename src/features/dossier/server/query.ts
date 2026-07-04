@@ -23,6 +23,27 @@ export async function getDossier(id: string): Promise<Dossier | null> {
   return rows[0] ?? null;
 }
 
+/**
+ * Narrow status projection for the SSE poll loop — selects only the columns the
+ * stream reports on, avoiding a full `SELECT *` on every poll tick.
+ */
+export async function getDossierStatus(
+  id: string,
+): Promise<Pick<Dossier, "status" | "verdict" | "confidence"> | null> {
+  if (!isValidUuid(id)) return null;
+  const db = getDb();
+  const rows = await db
+    .select({
+      status: dossiers.status,
+      verdict: dossiers.verdict,
+      confidence: dossiers.confidence,
+    })
+    .from(dossiers)
+    .where(eq(dossiers.id, id))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 export async function listDossierEvents(
   dossierId: string,
   sinceAt?: Date,

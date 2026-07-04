@@ -18,13 +18,3 @@ export function getDb() {
   }
   return _db;
 }
-
-export function getRawSql() {
-  if (!_sql) {
-    if (!connectionString) {
-      throw new Error("DATABASE_URL is not set");
-    }
-    _sql = postgres(connectionString, { max: 10 });
-  }
-  return _sql;
-}

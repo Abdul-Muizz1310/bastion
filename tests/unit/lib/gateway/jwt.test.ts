@@ -5,7 +5,8 @@ import { parseRequestId, resolveService } from "@/lib/gateway/jwt";
 describe("09-gateway: service resolution", () => {
   it("resolveService returns correct backend URL for known service", () => {
     const result = resolveService("paper-trail");
-    expect(result.backendUrl).toBe("https://paper-trail-backend.onrender.com");
+    // Verified-live Render host (the bare slug now serves a stranger's app).
+    expect(result.backendUrl).toBe("https://paper-trail-backend-7h27.onrender.com");
   });
 
   it("resolveService throws for unknown service ID", () => {

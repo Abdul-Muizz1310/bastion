@@ -1,8 +1,16 @@
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
-import { getDossier, listDossierEvents } from "@/features/dossier/server/query";
+import { getDossier, getDossierStatus, listDossierEvents } from "@/features/dossier/server/query";
 import { COOKIE_NAME, getSession } from "@/lib/auth/session";
 import type { Dossier, DossierEvent as DossierEventRow } from "@/lib/db/schema";
+
+// The SSE loop can run up to maxIterations * pollIntervalMs; keep this route's
+// function budget above that so the platform never severs the stream before it
+// emits its clean `done`/`timeout` event. Vercel Hobby defaults to a low cap.
+export const maxDuration = 60;
+
+/** Narrow projection the poll loop needs — avoids re-selecting the whole row. */
+export type DossierStatusRow = Pick<Dossier, "status" | "verdict" | "confidence">;
 
 /**
  * Format a single SSE event. Pure — no I/O.
@@ -19,7 +27,7 @@ export type StreamConfig = {
 };
 
 export type StreamDeps = {
-  getDossierFn: (id: string) => Promise<Dossier | null>;
+  getDossierFn: (id: string) => Promise<DossierStatusRow | null>;
   listEventsFn: (id: string, sinceAt?: Date) => Promise<DossierEventRow[]>;
 };
 
@@ -29,13 +37,15 @@ export type StreamDeps = {
  */
 export async function* streamDossierEvents(
   dossierId: string,
-  initialDossier: Dossier,
+  initialDossier: DossierStatusRow,
   deps: StreamDeps,
   config: StreamConfig = {},
 ): AsyncGenerator<string, void, unknown> {
-  const pollIntervalMs = config.pollIntervalMs ?? 1000;
+  // 2s poll (was 1s) roughly halves steady-state DB load per open client; 30
+  // iterations keeps the worst-case stream (~60s) within `maxDuration`.
+  const pollIntervalMs = config.pollIntervalMs ?? 2000;
   const heartbeatIntervalMs = config.heartbeatIntervalMs ?? 15_000;
-  const maxIterations = config.maxIterations ?? 180;
+  const maxIterations = config.maxIterations ?? 30;
   const sleep = config.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
 
   let lastSeenAt = new Date(0);
@@ -113,7 +123,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     async start(controller) {
       try {
         for await (const chunk of streamDossierEvents(id, dossier, {
-          getDossierFn: getDossier,
+          getDossierFn: getDossierStatus,
           listEventsFn: listDossierEvents,
         })) {
           controller.enqueue(encoder.encode(chunk));

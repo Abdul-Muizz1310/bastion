@@ -280,6 +280,51 @@ describe("16-dossier-create: runPipeline status transitions", () => {
     expect(statusUpdates).toContain("failed");
   });
 
+  it("persists sealed evidence rows carrying the inkprint certificate id", async () => {
+    const mockOnConflict = vi.fn().mockResolvedValue(undefined);
+    // Evidence inserts chain `.values(...).onConflictDoNothing(...)`; other
+    // inserts just `await .values(...)` (awaiting the object is harmless).
+    mocks.mockValues.mockReturnValue({ onConflictDoNothing: mockOnConflict });
+
+    mockStartDossierRun.mockResolvedValueOnce({
+      runId: "r",
+      requestId: "req-1",
+      steps: [
+        { step: "magpie", status: "ok", data: {} },
+        { step: "inkprint", status: "ok", data: {} },
+      ],
+      artifacts: [],
+      timeline: [
+        { step: "magpie", timestamp: new Date(), latencyMs: 1 },
+        { step: "inkprint", timestamp: new Date(), latencyMs: 1 },
+      ],
+      evidence: [
+        {
+          source: "hackernews",
+          stableId: "hn-1",
+          url: "https://example.com/1",
+          title: "A headline",
+          certificateId: "cert-hn-1",
+          contentHash: "hash-1",
+        },
+      ],
+    });
+
+    await runPipeline("dossier-ev", "req-1", validInput, adminActor);
+
+    const evidenceInsert = mocks.mockValues.mock.calls.find(
+      (call) => (call[0] as { certificateId?: string })?.certificateId !== undefined,
+    );
+    expect(evidenceInsert?.[0]).toMatchObject({
+      dossierId: "dossier-ev",
+      source: "hackernews",
+      stableId: "hn-1",
+      certificateId: "cert-hn-1",
+      contentHash: "hash-1",
+    });
+    expect(mockOnConflict).toHaveBeenCalled();
+  });
+
   it("step names are mapped from pipeline vocabulary (magpie→gather, etc.)", async () => {
     mockStartDossierRun.mockResolvedValueOnce({
       runId: "r",

@@ -48,25 +48,4 @@ describe("db module", () => {
     const db2 = getDb();
     expect(db1).toBe(db2);
   });
-
-  it("getRawSql throws when DATABASE_URL is not set", async () => {
-    delete process.env.DATABASE_URL;
-    const { getRawSql } = await import("@/lib/db/client");
-    expect(() => getRawSql()).toThrow("DATABASE_URL is not set");
-  });
-
-  it("getRawSql returns sql instance when DATABASE_URL is set", async () => {
-    process.env.DATABASE_URL = "postgresql://localhost/test";
-    const { getRawSql } = await import("@/lib/db/client");
-    const sql = getRawSql();
-    expect(sql).toBeDefined();
-  });
-
-  it("getRawSql reuses existing connection from getDb", async () => {
-    process.env.DATABASE_URL = "postgresql://localhost/test";
-    const { getDb, getRawSql } = await import("@/lib/db/client");
-    getDb(); // creates _sql and _db
-    const sql = getRawSql(); // should reuse _sql
-    expect(sql).toBeDefined();
-  });
 });
