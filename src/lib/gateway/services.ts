@@ -20,7 +20,7 @@ export const SERVICES: Service[] = [
     // Verified-live Render host. The bare `paper-trail-backend.onrender.com`
     // slug now serves an unrelated app, so it must never be used here.
     backendUrl:
-      process.env.PAPER_TRAIL_BACKEND_URL ?? "https://paper-trail-backend-7h27.onrender.com",
+      process.env.PAPER_TRAIL_BACKEND_URL ?? "https://paper-trail-backend-jjpf.onrender.com",
     // Verified-live Vercel host (recovered from the dashboard 2026-07-04). The
     // bare `paper-trail-frontend.vercel.app` slug serves an unrelated app.
     frontendUrl: process.env.PAPER_TRAIL_FRONTEND_URL ?? "https://paper-trail-frontend-sable.vercel.app",
@@ -58,7 +58,7 @@ export const SERVICES: Service[] = [
     name: "Magpie",
     role: "YAML scrapers that self-heal via LLM + PR",
     repoUrl: "https://github.com/Abdul-Muizz1310/magpie-backend",
-    backendUrl: "https://magpie-backend-izzu.onrender.com",
+    backendUrl: "https://magpie-backend-t4bb.onrender.com",
     frontendUrl: "https://magpie-frontend-three.vercel.app",
     healthPath: "/health",
     versionPath: "/version",

@@ -6,7 +6,7 @@ describe("09-gateway: service resolution", () => {
   it("resolveService returns correct backend URL for known service", () => {
     const result = resolveService("paper-trail");
     // Verified-live Render host (the bare slug now serves a stranger's app).
-    expect(result.backendUrl).toBe("https://paper-trail-backend-7h27.onrender.com");
+    expect(result.backendUrl).toBe("https://paper-trail-backend-jjpf.onrender.com");
   });
 
   it("resolveService throws for unknown service ID", () => {
