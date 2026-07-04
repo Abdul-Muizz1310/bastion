@@ -4,9 +4,11 @@ Scaffolded in Block 13. Not run by the default `pnpm test` (unit suite only).
 
 ## Activate
 
+`@playwright/test` is a committed devDependency, so `pnpm install` already provides
+the runner. You only need the browser binaries:
+
 ```bash
-pnpm add -D @playwright/test
-npx playwright install chromium
+pnpm exec playwright install chromium
 ```
 
 ## Run

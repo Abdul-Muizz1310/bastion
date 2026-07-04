@@ -1,8 +1,10 @@
-# 01 — iron-session Signed Cookies
+# 01 — HMAC-Sealed Session Cookies
 
 ## Goal
 
-Implement session management using iron-session. Sessions are stored in the database (`sessions` table) but the cookie itself contains only an opaque `{sid}` — never the user object. The cookie is encrypted and signed by iron-session using `IRON_SESSION_PASSWORD`. Session lookup hydrates the full user from the DB on every request.
+Implement session management with an HMAC-sealed cookie. Sessions are stored in the database (`sessions` table) but the cookie itself contains only an opaque `{sid}` — never the user object. The cookie is sealed (signed) with a keyed `HMAC-SHA256` over the `sid`, using the secret in `IRON_SESSION_PASSWORD`, and verified in constant time on every request. This is a *signing* scheme (integrity), not encryption — the payload is only an opaque random `sid` carrying no PII, so confidentiality is not required. The seal/unseal primitive is owned by a single module (`src/lib/auth/seal.ts`) and shared by both the session layer and the route-gating proxy so the crypto can never drift between copies. Session lookup hydrates the full user from the DB on every request.
+
+> Note: the secret env var retains the historical name `IRON_SESSION_PASSWORD`. An earlier draft of this spec planned to use the `iron-session` library; the shipped implementation is the hand-rolled HMAC seal described above (see `src/lib/auth/seal.ts`), and `iron-session` is **not** a dependency.
 
 ## Inputs / Outputs / Invariants
 
@@ -26,7 +28,7 @@ Implement session management using iron-session. Sessions are stored in the data
 
 ### Edge / failure cases
 7. `getSession` with no cookie returns `null`.
-8. `getSession` with a tampered/invalid cookie returns `null` (iron-session decryption fails).
+8. `getSession` with a tampered/invalid cookie returns `null` (HMAC verification fails).
 9. `getSession` with a valid cookie but expired `expiresAt` returns `null` and deletes the stale DB row.
 10. `getSession` with a valid cookie but no matching DB row returns `null` (session was destroyed server-side).
 11. `createSession` with `IRON_SESSION_PASSWORD` shorter than 32 chars throws at startup.

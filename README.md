@@ -11,7 +11,7 @@
 ![drizzle](https://img.shields.io/badge/Drizzle-ORM-c5f74f?style=flat-square)
 ![neon](https://img.shields.io/badge/Neon-Postgres-00e599?style=flat-square&logo=postgresql&logoColor=white)
 ![upstash](https://img.shields.io/badge/Upstash-Redis-dc382d?style=flat-square)
-![tests](https://img.shields.io/badge/tests-494%20vitest-6e9f18?style=flat-square)
+![tests](https://img.shields.io/badge/tests-507%20vitest-6e9f18?style=flat-square)
 ![vercel](https://img.shields.io/badge/Vercel-deployed-000000?style=flat-square&logo=vercel&logoColor=white)
 [![ci](https://github.com/Abdul-Muizz1310/bastion/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdul-Muizz1310/bastion/actions/workflows/ci.yml)
 ![license](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)
@@ -41,7 +41,7 @@ It is **not** a landing page. It is a real control plane with real auth, real RB
 
 ## ✨ Features
 
-- 🔐 Magic link authentication via Resend + iron-session HMAC-sealed cookies
+- 🔐 Magic link authentication via Resend + HMAC-sealed session cookies
 - 👥 3-tier RBAC (admin / editor / viewer) enforced in middleware + `withRole()`
 - 📡 Service registry with live health checks for 5 downstream backends
 - 🌉 API gateway with Ed25519 JWT injection via jose
@@ -50,7 +50,7 @@ It is **not** a landing page. It is a real control plane with real auth, real RB
 - 🎬 Integrated 5-step demo runner (scrape → sign → debate → measure → audit)
 - 🛡️ 11-item security checklist (RBAC, CSRF double-submit, rate limiting, CSP, httpOnly, no PII in cookies)
 - ⏱️ Rate limiting via Upstash Redis sliding window
-- 🧪 494 unit tests (Vitest), 87% line coverage
+- 🧪 507 unit tests (Vitest), 85% line coverage
 - 🚀 Deployed on Vercel
 
 ---
@@ -69,7 +69,7 @@ flowchart TD
     Gateway --> S4[magpie-backend]
     Gateway --> S5[bastion-api]
     Actions --> Drizzle[Drizzle ORM]
-    Drizzle --> Neon[(Neon Postgres<br/>4 tables)]
+    Drizzle --> Neon[(Neon Postgres<br/>7 tables)]
     MW --> Upstash[(Upstash Redis<br/>sliding window)]
 ```
 
@@ -88,7 +88,7 @@ sequenceDiagram
     User->>Bastion: click link → /auth/callback?token=xxx
     Bastion->>DB: SELECT magic_link WHERE token = xxx AND NOT expired
     Bastion->>DB: UPSERT user + INSERT session
-    Bastion->>User: Set-Cookie: iron-session (HMAC-sealed, httpOnly)
+    Bastion->>User: Set-Cookie: session (HMAC-sealed sid, httpOnly)
     Note over User,Bastion: subsequent requests carry sealed cookie
 ```
 
@@ -158,12 +158,12 @@ src/
 |---|---|
 | **Framework** | Next.js 16 (App Router, Server Actions — no separate backend) |
 | **UI** | React 19 · TypeScript strict |
-| **Auth** | iron-session HMAC-sealed cookies · magic link via Resend |
+| **Auth** | HMAC-sealed session cookies · magic link via Resend |
 | **RBAC** | 3 roles (admin / editor / viewer) · middleware + `withRole()` |
-| **Database** | Neon Postgres via Drizzle ORM (4 tables: users, sessions, magic_links, events) |
+| **Database** | Neon Postgres via Drizzle ORM (7 tables: users, sessions, magic_links, events, dossiers, evidence_items, dossier_events) |
 | **Rate limiting** | Upstash Redis sliding window |
 | **JWT** | Ed25519 via jose |
-| **Testing** | Vitest (494 unit tests, 87% coverage) |
+| **Testing** | Vitest (507 unit tests, 85% coverage) |
 | **Lint / Format** | Biome |
 | **Hosting** | Vercel |
 
@@ -177,8 +177,8 @@ src/
 | 2 | CSRF | Double-submit cookie pattern |
 | 3 | Rate limiting | Upstash Redis sliding window on auth + API routes |
 | 4 | CSP | Content-Security-Policy headers via middleware |
-| 5 | httpOnly cookies | iron-session sealed, httpOnly, secure, sameSite=lax |
-| 6 | No PII in cookies | Session cookie contains only user ID + role, HMAC-sealed |
+| 5 | httpOnly cookies | HMAC-sealed, httpOnly, secure, sameSite=lax |
+| 6 | No PII in cookies | Session cookie contains only an opaque session id (`sid`) — no email, role, or name — HMAC-sealed |
 | 7 | Magic link expiry | Tokens expire after 15 minutes, single-use |
 | 8 | Append-only audit | `INSERT`-only DB grant — no `UPDATE`/`DELETE` on events |
 | 9 | JWT short-lived | Ed25519 tokens with 60s TTL |
@@ -227,8 +227,8 @@ pnpm test -- --run           # CI single-run
 
 | Metric | Value |
 |---|---|
-| **Unit tests** | 494 (Vitest) |
-| **Line coverage** | **87%** |
+| **Unit tests** | 507 (Vitest) |
+| **Line coverage** | **85%** |
 | **Methodology** | Red-first spec-TDD. Failing test before every feature. |
 
 ---

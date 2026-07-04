@@ -6,7 +6,7 @@ A portfolio landing page with links to five projects. Maybe a grid of cards, eac
 
 ## Why I built it differently
 
-Bastion is the control plane that proves the five services actually work together, not just independently. Instead of a static landing page, it is a full-stack Next.js 16 application with its own auth system (iron-session signed cookies, magic links via Resend), RBAC with three roles, an append-only audit log with time-travel replay, and an API gateway that mints Ed25519-signed JWTs to call downstream services.
+Bastion is the control plane that proves the five services actually work together, not just independently. Instead of a static landing page, it is a full-stack Next.js 16 application with its own auth system (HMAC-sealed session cookies, magic links via Resend), RBAC with three roles, an append-only audit log with time-travel replay, and an API gateway that mints Ed25519-signed JWTs to call downstream services.
 
 The integrated demo runs a cross-service workflow through the gateway — scrape, sign, debate, analyze, audit — proving distributed tracing and failure isolation across the entire platform. Every gateway call carries a unique `requestId` that threads through all five services and lands in the audit log, so you can trace a single request from browser click to downstream response.
 

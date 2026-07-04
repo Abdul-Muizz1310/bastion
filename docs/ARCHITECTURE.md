@@ -11,7 +11,7 @@ flowchart TD
     MW --> SA[Server Actions<br>auth, RBAC, CSRF, mutations]
     MW --> GW[Gateway Proxy<br>/api/proxy/service/path]
 
-    SA --> Session[iron-session<br>HMAC-sealed cookies]
+    SA --> Session[Session<br>HMAC-sealed cookies]
     SA --> Audit[appendEvent]
     SA --> RBAC[withRole]
 
@@ -39,7 +39,7 @@ flowchart TD
 | Proxy | Route-level auth gating, public path allowlist | `src/proxy.ts` |
 | Pages | UI rendering via React Server Components | `src/app/*/page.tsx` |
 | Server Actions | Auth, RBAC, CSRF enforcement, all mutations | `src/app/actions.ts`, `src/lib/auth/rbac.ts`, `src/lib/auth/csrf.ts` |
-| Session | HMAC-sealed cookie with DB-backed validation | `src/lib/auth/session.ts` |
+| Session | HMAC-sealed cookie with DB-backed validation; seal primitive shared with proxy | `src/lib/auth/session.ts`, `src/lib/auth/seal.ts` |
 | Auth | Magic link request/callback, demo-mode bypass | `src/lib/auth/magic-link.ts`, `src/lib/auth/return-to.ts` |
 | RBAC | `withRole()` defense-in-depth wrapper | `src/lib/auth/rbac.ts` |
 | CSRF | Double-submit token generation and verification | `src/lib/auth/csrf.ts` |
@@ -54,12 +54,16 @@ flowchart TD
 
 ## Database schema
 
-4 tables on Neon Postgres (`shadow-admin` branch):
+7 tables on Neon Postgres (`shadow-admin` branch): `users`, `sessions`,
+`magic_links`, `events`, `dossiers`, `evidence_items`, `dossier_events`.
 
 ```mermaid
 erDiagram
     users ||--o{ sessions : "has"
     users ||--o{ events : "actor"
+    users ||--o{ dossiers : "owns"
+    dossiers ||--o{ evidence_items : "seals"
+    dossiers ||--o{ dossier_events : "emits"
 
     users {
         uuid id PK
@@ -97,6 +101,40 @@ erDiagram
         jsonb metadata
         timestamp createdAt
     }
+
+    dossiers {
+        uuid id PK
+        uuid userId FK
+        text claim
+        text sources "array"
+        enum mode "rapid | standard | adversarial"
+        enum status "pending | running | succeeded | failed"
+        enum verdict "TRUE | FALSE | INCONCLUSIVE"
+        numeric confidence
+        text requestId
+        uuid envelopeId
+    }
+
+    evidence_items {
+        uuid id PK
+        uuid dossierId FK
+        text source
+        text stableId
+        text url
+        text title
+        uuid certificateId "inkprint cert"
+        text contentHash
+    }
+
+    dossier_events {
+        bigserial id PK
+        uuid dossierId FK
+        enum step "gather | seal | adjudicate | measure | envelope | record"
+        enum status "started | ok | error"
+        integer latencyMs
+        jsonb metadata
+        timestamp at
+    }
 ```
 
 ## Auth flow
@@ -116,7 +154,7 @@ sequenceDiagram
     S->>DB: SELECT magic_links WHERE token AND NOT used AND NOT expired
     S->>DB: UPDATE magic_links SET usedAt = now()
     S->>DB: UPSERT users, INSERT sessions
-    S->>B: Set-Cookie (iron-session sealed {sid})
+    S->>B: Set-Cookie (HMAC-sealed {sid})
     B->>S: Subsequent requests carry cookie
     S->>DB: SELECT sessions WHERE id = sid AND expiresAt > now()
 ```
@@ -140,7 +178,7 @@ flowchart LR
 1. Cookie contains only `{sid}` — no PII, no role, no email
 2. Middleware gates every non-public route before page rendering
 3. `withRole()` enforces authorization inside Server Actions (defense in depth)
-4. CSRF double-submit token required on all mutations
+4. CSRF double-submit token required on the mutating route handler (`POST /api/dossiers`, minted at `GET /api/csrf`); Server Actions additionally rely on Next's built-in same-origin check
 5. Rate limiting via Upstash sliding window (10/min auth, 60/min gateway)
 6. `events` table has INSERT-only grant — no UPDATE, no DELETE at DB level
 7. Gateway JWTs are Ed25519-signed with 60-second TTL
