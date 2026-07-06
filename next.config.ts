@@ -1,6 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // rbac.ts guards pages with forbidden()/unauthorized() from next/navigation;
+  // without this flag those calls throw a server error instead of rendering
+  // the styled forbidden.tsx / unauthorized.tsx interrupt pages.
+  experimental: {
+    authInterrupts: true,
+  },
   async headers() {
     return [
       {
