@@ -182,16 +182,29 @@ describe("07-replay: edge and failure cases", () => {
     expect(result.message).toBe("No audit data yet.");
   });
 
-  it("rapid queries are debounced (component test)", () => {
-    // Structural: debouncing is implemented on the client-side component
-    // (the slider's onChange handler). The server-side getTimeTravelState
-    // is a pure function that executes immediately when called.
-    // We verify the function is callable and returns promptly.
-    expect(typeof import("@/lib/audit/replay").then).toBe("function");
+  it("case 10: one call issues exactly one DISTINCT ON round-trip (what debouncing throttles)", async () => {
+    // Debouncing on the client is only worth anything if each accepted call
+    // costs a single query. Behaviour asserted here; the debounce window
+    // itself is asserted in tests/unit/features/time-travel/controller.test.ts.
+    mocks.mockFrom.mockResolvedValueOnce([{ earliest: new Date("2026-01-01") }]);
+    mocks.mockExecute.mockResolvedValueOnce([]);
+
+    const { getTimeTravelState } = await import("@/lib/audit/replay");
+    await getTimeTravelState({ asOf: new Date("2026-01-05T00:00:00Z") });
+    expect(mocks.mockExecute).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("07-replay: security", () => {
+  let mocks: Record<string, Mock>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const dbMod = await import("@/lib/db/client");
+    mocks = (dbMod as unknown as { __mocks: Record<string, Mock> }).__mocks;
+    mocks.mockSelect.mockReturnValue({ from: mocks.mockFrom });
+  });
+
   it("/time-travel requires admin role (tested in RBAC spec)", async () => {
     // Structural: the time-travel page/route uses withRole(["admin"], ...)
     const { AccessDeniedError, withRole } = await import("@/lib/auth/rbac");
@@ -201,12 +214,22 @@ describe("07-replay: security", () => {
     );
   });
 
-  it("getTimeTravelState only performs SELECT queries (structural)", async () => {
-    // Structural: the replay module only uses db.select() and db.execute()
-    // for its DISTINCT ON query. It never calls db.insert, db.update, or db.delete.
+  it("case 12: the SQL it executes is a SELECT — no INSERT/UPDATE/DELETE/TRUNCATE", async () => {
+    mocks.mockFrom.mockResolvedValueOnce([{ earliest: new Date("2026-01-01") }]);
+    mocks.mockExecute.mockResolvedValueOnce([]);
+
     const { getTimeTravelState } = await import("@/lib/audit/replay");
-    expect(getTimeTravelState).toBeDefined();
-    // The function signature only accepts read options (asOf, service)
-    // There's no way to pass write operations through it.
+    await getTimeTravelState({ asOf: new Date("2026-01-05T00:00:00Z"), service: "bastion" });
+
+    const issued = mocks.mockExecute.mock.calls[0][0] as { queryChunks?: unknown[] };
+    const text = (issued.queryChunks ?? [])
+      .map((chunk) => {
+        const value = (chunk as { value?: unknown }).value;
+        return Array.isArray(value) ? value.join("") : "";
+      })
+      .join(" ");
+
+    expect(text).toMatch(/SELECT\s+DISTINCT\s+ON/i);
+    expect(text).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE)\b/i);
   });
 });

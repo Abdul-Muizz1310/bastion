@@ -106,12 +106,42 @@ describe("05-rate-limit: security", () => {
     expect(typeof limiter.check).toBe("function");
   });
 
-  it("rate limit events logged as security.rate_limited (integration)", async () => {
-    // Structural: pre-configured limiters are exported for auth, gateway, csrf
-    const rateLimitMod = await import("@/lib/rate-limit");
-    expect(rateLimitMod.authLimiter).toBeDefined();
-    expect(rateLimitMod.gatewayLimiter).toBeDefined();
-    expect(rateLimitMod.csrfLimiter).toBeDefined();
-    // The caller logs audit events when rate limiting occurs
+  it("authLimiter fails CLOSED without Redis — an outage must not open magic-link sends", async () => {
+    const { authLimiter } = await import("@/lib/rate-limit");
+    const result = await authLimiter.check("ip-1");
+    expect(result.success).toBe(false);
+    expect(result.limit).toBe(10);
+    expect(result.remaining).toBe(0);
+  });
+
+  it("gatewayLimiter fails OPEN without Redis — proxying degrades, it does not break", async () => {
+    const { gatewayLimiter } = await import("@/lib/rate-limit");
+    const result = await gatewayLimiter.check("sess-1");
+    expect(result.success).toBe(true);
+    expect(result.limit).toBe(60);
+  });
+
+  it("csrfLimiter throttles token minting at 30/min", async () => {
+    const { csrfLimiter } = await import("@/lib/rate-limit");
+    const result = await csrfLimiter.check("sess-1");
+    expect(result.limit).toBe(30);
+  });
+
+  it("warns the operator exactly once when Redis is not configured", async () => {
+    // Without this warning a deploy missing UPSTASH_* silently ships an
+    // unenforced "60/min gateway" limit (docs/ARCHITECTURE.md).
+    vi.resetModules();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const mod = await import("@/lib/rate-limit");
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0][0])).toMatch(/UPSTASH_REDIS_REST_URL/);
+      // Constructing more limiters must not repeat the warning.
+      mod.createRateLimiter({ max: 5, windowMs: 1_000 });
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+      vi.resetModules();
+    }
   });
 });

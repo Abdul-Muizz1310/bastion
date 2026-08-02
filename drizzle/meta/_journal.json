@@ -8,6 +8,13 @@
       "when": 1776492435543,
       "tag": "0000_colossal_mach_iv",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785639793316,
+      "tag": "0001_append_only_events",
+      "breakpoints": true
     }
   ]
 }

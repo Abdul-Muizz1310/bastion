@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { z } from "zod/v4";
 import type { DossierMode } from "@/features/dossier/schemas";
 import { appendEvent } from "@/lib/audit/write";
+import { withRole } from "@/lib/auth/rbac";
 import { callService } from "@/lib/gateway/client";
 import type { Role } from "@/lib/validation";
 
@@ -110,10 +111,9 @@ type StepContext = {
 };
 
 export async function startDossierRun(input: DossierRunInput): Promise<DossierRunResult> {
-  // Role check
-  if (input.role === "viewer") {
-    throw new Error("Viewer role cannot run dossiers");
-  }
+  // Authorization goes through withRole rather than an inline role comparison
+  // so the denial is audited (security.denied) like every other RBAC decision.
+  await withRole(["admin", "editor"], { id: input.userId, role: input.role }, "dossier.run");
 
   const runId = crypto.randomUUID();
   const requestId = input.requestId ?? crypto.randomUUID();

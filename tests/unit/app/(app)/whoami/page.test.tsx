@@ -53,9 +53,35 @@ describe("WhoamiPage", () => {
     // the previous static fake data must be gone
     expect(html).not.toContain("demo-admin@bastion.local");
     expect(html).not.toContain("a1b2c3d4");
-    // static security checklist is preserved
+    // the static security-posture list is preserved
     expect(html).toContain("httpOnly cookie");
     expect(html).toContain("HMAC-sealed SID");
+  });
+
+  it("labels the control list as a static inventory, not a verified live audit", async () => {
+    const html = renderToString(await WhoamiPage());
+    expect(html).toContain("security_posture");
+    expect(html).not.toContain("security_checklist");
+    expect(html).toContain("Static inventory");
+    expect(html).toContain("not a live probe");
+  });
+
+  it("does not stamp every control with a green check it never verified", async () => {
+    const html = renderToString(await WhoamiPage());
+    // The old panel rendered exactly this per item, regardless of any state.
+    expect(html).not.toContain('<span class="text-success">✓</span>');
+  });
+
+  it("names where each control actually lives instead of an unqualified claim", async () => {
+    const html = renderToString(await WhoamiPage());
+    // RBAC is not in the middleware (src/proxy.ts only authenticates).
+    expect(html).toContain("RBAC on page guards + Server Actions");
+    // CSRF covers the mutating route handlers, not Server Actions.
+    expect(html).toContain("CSRF double-submit on mutating API routes");
+    // Append-only is a real DB-level guarantee (drizzle/0001_append_only_events.sql).
+    expect(html).toContain("append-only events (DB triggers)");
+    // CSP is set in next.config.ts headers(), not in middleware.
+    expect(html).toContain("CSP + security headers (next.config.ts)");
   });
 
   it("reflects whatever role the session has — not a hardcoded admin", async () => {

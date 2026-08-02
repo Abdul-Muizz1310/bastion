@@ -36,12 +36,17 @@ describe("LoginForm", () => {
     expect(html).toContain("send magic link");
   });
 
-  it("renders demo role buttons when demoMode is true", () => {
+  it("spec 02 case 6: renders one demo button per role when demoMode is true", () => {
     const html = renderToString(createElement(LoginForm, { demoMode: true }));
-    expect(html).not.toContain("admin");
+    // docs/DEMO.md step 1 tells reviewers to click "admin", and /time-travel is
+    // admin-only — so all three roles must be reachable from the login page.
+    expect(html).toContain("admin");
     expect(html).toContain("editor");
     expect(html).toContain("viewer");
     expect(html).toContain("or sign in as");
+    const buttons = html.match(/<button/g) ?? [];
+    // 1 magic-link submit + 3 demo buttons
+    expect(buttons).toHaveLength(4);
   });
 
   it("does not render demo buttons when demoMode is false", () => {

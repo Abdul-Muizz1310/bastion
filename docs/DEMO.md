@@ -23,7 +23,7 @@ Open https://bastion-six.vercel.app in a browser.
 
 ## 2. Service Registry (30s)
 
-1. `/dashboard` shows 5 service cards with live health indicators
+1. `/dashboard` shows 5 service cards; 4 carry a live health probe, feathers is reported as CLI-only without a network call
 2. Green dots pulse for healthy services; red for cold/sleeping ones on Render free tier
 3. Click any card to drill into `/services/[id]` — health, version, repo link, backend/frontend URLs
 4. Feathers shows "CLI — see PyPI" since it's a CLI tool with no hosted backend
@@ -45,27 +45,30 @@ Open https://bastion-six.vercel.app in a browser.
 1. Navigate to `/audit`
 2. See all demo events with the same `request_id`
 3. Filter by service to isolate one service's events
-4. Note: append-only — INSERT only at DB level, no UPDATE or DELETE
+4. Note: append-only at the database level — `UPDATE`, `DELETE` and `TRUNCATE` on `events` are rejected by Postgres triggers, not merely avoided by the app
 
 ## 5. Time Travel (30s)
 
+Admin-only — sign in with the **admin** demo button to reach this page.
+
 1. Navigate to `/time-travel`
-2. Drag the slider to before the demo — events disappear
-3. Drag to after — events reappear
-4. Query: `DISTINCT ON (entity_type, entity_id) WHERE created_at <= $T`
+2. The page loads with the slider at "now" and lists the entities reconstructed at that moment
+3. Drag the slider left — after a 300 ms debounce it re-queries and the entity list shrinks; drag back to the right and the entities return
+4. Rewinding before the first event shows "No events before this time"
+5. Query: `DISTINCT ON (entity_type, entity_id) WHERE created_at <= $T`
 
 ## 6. Security (/whoami) (30s)
 
 1. Navigate to `/whoami`
 2. Show session info: role, expiry, cookie contents
 3. Cookie decoder proves only `{sid}` is stored — no PII
-4. Security checklist: 11 items all green
+4. Security posture: a static inventory of the 11 controls this build implements, each named with the layer it lives in. It is deliberately labelled as an inventory, not a live probe — the controls are asserted by the test suite, not by this panel
 5. Check response headers in DevTools: CSP, X-Frame-Options: DENY
 
 ## Talking points
 
 - **Full-stack Next.js 16** — Server Actions are the backend, no FE/BE split
 - **Production security patterns** — RBAC, CSRF, rate limiting, append-only audit
-- **Distributed tracing** — single request ID across 5 services
+- **Distributed tracing** — single request ID across the 4 HTTP-backed services (feathers is CLI-only and is never called by the pipeline)
 - **Ed25519 JWT gateway** — bastion signs, backends verify
 - **Time travel** — DISTINCT ON replay over immutable events

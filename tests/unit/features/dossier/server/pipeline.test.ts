@@ -71,10 +71,25 @@ describe("10-dossier: role enforcement", () => {
 
   it("viewer role cannot start dossier run", async () => {
     const { startDossierRun } = await import("@/features/dossier/server/pipeline");
-    await expect(
-      startDossierRun({ ...baseInput, role: "viewer" }),
-    ).rejects.toThrow("Viewer role cannot run dossiers");
+    const { AccessDeniedError } = await import("@/lib/auth/rbac");
+    await expect(startDossierRun({ ...baseInput, role: "viewer" })).rejects.toBeInstanceOf(
+      AccessDeniedError,
+    );
     expect(mockCallService).not.toHaveBeenCalled();
+  });
+
+  it("the denial goes through withRole so it lands in the audit log", async () => {
+    const { startDossierRun } = await import("@/features/dossier/server/pipeline");
+    const { appendEvent } = await import("@/lib/audit/write");
+    await expect(startDossierRun({ ...baseInput, role: "viewer" })).rejects.toThrow();
+    expect(appendEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "security.denied",
+        entityType: "rbac",
+        entityId: "dossier.run",
+        actorId: "user-1",
+      }),
+    );
   });
 });
 

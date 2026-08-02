@@ -107,7 +107,10 @@ export async function consumeMagicLink(token: string): Promise<AuthResult | null
   };
 }
 
-const DEMO_ALLOWED_ROLES: Role[] = ["viewer", "editor"];
+// Spec 02 case 6 / acceptance "Demo mode bypass works for all 3 roles":
+// /time-travel is admin-only and docs/DEMO.md step 1 tells reviewers to sign in
+// as admin, so admin must be reachable. Still gated behind DEMO_MODE=true.
+const DEMO_ALLOWED_ROLES: Role[] = ["admin", "editor", "viewer"];
 
 export async function demoSignIn(role: Role): Promise<AuthResult> {
   if (process.env.DEMO_MODE !== "true") {

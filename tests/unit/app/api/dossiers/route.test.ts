@@ -54,7 +54,6 @@ const mockRateLimitCheck = vi.fn();
 vi.mock("@/lib/rate-limit", () => ({
   gatewayLimiter: { check: (...args: unknown[]) => mockRateLimitCheck(...args) },
   authLimiter: { check: vi.fn() },
-  csrfLimiter: { check: vi.fn() },
   createRateLimiter: vi.fn(),
 }));
 

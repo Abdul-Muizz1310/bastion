@@ -37,8 +37,15 @@ Implement a time-travel view (`/time-travel`) that lets admins rewind the audit 
 
 ## Acceptance Criteria
 
-- [ ] `/time-travel` page with date-time slider
-- [ ] DISTINCT ON query reconstructs entity state at any T
-- [ ] Admin-only access
-- [ ] Debounced slider queries
-- [ ] All 12 test cases have passing tests
+- [x] `/time-travel` page with date-time slider
+      (`src/app/(app)/time-travel/page.tsx` seeds the first render, then
+      `src/features/time-travel/components/TimeTravelSlider.tsx` drives it)
+- [x] DISTINCT ON query reconstructs entity state at any T
+      (`src/lib/audit/replay.ts`, reached via the `loadTimeTravelState` Server Action)
+- [x] Admin-only access — `requireRole(["admin"])` on both the page (`time-travel.view`)
+      and the Server Action (`time-travel.query`)
+- [x] Debounced slider queries — `createQueryScheduler` in
+      `src/features/time-travel/controller.ts`, `DEBOUNCE_MS = 300`, latest-wins
+- [x] All 12 test cases have passing tests
+      (`tests/unit/lib/audit/replay.test.ts`, `tests/unit/features/time-travel/**`,
+      `tests/unit/app/(app)/time-travel/page.test.tsx`)

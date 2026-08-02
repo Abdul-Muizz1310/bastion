@@ -11,7 +11,7 @@
 ![drizzle](https://img.shields.io/badge/Drizzle-ORM-c5f74f?style=flat-square)
 ![neon](https://img.shields.io/badge/Neon-Postgres-00e599?style=flat-square&logo=postgresql&logoColor=white)
 ![upstash](https://img.shields.io/badge/Upstash-Redis-dc382d?style=flat-square)
-![tests](https://img.shields.io/badge/tests-507%20vitest-6e9f18?style=flat-square)
+![tests](https://img.shields.io/badge/tests-594%20vitest-6e9f18?style=flat-square)
 ![vercel](https://img.shields.io/badge/Vercel-deployed-000000?style=flat-square&logo=vercel&logoColor=white)
 [![ci](https://github.com/Abdul-Muizz1310/bastion/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdul-Muizz1310/bastion/actions/workflows/ci.yml)
 ![license](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)
@@ -42,15 +42,15 @@ It is **not** a landing page. It is a real control plane with real auth, real RB
 ## ✨ Features
 
 - 🔐 Magic link authentication via Resend + HMAC-sealed session cookies
-- 👥 3-tier RBAC (admin / editor / viewer) enforced in middleware + `withRole()`
-- 📡 Service registry with live health checks for 5 downstream backends
+- 👥 3-tier RBAC (admin / editor / viewer) enforced in page guards (`requireRole()`) and Server Actions (`withRole()`)
+- 📡 Service registry over 5 services — 4 probed with live health checks, feathers is CLI-only
 - 🌉 API gateway with Ed25519 JWT injection via jose
-- 📝 Append-only audit log — `INSERT`-only DB grant, no `UPDATE` or `DELETE`
-- ⏪ Time-travel replay via `DISTINCT ON` — reconstruct entity state at any past timestamp
+- 📝 Append-only audit log — `UPDATE`/`DELETE`/`TRUNCATE` on `events` are rejected by Postgres itself
+- ⏪ Time-travel replay via `DISTINCT ON` — debounced slider reconstructs entity state at any past timestamp
 - 🎬 Integrated 5-step demo runner (scrape → sign → debate → measure → audit)
-- 🛡️ 11-item security checklist (RBAC, CSRF double-submit, rate limiting, CSP, httpOnly, no PII in cookies)
+- 🛡️ 11-item security posture panel at `/whoami` (RBAC, CSRF double-submit, rate limiting, CSP, httpOnly, no PII in cookies)
 - ⏱️ Rate limiting via Upstash Redis sliding window
-- 🧪 507 unit tests (Vitest), 85% line coverage
+- 🧪 594 unit tests (Vitest), 87.81% line coverage
 - 🚀 Deployed on Vercel
 
 ---
@@ -59,9 +59,9 @@ It is **not** a landing page. It is a real control plane with real auth, real RB
 
 ```mermaid
 flowchart TD
-    Browser([Browser]) --> MW[Middleware<br/>route-level auth + RBAC + CSRF + rate limit]
-    MW --> Pages[Pages<br/>login · dashboard · audit · time-travel · run · whoami]
-    MW --> Actions[Server Actions<br/>auth · RBAC · gateway · demo]
+    Browser([Browser]) --> MW[Middleware<br/>route-level auth gating only]
+    MW --> Pages[Pages<br/>login · dashboard · audit · time-travel · run · whoami<br/>requireRole page guards]
+    MW --> Actions[Server Actions + route handlers<br/>withRole · CSRF · rate limit]
     Actions --> Gateway[API Gateway<br/>Ed25519 JWT injection]
     Gateway --> S1[inkprint-backend]
     Gateway --> S2[paper-trail-backend]
@@ -70,7 +70,7 @@ flowchart TD
     Gateway --> S5[bastion-api]
     Actions --> Drizzle[Drizzle ORM]
     Drizzle --> Neon[(Neon Postgres<br/>7 tables)]
-    MW --> Upstash[(Upstash Redis<br/>sliding window)]
+    Actions --> Upstash[(Upstash Redis<br/>sliding window)]
 ```
 
 ### 🔐 Auth flow
@@ -106,7 +106,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    Action[Any Server Action] -->|INSERT| Events[(events table<br/>append-only<br/>INSERT-only grant)]
+    Action[Any Server Action] -->|INSERT| Events[(events table<br/>append-only<br/>UPDATE/DELETE blocked in Postgres)]
     Events --> Query[SELECT DISTINCT ON entity_id<br/>WHERE timestamp <= T<br/>ORDER BY entity_id, timestamp DESC]
     Query --> Snapshot[Entity state<br/>reconstructed at time T]
 ```
@@ -131,20 +131,29 @@ src/
 │   │   ├── dossiers/[id]/page.tsx    # Signed dossier detail
 │   │   ├── services/[id]/page.tsx    # Per-service view
 │   │   └── whoami/page.tsx           # Current session info
+│   │   ├── forbidden.tsx             # Styled 403 interrupt page
+│   │   └── unauthorized.tsx          # Styled 401 interrupt page
 │   ├── (public)/                     # Login + magic-link callback
 │   │   ├── login/page.tsx
 │   │   └── auth/callback/route.ts
-│   └── api/                          # Route handlers (health, proxy, public-key, dossiers, status)
+│   └── api/                          # Route handlers
+│       ├── csrf/route.ts             # Double-submit token mint
+│       ├── dossiers/route.ts         # + [id]/verify, [id]/stream
+│       ├── health/ · status/         # Liveness + registry status
+│       ├── proxy/[service]/[...path] # Gateway proxy
+│       └── public-key/route.ts       # Ed25519 public key
 ├── lib/
 │   ├── auth/                         # session, magic-link, rbac, csrf, return-to
 │   ├── audit/                        # write (appendEvent), replay (time-travel)
 │   ├── gateway/                      # jwt (Ed25519), client (proxy), services
 │   ├── db/                           # Drizzle schema + Neon client
 │   ├── rate-limit/                   # Upstash sliding window
+│   ├── csrf-client.ts                # Browser-side CSRF fetch helper
 │   ├── registry.ts                   # Service manifest + health checks
 │   └── validation.ts                 # Shared Zod schemas
 ├── features/
 │   ├── dossier/                      # Cross-service dossier pipeline (server + components)
+│   ├── time-travel/                  # Replay controller, slider, Server Action
 │   └── audit/                        # Audit query
 └── components/
     └── terminal/                     # AppNav, PageFrame, StatusBar, TerminalWindow
@@ -159,11 +168,11 @@ src/
 | **Framework** | Next.js 16 (App Router, Server Actions — no separate backend) |
 | **UI** | React 19 · TypeScript strict |
 | **Auth** | HMAC-sealed session cookies · magic link via Resend |
-| **RBAC** | 3 roles (admin / editor / viewer) · middleware + `withRole()` |
+| **RBAC** | 3 roles (admin / editor / viewer) · `requireRole()` page guards + `withRole()` in Server Actions |
 | **Database** | Neon Postgres via Drizzle ORM (7 tables: users, sessions, magic_links, events, dossiers, evidence_items, dossier_events) |
 | **Rate limiting** | Upstash Redis sliding window |
 | **JWT** | Ed25519 via jose |
-| **Testing** | Vitest (507 unit tests, 85% coverage) |
+| **Testing** | Vitest (594 unit tests, 87.81% coverage) |
 | **Lint / Format** | Biome |
 | **Hosting** | Vercel |
 
@@ -173,14 +182,14 @@ src/
 
 | # | Control | Implementation |
 |---|---|---|
-| 1 | RBAC | 3-tier role enforcement in middleware + `withRole()` |
-| 2 | CSRF | Double-submit cookie pattern |
-| 3 | Rate limiting | Upstash Redis sliding window on auth + API routes |
-| 4 | CSP | Content-Security-Policy headers via middleware |
+| 1 | RBAC | 3-tier role enforcement via `requireRole()` page guards and `withRole()` in Server Actions — middleware only authenticates |
+| 2 | CSRF | Double-submit cookie pattern on the mutating route handlers (`POST /api/dossiers`, gateway proxy); Server Actions additionally get Next's built-in origin check |
+| 3 | Rate limiting | Upstash Redis sliding window on auth (10/min, fail-closed), gateway (60/min, fail-open) and CSRF minting (30/min) |
+| 4 | CSP | Content-Security-Policy + `Permissions-Policy` set in `next.config.ts` `headers()` |
 | 5 | httpOnly cookies | HMAC-sealed, httpOnly, secure, sameSite=lax |
 | 6 | No PII in cookies | Session cookie contains only an opaque session id (`sid`) — no email, role, or name — HMAC-sealed |
 | 7 | Magic link expiry | Tokens expire after 15 minutes, single-use |
-| 8 | Append-only audit | `INSERT`-only DB grant — no `UPDATE`/`DELETE` on events |
+| 8 | Append-only audit | `REVOKE UPDATE/DELETE/TRUNCATE` + `BEFORE UPDATE/DELETE/TRUNCATE` triggers on `events` (`drizzle/0001_append_only_events.sql`) — rejected by Postgres, not by app code |
 | 9 | JWT short-lived | Ed25519 tokens with 60s TTL |
 | 10 | Input validation | Zod schemas on all Server Action inputs |
 | 11 | Error boundaries | No stack traces or internal state leaked to client |
@@ -212,6 +221,8 @@ pnpm dev          # Next.js dev server
 pnpm build        # production build
 pnpm start        # production server
 pnpm test         # Vitest unit tests
+pnpm test:integration  # Postgres-backed tier (skips when DATABASE_URL is unset)
+pnpm bench        # Gateway Ed25519 JWT mint throughput
 pnpm lint         # Biome check
 pnpm format       # Biome write
 ```
@@ -221,15 +232,24 @@ pnpm format       # Biome write
 ## 🧪 Testing
 
 ```bash
-pnpm test                    # watch mode
-pnpm test -- --run           # CI single-run
+pnpm test                    # unit tier, single run (Vitest)
+pnpm test:watch              # unit tier, watch mode
+pnpm test:coverage           # unit tier + v8 coverage gate
+pnpm test:integration        # Postgres tier — skips when DATABASE_URL is unset
+pnpm test:e2e                # Playwright
 ```
+
+Three tiers, all run in CI (`.github/workflows/ci.yml`): unit with a coverage
+gate, an integration tier against a real Postgres (this is what proves the
+`events` table rejects `UPDATE`/`DELETE`/`TRUNCATE`), and Playwright end-to-end.
 
 | Metric | Value |
 |---|---|
-| **Unit tests** | 507 (Vitest) |
-| **Line coverage** | **85%** |
+| **Unit tests** | 594 (Vitest) |
+| **Line coverage** | **87.81%** |
 | **Methodology** | Red-first spec-TDD. Failing test before every feature. |
+
+Reproducible performance numbers live in [`benchmarks/`](benchmarks/README.md) (`pnpm bench`).
 
 ---
 

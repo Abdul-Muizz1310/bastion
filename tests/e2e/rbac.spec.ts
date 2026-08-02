@@ -4,9 +4,11 @@ import { expect, test } from "@playwright/test";
  * E2E — role-based access to /time-travel (admin only).
  *  - viewer demo-sign-in → hit /time-travel → sees the styled 403 page.
  *  - editor demo-sign-in → hit /time-travel → sees the styled 403 page.
- *  - admin is NOT available in demo mode (DEMO_MODE only allows viewer/editor),
- *    so this block doesn't cover the happy-admin path — that's covered by
- *    unit tests against the requireRole helper.
+ *  - admin IS available in demo mode as of the DEMO_ALLOWED_ROLES fix, but the
+ *    happy-admin path (/time-travel actually rendering the replay slider) is not
+ *    covered here yet — it needs seeded events to be meaningful. It is covered at
+ *    the unit level by tests/unit/app/(app)/time-travel/page.test.tsx and
+ *    tests/unit/features/time-travel/**.
  */
 
 test.describe("13-e2e: page RBAC", () => {

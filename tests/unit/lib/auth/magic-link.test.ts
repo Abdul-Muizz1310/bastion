@@ -242,6 +242,20 @@ describe("02-auth: demo mode", () => {
     const result = await demoSignIn("editor");
     expect(result.user.role).toBe("editor");
   });
+
+  it.each(["admin", "editor", "viewer"] as const)(
+    "spec 02 acceptance: demo bypass works for the %s role",
+    async (role) => {
+      process.env.DEMO_MODE = "true";
+      mocks.mockReturning.mockResolvedValueOnce([
+        { id: `demo-${role}-1`, email: `demo-${role}@bastion.local`, role },
+      ]);
+      const { demoSignIn } = await import("@/lib/auth/magic-link");
+      const result = await demoSignIn(role);
+      expect(result.user.role).toBe(role);
+      expect(result.user.email).toBe(`demo-${role}@bastion.local`);
+    },
+  );
 });
 
 describe("02-auth: edge and failure cases", () => {

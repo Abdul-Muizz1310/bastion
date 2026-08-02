@@ -1,9 +1,17 @@
 import { PageFrame } from "@/components/terminal/PageFrame";
 import { TerminalWindow } from "@/components/terminal/TerminalWindow";
+import { TimeTravelSlider } from "@/features/time-travel/components/TimeTravelSlider";
+import { toTimeTravelView } from "@/features/time-travel/view";
+import { getTimeTravelState } from "@/lib/audit/replay";
 import { requireRole } from "@/lib/auth/rbac";
 
 export default async function TimeTravelPage() {
   await requireRole(["admin"], "time-travel.view");
+
+  // Seed the first paint with the current state; every subsequent position the
+  // user drags to is fetched by the client slider through the Server Action.
+  const asOf = new Date();
+  const initial = toTimeTravelView(await getTimeTravelState({ asOf }), asOf);
 
   return (
     <PageFrame active="time-travel">
@@ -19,49 +27,7 @@ export default async function TimeTravelPage() {
         </div>
 
         <TerminalWindow title="time_slider">
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <label
-                htmlFor="time-slider"
-                className="block font-mono text-xs uppercase tracking-[0.15em] text-fg-muted"
-              >
-                rewind to
-              </label>
-              <input
-                id="time-slider"
-                type="range"
-                min="0"
-                max="100"
-                defaultValue="100"
-                className="w-full accent-accent-violet"
-              />
-              <div className="flex justify-between font-mono text-[11px] text-fg-faint">
-                <span>earliest event</span>
-                <span className="text-accent-violet">now</span>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-border bg-background/40 p-4">
-              <p className="font-mono text-xs text-fg-muted">
-                <span className="text-accent-violet">DISTINCT ON</span> (entity_type, entity_id)
-              </p>
-              <p className="mt-1 font-mono text-xs text-fg-faint">
-                SELECT * FROM events WHERE created_at &lt;= $T
-                <br />
-                ORDER BY entity_type, entity_id, created_at DESC
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <p className="font-mono text-xs text-fg-muted">entities at selected time:</p>
-              <div className="rounded-lg border border-border bg-background/40 p-6 text-center">
-                <p className="font-mono text-sm text-fg-faint">drag slider to rewind</p>
-                <p className="mt-1 font-mono text-[11px] text-fg-faint">
-                  state reconstructed from append-only events
-                </p>
-              </div>
-            </div>
-          </div>
+          <TimeTravelSlider initial={initial} />
         </TerminalWindow>
       </div>
     </PageFrame>

@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { appendEvent } from "@/lib/audit/write";
+import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME, CsrfError, validateCsrf } from "@/lib/auth/csrf";
 import { COOKIE_NAME, getSession } from "@/lib/auth/session";
 import { mintPlatformJwt, parseRequestId, resolveService } from "@/lib/gateway/jwt";
 import { gatewayLimiter } from "@/lib/rate-limit";
@@ -10,6 +11,8 @@ const KEY_ID = process.env.BASTION_KEY_ID ?? "bastion-ed25519-2026-04";
 
 const HOP_BY_HOP_RESPONSE = new Set(["transfer-encoding", "content-encoding", "connection"]);
 const STRIPPED_REQUEST = new Set(["cookie", "authorization", "host", "content-length"]);
+/** Verbs that cannot change downstream state — exempt from CSRF (spec 04). */
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 async function handler(
   request: NextRequest,
@@ -27,6 +30,34 @@ async function handler(
   const session = await getSession(cookie?.value);
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // 1b. CSRF double-submit on state-changing verbs. This is a plain route
+  // handler, so it gets none of Next's Server Action origin checking — without
+  // this, SameSite=Lax is the only thing standing between a cross-site form
+  // and an authenticated POST/PUT/PATCH/DELETE to any downstream service.
+  const isMutating = !SAFE_METHODS.has(request.method.toUpperCase());
+  if (isMutating) {
+    try {
+      validateCsrf(
+        cookieStore.get(CSRF_COOKIE_NAME)?.value,
+        request.headers.get(CSRF_HEADER_NAME) ?? undefined,
+      );
+    } catch (err) {
+      if (err instanceof CsrfError) {
+        await appendEvent({
+          actorId: session.user.id,
+          action: "security.csrf_failed",
+          entityType: "session",
+          entityId: session.sid,
+          service: "bastion",
+          requestId,
+          metadata: { reason: err.message },
+        });
+        return NextResponse.json({ error: "CSRF validation failed" }, { status: 403 });
+      }
+      throw err;
+    }
   }
 
   // 2. Resolve service

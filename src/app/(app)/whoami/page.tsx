@@ -4,6 +4,25 @@ import { PageFrame } from "@/components/terminal/PageFrame";
 import { TerminalWindow } from "@/components/terminal/TerminalWindow";
 import { COOKIE_NAME, getSession, getSessionExpiry } from "@/lib/auth/session";
 
+/**
+ * The controls this build implements, each named with the layer it actually
+ * lives in. This is a static inventory, deliberately not dressed up as a live
+ * audit — nothing here is probed at request time.
+ */
+const SECURITY_POSTURE = [
+  "httpOnly cookie",
+  "HMAC-sealed SID",
+  "no PII in cookie",
+  "CSRF double-submit on mutating API routes",
+  "rate-limited auth (fail-closed)",
+  "RBAC on page guards + Server Actions",
+  "CSP + security headers (next.config.ts)",
+  "X-Frame-Options: DENY",
+  "append-only events (DB triggers)",
+  "Ed25519 JWT gateway",
+  "request ID tracing",
+] as const;
+
 function formatExpiry(expiresAt: Date | null): string {
   if (!expiresAt) return "unknown";
   const ms = expiresAt.getTime() - Date.now();
@@ -91,26 +110,20 @@ export default async function WhoamiPage() {
           </TerminalWindow>
         </div>
 
-        <TerminalWindow title="security_checklist">
-          <div className="grid gap-2 md:grid-cols-2">
-            {[
-              "httpOnly cookie",
-              "HMAC-sealed SID",
-              "no PII in cookie",
-              "CSRF double-submit",
-              "rate-limited auth",
-              "RBAC enforced",
-              "CSP header",
-              "X-Frame-Options: DENY",
-              "append-only audit",
-              "Ed25519 JWT gateway",
-              "request ID tracing",
-            ].map((item) => (
-              <div key={item} className="flex items-center gap-2 text-xs">
-                <span className="text-success">✓</span>
-                <span className="text-fg-muted">{item}</span>
-              </div>
-            ))}
+        <TerminalWindow title="security_posture">
+          <div className="space-y-3">
+            <div className="grid gap-2 md:grid-cols-2">
+              {SECURITY_POSTURE.map((item) => (
+                <div key={item} className="flex items-start gap-2 text-xs">
+                  <span className="text-fg-faint">·</span>
+                  <span className="text-fg-muted">{item}</span>
+                </div>
+              ))}
+            </div>
+            <p className="border-t border-border pt-3 text-[11px] text-fg-faint">
+              Static inventory of the controls this build implements — not a live probe. Each one is
+              asserted by the test suite; see docs/ARCHITECTURE.md “Security invariants”.
+            </p>
           </div>
         </TerminalWindow>
       </div>

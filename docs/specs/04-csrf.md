@@ -13,7 +13,7 @@ Protect all state-mutating Server Actions and API routes with double-submit CSRF
   - Token is cryptographically random (≥32 bytes).
   - Both cookie and header must be present and match for mutating operations.
   - GET/HEAD/OPTIONS requests are exempt.
-  - `/api/health`, `/api/status`, `/api/csrf` are exempt.
+  - `/api/health`, `/api/status`, `/api/csrf` are exempt (all GET-only).
 
 ## Enumerated Test Cases
 
@@ -36,13 +36,18 @@ Protect all state-mutating Server Actions and API routes with double-submit CSRF
 
 ## Acceptance Criteria
 
-- [x] `/api/csrf` endpoint mints tokens (`src/app/api/csrf/route.ts`)
-- [x] `validateCsrf()` enforced on the mutating **route handler** `POST /api/dossiers`
-      (`src/app/api/dossiers/route.ts`). Server Actions (`sendMagicLinkAction`,
-      `demoSignInAction`) rely on Next's built-in same-origin check for Server
-      Actions, which plain route handlers do not receive — hence the explicit
-      double-submit gate on the route handler.
+- [x] `/api/csrf` endpoint mints tokens (`src/app/api/csrf/route.ts`), throttled to
+      30/min per session by `csrfLimiter`
+- [x] `validateCsrf()` enforced on **every** mutating route handler:
+      - `POST /api/dossiers` (`src/app/api/dossiers/route.ts`)
+      - `POST`/`PUT`/`PATCH`/`DELETE` on the gateway proxy
+        (`src/app/api/proxy/[service]/[...path]/route.ts`); `GET` is exempt
+      Server Actions (`sendMagicLinkAction`, `demoSignInAction`) rely on Next's
+      built-in same-origin check for Server Actions, which plain route handlers do
+      not receive — hence the explicit double-submit gate on the route handlers.
 - [x] Double-submit pattern enforced (cookie + header match, HMAC-signed)
-- [x] CSRF failure logs a `security.csrf_failed` audit event and returns 403
+- [x] CSRF failure logs a `security.csrf_failed` audit event and returns 403 —
+      on both route handlers
 - [x] Core cases covered by tests (`tests/unit/lib/auth/csrf.test.ts` +
-      integration cases in `tests/unit/app/api/dossiers/route.test.ts`)
+      route-level cases in `tests/unit/app/api/dossiers/route.test.ts` and
+      `tests/unit/app/api/proxy/[service]/[...path]/route.test.ts`)

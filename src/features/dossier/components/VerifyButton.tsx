@@ -1,26 +1,11 @@
 "use client";
 
 import { useState } from "react";
-
-type VerifyResult = {
-  certificate_id: string;
-  valid: boolean;
-  checks: {
-    signature: boolean;
-    hash: boolean;
-    simhash?: boolean;
-    embedding?: boolean;
-  };
-  reason?: string;
-};
-
-type VerifyResponse = {
-  dossier_id: string;
-  overall_valid: boolean | null;
-  message?: string;
-  results: VerifyResult[];
-  verified_at: string;
-};
+import {
+  fetchVerification,
+  type VerifyResponse,
+  type VerifyResult,
+} from "@/features/dossier/verify";
 
 type Props = {
   dossierId: string;
@@ -36,19 +21,12 @@ export function VerifyButton({ dossierId, canVerify }: Props) {
     if (!canVerify || loading) return;
     setError(null);
     setLoading(true);
-    try {
-      const res = await fetch(`/api/dossiers/${dossierId}/verify`);
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(typeof body?.error === "string" ? body.error : `Verify failed (${res.status})`);
-        setLoading(false);
-        return;
-      }
-      setResponse((await res.json()) as VerifyResponse);
-      setLoading(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "network_error");
-      setLoading(false);
+    const outcome = await fetchVerification(dossierId);
+    setLoading(false);
+    if (outcome.ok) {
+      setResponse(outcome.response);
+    } else {
+      setError(outcome.error);
     }
   }
 
@@ -108,7 +86,7 @@ export function VerifyButton({ dossierId, canVerify }: Props) {
   );
 }
 
-function OverallBadge({ response }: { response: VerifyResponse }) {
+export function OverallBadge({ response }: { response: VerifyResponse }) {
   if (response.overall_valid === true) {
     return (
       <span className="rounded-lg border border-success/40 bg-success/10 px-3 py-1 font-mono text-xs uppercase text-success">
@@ -130,7 +108,7 @@ function OverallBadge({ response }: { response: VerifyResponse }) {
   );
 }
 
-function CheckBadge({ result }: { result: VerifyResult }) {
+export function CheckBadge({ result }: { result: VerifyResult }) {
   if (result.valid) {
     return (
       <span className="rounded border border-success/40 bg-success/5 px-2 py-0.5 text-[10px] uppercase tracking-wider text-success">

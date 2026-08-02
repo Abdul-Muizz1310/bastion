@@ -72,8 +72,22 @@ const mockRateLimitCheck = vi.fn();
 vi.mock("@/lib/rate-limit", () => ({
   gatewayLimiter: { check: (...args: unknown[]) => mockRateLimitCheck(...args) },
   authLimiter: { check: vi.fn() },
-  csrfLimiter: { check: vi.fn() },
   createRateLimiter: vi.fn(),
+}));
+
+// CSRF — double-submit gate on the mutating verbs (spec 04 case 7).
+const mockValidateCsrf = vi.fn();
+class MockCsrfError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CsrfError";
+  }
+}
+vi.mock("@/lib/auth/csrf", () => ({
+  validateCsrf: (...args: unknown[]) => mockValidateCsrf(...args),
+  CsrfError: MockCsrfError,
+  CSRF_COOKIE_NAME: "bastion_csrf",
+  CSRF_HEADER_NAME: "x-csrf-token",
 }));
 
 // global fetch
@@ -121,10 +135,20 @@ function defaultService() {
   };
 }
 
+const CSRF_TOKEN = "csrf-token-value";
+
+/** Headers a legitimate browser mutation carries. */
+function csrfHeaders(): Record<string, string> {
+  return { "x-csrf-token": CSRF_TOKEN };
+}
+
 // Default: authorized admin, magpie resolved, limiter passes, JWT mints, downstream 200
 function primeHappyPath() {
-  mockCookieGet.mockReturnValue({ value: "valid-cookie" });
+  mockCookieGet.mockImplementation((name: string) =>
+    name === "bastion_csrf" ? { value: CSRF_TOKEN } : { value: "valid-cookie" },
+  );
   mockGetSession.mockResolvedValue(defaultSession());
+  mockValidateCsrf.mockReturnValue(undefined);
   mockResolveService.mockImplementation((id: string) => {
     if (id === "magpie") return defaultService();
     if (id === "feathers") {
@@ -167,7 +191,7 @@ describe("15-gateway-proxy: pass cases", () => {
     const { POST } = await import("@/app/api/proxy/[service]/[...path]/route");
     const body = JSON.stringify({ text: "demo article text" });
     const req = makeRequest("POST", "http://localhost:3000/api/proxy/magpie/certificates", {
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...csrfHeaders() },
       body,
     });
     const res = await POST(req, makeParams("magpie", ["certificates"]));
@@ -452,7 +476,7 @@ describe("15-gateway-proxy: security cases", () => {
     const { POST } = await import("@/app/api/proxy/[service]/[...path]/route");
     const secret = JSON.stringify({ password: "super-secret-value" });
     const req = makeRequest("POST", "http://localhost:3000/api/proxy/magpie/sensitive", {
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...csrfHeaders() },
       body: secret,
     });
     await POST(req, makeParams("magpie", ["sensitive"]));
@@ -470,6 +494,96 @@ describe("15-gateway-proxy: security cases", () => {
     await GET(req, makeParams("magpie", ["x"]));
     expect(mockRateLimitCheck).toHaveBeenCalledWith("sess-123");
     expect(mockRateLimitCheck).not.toHaveBeenCalledWith("user-1");
+  });
+});
+
+describe("15-gateway-proxy: CSRF double-submit on mutating verbs (spec 04)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    primeHappyPath();
+  });
+
+  it("validates the double-submit pair from the cookie and the header on POST", async () => {
+    const { POST } = await import("@/app/api/proxy/[service]/[...path]/route");
+    const req = makeRequest("POST", "http://localhost:3000/api/proxy/magpie/x", {
+      headers: csrfHeaders(),
+      body: "{}",
+    });
+    const res = await POST(req, makeParams("magpie", ["x"]));
+    expect(res.status).toBe(200);
+    expect(mockValidateCsrf).toHaveBeenCalledWith(CSRF_TOKEN, CSRF_TOKEN);
+  });
+
+  it.each(["POST", "PUT", "PATCH", "DELETE"] as const)(
+    "%s without a CSRF header returns 403 and never reaches the downstream service",
+    async (method) => {
+      mockValidateCsrf.mockImplementation(() => {
+        throw new MockCsrfError("Missing CSRF header");
+      });
+      const mod = await import("@/app/api/proxy/[service]/[...path]/route");
+      const handler = mod[method];
+      const req = makeRequest(method, "http://localhost:3000/api/proxy/magpie/x", { body: "{}" });
+      const res = await handler(req, makeParams("magpie", ["x"]));
+
+      expect(res.status).toBe(403);
+      expect((res as any)._jsonBody).toEqual({ error: "CSRF validation failed" });
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(mockMintJwt).not.toHaveBeenCalled();
+    },
+  );
+
+  it("logs a security.csrf_failed audit event on rejection", async () => {
+    mockValidateCsrf.mockImplementation(() => {
+      throw new MockCsrfError("CSRF token mismatch");
+    });
+    const { POST } = await import("@/app/api/proxy/[service]/[...path]/route");
+    const req = makeRequest("POST", "http://localhost:3000/api/proxy/magpie/x", { body: "{}" });
+    await POST(req, makeParams("magpie", ["x"]));
+
+    expect(mockAppendEvent).toHaveBeenCalledTimes(1);
+    const call = mockAppendEvent.mock.calls[0][0];
+    expect(call.action).toBe("security.csrf_failed");
+    expect(call.entityType).toBe("session");
+    expect(call.entityId).toBe("sess-123");
+    expect(call.actorId).toBe("user-1");
+    expect(call.metadata).toMatchObject({ reason: "CSRF token mismatch" });
+  });
+
+  it("case 4 (spec 04): GET is exempt — no CSRF token required", async () => {
+    const { GET } = await import("@/app/api/proxy/[service]/[...path]/route");
+    const req = makeRequest("GET", "http://localhost:3000/api/proxy/magpie/x");
+    const res = await GET(req, makeParams("magpie", ["x"]));
+    expect(res.status).toBe(200);
+    expect(mockValidateCsrf).not.toHaveBeenCalled();
+  });
+
+  it("rejects before spending a rate-limit token or minting a JWT", async () => {
+    mockValidateCsrf.mockImplementation(() => {
+      throw new MockCsrfError("Missing CSRF cookie");
+    });
+    const { POST } = await import("@/app/api/proxy/[service]/[...path]/route");
+    const req = makeRequest("POST", "http://localhost:3000/api/proxy/magpie/x", { body: "{}" });
+    await POST(req, makeParams("magpie", ["x"]));
+    expect(mockRateLimitCheck).not.toHaveBeenCalled();
+    expect(mockMintJwt).not.toHaveBeenCalled();
+  });
+
+  it("an unauthenticated mutation is still a 401, not a CSRF 403", async () => {
+    mockGetSession.mockResolvedValue(null);
+    const { POST } = await import("@/app/api/proxy/[service]/[...path]/route");
+    const req = makeRequest("POST", "http://localhost:3000/api/proxy/magpie/x", { body: "{}" });
+    const res = await POST(req, makeParams("magpie", ["x"]));
+    expect(res.status).toBe(401);
+    expect(mockValidateCsrf).not.toHaveBeenCalled();
+  });
+
+  it("a non-CsrfError thrown by validateCsrf is not swallowed as a 403", async () => {
+    mockValidateCsrf.mockImplementation(() => {
+      throw new TypeError("programmer error");
+    });
+    const { POST } = await import("@/app/api/proxy/[service]/[...path]/route");
+    const req = makeRequest("POST", "http://localhost:3000/api/proxy/magpie/x", { body: "{}" });
+    await expect(POST(req, makeParams("magpie", ["x"]))).rejects.toThrow(TypeError);
   });
 });
 

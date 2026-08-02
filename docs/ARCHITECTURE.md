@@ -7,9 +7,9 @@ Bastion is a control plane for five microservices. It is a full-stack Next.js 16
 ```mermaid
 flowchart TD
     Browser[Browser] --> MW[Middleware<br>route-level auth gating]
-    MW --> Pages[Pages / Server Components<br>login, dashboard, audit,<br>time-travel, run, whoami]
-    MW --> SA[Server Actions<br>auth, RBAC, CSRF, mutations]
-    MW --> GW[Gateway Proxy<br>/api/proxy/service/path]
+    MW --> Pages[Pages / Server Components<br>login, dashboard, audit,<br>time-travel, run, whoami<br>requireRole guards]
+    MW --> SA[Server Actions<br>auth, withRole, mutations]
+    MW --> GW[Gateway Proxy<br>/api/proxy/service/path<br>CSRF on mutating verbs]
 
     SA --> Session[Session<br>HMAC-sealed cookies]
     SA --> Audit[appendEvent]
@@ -38,18 +38,19 @@ flowchart TD
 |---|---|---|
 | Proxy | Route-level auth gating, public path allowlist | `src/proxy.ts` |
 | Pages | UI rendering via React Server Components | `src/app/*/page.tsx` |
-| Server Actions | Auth, RBAC, CSRF enforcement, all mutations | `src/app/actions.ts`, `src/lib/auth/rbac.ts`, `src/lib/auth/csrf.ts` |
+| Server Actions | Auth + mutations; RBAC via `withRole()`. Next's built-in origin check covers CSRF here — the explicit double-submit gate lives on the route handlers | `src/app/actions.ts`, `src/lib/auth/rbac.ts` |
+| Route handlers | Mutating JSON APIs; explicit `validateCsrf()` double-submit gate | `src/app/api/dossiers/route.ts`, `src/app/api/proxy/[service]/[...path]/route.ts` |
 | Session | HMAC-sealed cookie with DB-backed validation; seal primitive shared with proxy | `src/lib/auth/session.ts`, `src/lib/auth/seal.ts` |
 | Auth | Magic link request/callback, demo-mode bypass | `src/lib/auth/magic-link.ts`, `src/lib/auth/return-to.ts` |
-| RBAC | `withRole()` defense-in-depth wrapper | `src/lib/auth/rbac.ts` |
-| CSRF | Double-submit token generation and verification | `src/lib/auth/csrf.ts` |
-| Rate Limit | Upstash sliding window, fail-open on error | `src/lib/rate-limit/index.ts` |
+| RBAC | `requireRole()` page guards + `withRole()` action wrapper; both audit denials | `src/lib/auth/rbac.ts` |
+| CSRF | Double-submit token generation and verification | `src/lib/auth/csrf.ts`, `src/lib/csrf-client.ts` |
+| Rate Limit | Upstash sliding window. `authLimiter` fails **closed**; `gatewayLimiter`/`csrfLimiter` fail **open**. Construction warns once if `UPSTASH_*` is unset | `src/lib/rate-limit/index.ts` |
 | Audit | Append-only event log, `appendEvent()` | `src/lib/audit/write.ts` |
-| Replay | Time-travel query over immutable events | `src/lib/audit/replay.ts` |
+| Replay | Time-travel query over immutable events, debounced slider, admin-only Server Action | `src/lib/audit/replay.ts`, `src/features/time-travel/` |
 | Gateway | JWT minting, request ID injection, service proxy | `src/lib/gateway/jwt.ts`, `src/lib/gateway/client.ts` |
-| Registry | Service manifest, parallel health checks | `src/lib/registry.ts`, `src/lib/gateway/services.ts` |
+| Registry | Service manifest, parallel health checks for the 4 services with a `backendUrl` (feathers is CLI-only and reported without a probe) | `src/lib/registry.ts`, `src/lib/gateway/services.ts` |
 | Demo | End-to-end cross-service dossier workflow runner | `src/features/dossier/server/pipeline.ts`, `src/features/dossier/server/create.ts` |
-| Schema | Drizzle ORM table definitions, append-only grant | `src/lib/db/schema.ts` |
+| Schema | Drizzle ORM table definitions; append-only enforcement ships as a migration | `src/lib/db/schema.ts`, `drizzle/0001_append_only_events.sql` |
 | Validation | Shared Zod schemas for form inputs | `src/lib/validation.ts`, `src/features/dossier/schemas.ts` |
 
 ## Database schema
@@ -176,15 +177,15 @@ flowchart LR
 ## Security invariants
 
 1. Cookie contains only `{sid}` — no PII, no role, no email
-2. Middleware gates every non-public route before page rendering
-3. `withRole()` enforces authorization inside Server Actions (defense in depth)
-4. CSRF double-submit token required on the mutating route handler (`POST /api/dossiers`, minted at `GET /api/csrf`); Server Actions additionally rely on Next's built-in same-origin check
-5. Rate limiting via Upstash sliding window (10/min auth, 60/min gateway)
-6. `events` table has INSERT-only grant — no UPDATE, no DELETE at DB level
+2. Middleware **authenticates** every non-public route before page rendering. It performs no authorization, no CSRF check and no rate limiting — those live in the layers below
+3. Authorization is enforced by `requireRole()` at the page layer and `withRole()` inside Server Actions; both write a `security.denied` audit event on refusal
+4. CSRF double-submit token required on every mutating route handler — `POST /api/dossiers` and `POST/PUT/PATCH/DELETE /api/proxy/*` (minted at `GET /api/csrf`). `GET`/`HEAD`/`OPTIONS` are exempt. Server Actions additionally rely on Next's built-in same-origin check
+5. Rate limiting via Upstash sliding window (10/min auth **fail-closed**, 60/min gateway fail-open, 30/min CSRF minting fail-open). A deploy without `UPSTASH_*` logs a warning at startup rather than degrading silently
+6. `events` is append-only **in the database**: `UPDATE`/`DELETE`/`TRUNCATE` are revoked from `PUBLIC` and rejected by `BEFORE` triggers that raise `insufficient_privilege`, so the guarantee holds even for the table owner (`drizzle/0001_append_only_events.sql`, proven by `tests/integration/db/append-only.test.ts`)
 7. Gateway JWTs are Ed25519-signed with 60-second TTL
 8. Every gateway call gets a unique `requestId` for distributed tracing
 9. `httpOnly` + `secure` + `sameSite=lax` on session cookie
-10. CSP header blocks inline scripts; `X-Frame-Options: DENY`; `X-Content-Type-Options: nosniff`
+10. CSP restricts *sources* (`default-src 'self'`, `frame-ancestors 'none'`) and drops `'unsafe-eval'` in production. It does **not** block inline scripts: Next's hydration bootstrap is inline, so `'unsafe-inline'` remains in `script-src` until a nonce pipeline exists. Set in `next.config.ts` `headers()`, not in middleware. Also `X-Frame-Options: DENY`; `X-Content-Type-Options: nosniff`
 11. Magic links are single-use (usedAt timestamp) with 15-minute expiry
 
 ## Layering
@@ -192,14 +193,14 @@ flowchart LR
 Bastion enforces strict layering — each concern lives in one module and does not reach across boundaries:
 
 ```
-Middleware (route gating)
-  -> Pages (Server Components, read-only rendering)
-    -> Server Actions (mutations, auth + RBAC + CSRF checks)
+Middleware (authentication gating only)
+  -> Pages (Server Components, read-only rendering, requireRole guards)
+    -> Server Actions + route handlers (mutations, withRole, CSRF on route handlers)
       -> Session (cookie seal/unseal, DB validation)
       -> Audit (append-only event writes)
       -> Gateway (JWT mint, proxy, rate limit)
         -> Schema (Drizzle ORM, table definitions)
-          -> Neon Postgres
+          -> Neon Postgres (append-only triggers on `events`)
 ```
 
-Controllers (Server Actions) never touch the database directly — they go through `lib/auth/session.ts`, `lib/audit/write.ts`, or `lib/gateway/`. Pages never mutate state. The schema module owns all table definitions and the append-only invariant. Rate limiting and JWT minting are gateway-internal concerns invisible to the rest of the app.
+Controllers (Server Actions) never touch the database directly — they go through `lib/auth/session.ts`, `lib/audit/write.ts`, or `lib/gateway/`. Pages never mutate state. Rate limiting and JWT minting are gateway-internal concerns invisible to the rest of the app. The append-only invariant is owned by the database, not by the schema module: application code cannot opt out of it.
