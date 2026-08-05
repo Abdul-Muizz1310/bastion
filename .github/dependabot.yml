@@ -23,6 +23,21 @@ updates:
     labels:
       - "dependencies"
       - "npm"
+    ignore:
+      # `next build` verifies its TypeScript setup by resolving the literal path
+      # typescript/lib/typescript.js. TypeScript 7 is the Go rewrite and ships no
+      # such file, so the bump fails as "you do not have the required package(s)
+      # installed" rather than as a version conflict. Next reaches the native
+      # compiler through @typescript/native-preview, not through this major.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # @types/node must track the Node major ci.yml installs, not npm latest —
+      # types ahead of the runtime describe APIs that aren't there, silently.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
+      # Majors excluded: a single breaking bump in the group blocks the other
+      # eight benign ones, and the group PR cannot be partially merged.
       dev-dependencies:
         dependency-type: "development"
+        update-types: ["minor", "patch"]
