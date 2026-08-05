@@ -41,3 +41,15 @@ updates:
       dev-dependencies:
         dependency-type: "development"
         update-types: ["minor", "patch"]
+      # react and react-dom are pinned to one exact version in `dependencies`,
+      # so the dev-dependencies group above does not cover them. They must be
+      # raised together: react-dom reaches into react internals guaranteed to
+      # match only within an exact version, and the skew breaks every component
+      # suite without naming the cause. Exact names, not prefixes, so "react"
+      # cannot sweep in react-is.
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
