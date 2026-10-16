@@ -40,6 +40,26 @@ Implement an API gateway at `/api/proxy/[service]/[...path]` that proxies authen
 15. Gateway never proxies to URLs outside the `SERVICES` manifest.
 16. Request body is not logged (may contain sensitive data) — only method, path, status, latency.
 
+## 2026-10-16 — the token now travels in `X-Platform-Token` as specified
+
+Case 2 said the proxied request carries the JWT in `X-Platform-Token`, but both
+call sites (`src/app/api/proxy/[service]/[...path]/route.ts` and
+`src/lib/gateway/client.ts`) only ever sent `Authorization: Bearer <jwt>`. The
+Python backends' platform-token middleware (magpie-backend, paper-trail-backend)
+reads only `X-Platform-Token`, so once those backends enforced tokens
+(`DEMO_MODE=false` with bastion's key set) they answered every bastion call with
+401, including paper-trail's `/platform/debate` in the integrated demo.
+
+Both call sites now send the same freshly minted JWT in **both** headers:
+
+- `X-Platform-Token: <jwt>`, which the backends' middleware verifies;
+- `Authorization: Bearer <jwt>`, kept for downstreams that read the bearer
+  (paper-trail's `/platform/debate` endpoint checks it after the middleware).
+
+The proxy never forwards a client-supplied `X-Platform-Token` (nor
+`Authorization` or `Cookie`): both token headers are always the minted value.
+Tests: spec 15 cases 7c and 18b, spec 19 case 6b.
+
 ## Acceptance Criteria
 
 - [ ] `/api/proxy/[service]/[...path]` route handler

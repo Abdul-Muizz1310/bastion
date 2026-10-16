@@ -64,6 +64,7 @@ Resolves the service, mints JWT, fetches, parses JSON, returns typed envelope. U
 4. Network error returns `{ok: false, status: 0, error: "network_error"}`.
 5. Timeout (30s) returns `{ok: false, status: 0, error: "timeout"}`.
 6. Outgoing request has `Authorization: Bearer <jwt>` and `X-Request-Id`.
+6b. Outgoing request has `X-Platform-Token: <jwt>`, equal to the bearer token (2026-10-16, spec 09).
 7. Unknown service id throws (caught by caller) — programmer error.
 
 ### `GET /api/dossiers/[id]/verify`

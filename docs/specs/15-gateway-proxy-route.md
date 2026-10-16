@@ -8,7 +8,7 @@ Implement the generic gateway at `src/app/api/proxy/[service]/[...path]/route.ts
 2. Rate-limits per session (60 req/60s using the existing `gatewayLimiter`).
 3. Resolves the service ID to a backend URL via `resolveService()`.
 4. Mints a short-lived Ed25519 JWT via `mintPlatformJwt()` (60s TTL, includes `sub` = user id, `role`, `service`, `kid`).
-5. Forwards the request to `${service.backendUrl}/${path.join('/')}${search}` with `Authorization: Bearer <jwt>`, `X-Request-Id`, `X-Platform-Key-Id`. **Does NOT forward** client `Authorization` or `Cookie` headers.
+5. Forwards the request to `${service.backendUrl}/${path.join('/')}${search}` with `Authorization: Bearer <jwt>`, `X-Platform-Token: <jwt>` (the same JWT; added 2026-10-16, see spec 09), `X-Request-Id`, `X-Platform-Key-Id`. **Does NOT forward** client `Authorization`, `X-Platform-Token` or `Cookie` headers.
 6. Pipes the downstream response (status, headers, body) back to the client.
 7. Appends exactly **one** audit event per call with action `gateway.proxy.ok` or `gateway.proxy.error`, service, status, latency, requestId, actorId.
 8. Maps downstream errors: 5xx → 502, network timeout → 504, JWT minting failure → 500 (generic, no stack leak).
@@ -43,6 +43,8 @@ Exports: `GET`, `POST`, `PUT`, `PATCH`, `DELETE` (all five methods pointing at o
 
 7. **JWT `sub` = session user id, `role` = session role, `service` = service id** — minted JWT's claims match.
 
+7c. **`X-Platform-Token` equals the bearer token** (2026-10-16, spec 09) — the outgoing request carries the minted JWT in `X-Platform-Token` and the same JWT in `Authorization: Bearer`.
+
 8. **Audit event written on success** — exactly one `appendEvent` call with `action: "gateway.proxy.ok"`, `entityType: "proxy"`, `entityId: "<service>:<path>"`, `service: <serviceId>`, `requestId`, `actorId`, `metadata: {status: 200, latencyMs: <number>}`.
 
 ### Fail cases (edge and error)
@@ -68,6 +70,8 @@ Exports: `GET`, `POST`, `PUT`, `PATCH`, `DELETE` (all five methods pointing at o
 ### Security cases
 
 18. **Client `Authorization` header NOT forwarded** — if client sends `Authorization: Bearer some-token`, the outgoing request's Authorization header is the minted JWT, not the client token.
+
+18b. **Client `X-Platform-Token` header NOT forwarded** (2026-10-16) — a client-supplied value is replaced by the minted JWT.
 
 19. **Client `Cookie` header NOT forwarded** — prevents leaking session cookie to downstream services.
 

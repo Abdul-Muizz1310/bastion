@@ -47,8 +47,12 @@ export async function callService<T = unknown>(
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 
   const method = opts.method ?? (opts.body ? "POST" : "GET");
+  // X-Platform-Token is what the Python backends' middleware reads (spec 09);
+  // the bearer stays for downstreams that read Authorization (paper-trail's
+  // /platform/debate).
   const headers: Record<string, string> = {
     authorization: `Bearer ${jwt}`,
+    "x-platform-token": jwt,
     "x-request-id": opts.requestId,
     "x-platform-key-id": KEY_ID,
   };

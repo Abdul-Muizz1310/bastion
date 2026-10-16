@@ -278,6 +278,17 @@ describe("15-gateway-proxy: pass cases", () => {
     expect(headers.get("authorization")).toBe("Bearer signed.jwt.abc");
   });
 
+  it("case 7c: outgoing X-Platform-Token equals the bearer token (spec 09)", async () => {
+    mockMintJwt.mockResolvedValueOnce("signed.jwt.abc");
+    const { GET } = await import("@/app/api/proxy/[service]/[...path]/route");
+    const req = makeRequest("GET", "http://localhost:3000/api/proxy/magpie/x");
+    await GET(req, makeParams("magpie", ["x"]));
+    const [, init] = mockFetch.mock.calls[0];
+    const headers = init.headers as Headers;
+    expect(headers.get("x-platform-token")).toBe("signed.jwt.abc");
+    expect(headers.get("authorization")).toBe(`Bearer ${headers.get("x-platform-token")}`);
+  });
+
   it("case 8: audit event written once with gateway.proxy.ok on success", async () => {
     const { GET } = await import("@/app/api/proxy/[service]/[...path]/route");
     const req = makeRequest("GET", "http://localhost:3000/api/proxy/magpie/api/scrape");
@@ -459,6 +470,17 @@ describe("15-gateway-proxy: security cases", () => {
     const headers = init.headers as Headers;
     expect(headers.get("authorization")).toBe("Bearer mock.jwt.token");
     expect(headers.get("authorization")).not.toContain("client-token-leaked");
+  });
+
+  it("case 18b: client X-Platform-Token header is NOT forwarded", async () => {
+    const { GET } = await import("@/app/api/proxy/[service]/[...path]/route");
+    const req = makeRequest("GET", "http://localhost:3000/api/proxy/magpie/x", {
+      headers: { "x-platform-token": "client-forged-token" },
+    });
+    await GET(req, makeParams("magpie", ["x"]));
+    const [, init] = mockFetch.mock.calls[0];
+    const headers = init.headers as Headers;
+    expect(headers.get("x-platform-token")).toBe("mock.jwt.token");
   });
 
   it("case 19: client Cookie header is NOT forwarded", async () => {

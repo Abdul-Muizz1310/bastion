@@ -10,7 +10,14 @@ const TIMEOUT_MS = 30_000;
 const KEY_ID = process.env.BASTION_KEY_ID ?? "bastion-ed25519-2026-04";
 
 const HOP_BY_HOP_RESPONSE = new Set(["transfer-encoding", "content-encoding", "connection"]);
-const STRIPPED_REQUEST = new Set(["cookie", "authorization", "host", "content-length"]);
+// The platform token headers are always minted here, never taken from the client.
+const STRIPPED_REQUEST = new Set([
+  "cookie",
+  "authorization",
+  "x-platform-token",
+  "host",
+  "content-length",
+]);
 /** Verbs that cannot change downstream state — exempt from CSRF (spec 04). */
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -124,7 +131,11 @@ async function handler(
     if (STRIPPED_REQUEST.has(k.toLowerCase())) continue;
     forwardHeaders.set(k, v);
   }
+  // X-Platform-Token is what the Python backends' middleware reads (spec 09);
+  // the bearer stays for downstreams that read Authorization (paper-trail's
+  // /platform/debate).
   forwardHeaders.set("authorization", `Bearer ${jwt}`);
+  forwardHeaders.set("x-platform-token", jwt);
   forwardHeaders.set("x-request-id", requestId);
   forwardHeaders.set("x-platform-key-id", KEY_ID);
 

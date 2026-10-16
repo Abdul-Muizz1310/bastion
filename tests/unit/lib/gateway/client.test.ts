@@ -52,6 +52,18 @@ describe("19-client: callService success paths", () => {
     expect(init.headers["x-platform-key-id"]).toBeTruthy();
   });
 
+  it("case 6b: outgoing request carries X-Platform-Token equal to the bearer token", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("{}", { status: 200 }));
+    await callService("paper-trail", "/platform/debate", {
+      actor: adminActor,
+      requestId: "r",
+      body: { claim: "x" },
+    });
+    const [, init] = mockFetch.mock.calls[0];
+    expect(init.headers["x-platform-token"]).toBe("signed.jwt.token");
+    expect(init.headers.authorization).toBe(`Bearer ${init.headers["x-platform-token"]}`);
+  });
+
   it("body is JSON-stringified and content-type is set when body provided", async () => {
     mockFetch.mockResolvedValueOnce(new Response("{}", { status: 200 }));
     await callService("inkprint", "/x", {
