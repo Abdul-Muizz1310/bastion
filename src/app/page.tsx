@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { PageFrame } from "@/components/terminal/PageFrame";
@@ -6,6 +7,8 @@ import { DossierPrompt } from "@/features/dossier/components/DossierPrompt";
 import { RecentDossiers } from "@/features/dossier/components/RecentDossiers";
 import { listRecentDossiers } from "@/features/dossier/server/query";
 import { COOKIE_NAME, getSession } from "@/lib/auth/session";
+
+export const metadata: Metadata = { alternates: { canonical: "/" } };
 
 export default async function Home() {
   const cookieStore = await cookies();

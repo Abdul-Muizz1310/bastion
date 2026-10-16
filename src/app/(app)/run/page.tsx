@@ -1,9 +1,12 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { PageFrame } from "@/components/terminal/PageFrame";
 import { TerminalWindow } from "@/components/terminal/TerminalWindow";
 import { RunDemoButton } from "@/features/dossier/components/RunDemoButton";
 import { COOKIE_NAME, getSession } from "@/lib/auth/session";
+
+export const metadata: Metadata = { title: "end-to-end demo" };
 
 export default async function RunPage() {
   const cookieStore = await cookies();

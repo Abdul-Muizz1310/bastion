@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { PageFrame } from "@/components/terminal/PageFrame";
@@ -32,6 +33,8 @@ function formatExpiry(expiresAt: Date | null): string {
   const minutes = totalMinutes % 60;
   return `in ${hours}h ${minutes}m`;
 }
+
+export const metadata: Metadata = { title: "whoami" };
 
 export default async function WhoamiPage() {
   const cookieStore = await cookies();

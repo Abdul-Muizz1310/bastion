@@ -31,6 +31,7 @@ PLAYWRIGHT_BASE_URL=https://bastion-six.vercel.app pnpm test:e2e
 
 - `auth-flow.spec.ts` — redirect with returnTo + demo-mode viewer sign-in + role-pill rendering + read-only UX.
 - `rbac.spec.ts` — viewer/editor hitting `/time-travel` get the styled 403 page.
+- `metadata.spec.ts` — `/login`'s head tags (title, Open Graph, Twitter card, icons, manifest) and every metadata route answering anonymously with its content type (spec 20).
 
 ## What's not covered yet
 

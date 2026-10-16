@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -17,6 +18,16 @@ function statusColor(action: string): string {
   if (action.endsWith(".ok")) return "text-success";
   if (action.startsWith("security.")) return "text-warning";
   return "text-accent-violet";
+}
+
+// The title comes from the id alone: it never reads the record.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ requestId: string }>;
+}): Promise<Metadata> {
+  const { requestId } = await params;
+  return { title: `request ${requestId.slice(0, 8)}` };
 }
 
 export default async function TracePage({ params }: { params: Promise<{ requestId: string }> }) {

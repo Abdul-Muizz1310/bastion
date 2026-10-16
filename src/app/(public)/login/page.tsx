@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { LoginForm } from "./login-form";
 
 const DEMO_MODE = process.env.DEMO_MODE === "true";
@@ -6,6 +7,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_token: "Magic link is invalid or has expired. Please try again.",
   server_error: "Something went wrong. Please try again.",
 };
+
+export const metadata: Metadata = { title: "sign in" };
 
 export default async function LoginPage({
   searchParams,

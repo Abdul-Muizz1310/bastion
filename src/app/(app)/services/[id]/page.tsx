@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageFrame } from "@/components/terminal/PageFrame";
@@ -6,6 +7,16 @@ import { SERVICES } from "@/lib/gateway/services";
 import { checkServiceHealth } from "@/lib/registry";
 
 export const revalidate = 60;
+
+// The title comes from the id alone: it never reads the record.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  return { title: `service ${id}` };
+}
 
 export default async function ServiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

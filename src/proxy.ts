@@ -10,12 +10,28 @@ const PUBLIC_PATHS = new Set([
   "/api/public-key",
 ]);
 
+// Metadata files: crawlers and link-preview bots fetch these without a session.
+// Exact paths, not prefixes, so nothing beneath them opens up. Next appends a
+// `?<hash>` query to icon URLs; the pathname is unchanged.
+const METADATA_PATHS = new Set([
+  "/opengraph-image",
+  "/icon.svg",
+  "/apple-icon.png",
+  "/manifest.webmanifest",
+  "/robots.txt",
+  "/sitemap.xml",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/icon-maskable-512.png",
+]);
+
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Public routes — no auth needed
   if (
     PUBLIC_PATHS.has(pathname) ||
+    METADATA_PATHS.has(pathname) ||
     pathname.startsWith("/api/health") ||
     pathname.startsWith("/api/status") ||
     pathname.startsWith("/api/public-key")

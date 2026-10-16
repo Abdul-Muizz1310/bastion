@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -31,6 +32,8 @@ function shortActor(actorId: string | null): string {
   if (!actorId) return "system";
   return actorId.slice(0, 8);
 }
+
+export const metadata: Metadata = { title: "audit log" };
 
 export default async function AuditPage({
   searchParams,

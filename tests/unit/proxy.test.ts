@@ -157,3 +157,53 @@ describe("proxy", () => {
     expect(JSON.stringify(result)).not.toContain("returnTo");
   });
 });
+
+describe("20-site: proxy lets crawlers reach the metadata files", () => {
+  const METADATA_PATHS = [
+    "/opengraph-image",
+    "/icon.svg",
+    "/apple-icon.png",
+    "/manifest.webmanifest",
+    "/robots.txt",
+    "/sitemap.xml",
+    "/icon-192.png",
+    "/icon-512.png",
+    "/icon-maskable-512.png",
+  ];
+
+  it.each(METADATA_PATHS)("case 9: %s passes through without a session", (pathname) => {
+    expect(proxy(makeRequest(pathname))).toEqual({ type: "next" });
+  });
+
+  it("case 9: an icon URL with Next's ?<hash> query passes through without a session", () => {
+    const req = {
+      nextUrl: {
+        pathname: "/apple-icon.png",
+        searchParams: new URLSearchParams("4f2b9c1d0e8a7b6c"),
+      },
+      url: "http://localhost:3000/apple-icon.png?4f2b9c1d0e8a7b6c",
+      cookies: { get: () => undefined },
+    } as any;
+    expect(proxy(req)).toEqual({ type: "next" });
+  });
+
+  it("case 10: /dashboard still redirects to /login without a session", () => {
+    const result = proxy(makeRequest("/dashboard"));
+    expect(result).toMatchObject({ type: "redirect" });
+    expect((result as any).url).toContain("/login?returnTo=%2Fdashboard");
+  });
+
+  it("case 10: an unknown /api/x still answers 401 without a session", () => {
+    expect(proxy(makeRequest("/api/x"))).toEqual({
+      type: "json",
+      body: { error: "Unauthorized" },
+      status: 401,
+    });
+  });
+
+  it("case 10: the paths are exact — a path beneath one still redirects", () => {
+    for (const pathname of ["/robots.txt/x", "/opengraph-image/x", "/icon.svg/dashboard"]) {
+      expect(proxy(makeRequest(pathname)), pathname).toMatchObject({ type: "redirect" });
+    }
+  });
+});

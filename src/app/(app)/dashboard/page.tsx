@@ -1,9 +1,12 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { PageFrame } from "@/components/terminal/PageFrame";
 import { SERVICES } from "@/lib/gateway/services";
 import { getAggregatedStatus } from "@/lib/registry";
 
 export const revalidate = 60;
+
+export const metadata: Metadata = { title: "platform services" };
 
 export default async function DashboardPage() {
   let statuses: Awaited<ReturnType<typeof getAggregatedStatus>> = [];

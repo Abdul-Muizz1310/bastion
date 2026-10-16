@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { PageFrame } from "@/components/terminal/PageFrame";
@@ -24,6 +25,16 @@ function rowToEvent(row: {
     metadata: (row.metadata as Record<string, unknown>) ?? {},
     at: row.at instanceof Date ? row.at.toISOString() : row.at,
   };
+}
+
+// The title comes from the id alone: it never reads the record.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  return { title: `dossier ${id.slice(0, 8)}` };
 }
 
 export default async function DossierPage({ params }: { params: Promise<{ id: string }> }) {

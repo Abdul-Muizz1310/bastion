@@ -1,9 +1,12 @@
+import type { Metadata } from "next";
 import { PageFrame } from "@/components/terminal/PageFrame";
 import { TerminalWindow } from "@/components/terminal/TerminalWindow";
 import { TimeTravelSlider } from "@/features/time-travel/components/TimeTravelSlider";
 import { toTimeTravelView } from "@/features/time-travel/view";
 import { getTimeTravelState } from "@/lib/audit/replay";
 import { requireRole } from "@/lib/auth/rbac";
+
+export const metadata: Metadata = { title: "time travel" };
 
 export default async function TimeTravelPage() {
   await requireRole(["admin"], "time-travel.view");
