@@ -1,0 +1,45 @@
+name: liveness
+# Probes every muizz-lab host once a day and keeps one open issue while anything is down.
+# Render's free tier can suspend a whole fleet for billing while the Vercel frontends keep
+# answering 200; nothing else in the portfolio would notice.
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 24 }
+      - id: probe
+        run: node scripts/liveness.mjs
+        continue-on-error: true
+      - name: Open or update the liveness issue
+        if: steps.probe.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create liveness --color B60205 --description "A muizz-lab host is down" 2>/dev/null || true
+          existing=$(gh issue list --label liveness --state open --json number -q '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file liveness-issue.md
+          else
+            gh issue create --title "Liveness: a muizz-lab host is down" --label liveness --body-file liveness-issue.md
+          fi
+      - name: Close the liveness issue when everything answers
+        if: steps.probe.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for n in $(gh issue list --label liveness --state open --json number -q '.[].number'); do
+            gh issue close "$n" --comment "Every host answered on $(date -u +%FT%TZ)."
+          done
+      - name: Fail the run when a host is down
+        if: steps.probe.outcome == 'failure'
+        run: exit 1
