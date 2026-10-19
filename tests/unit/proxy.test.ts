@@ -1,209 +1,110 @@
-import crypto from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { getRedirectUrl, unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
+import { NextRequest } from "next/server";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { config, proxy } from "@/proxy";
+import nextConfig from "../../next.config";
 
-// Set test session password (must be >= 32 chars for verifySealedCookie)
-const TEST_PASSWORD = "test-password-that-is-at-least-32-chars-long!!";
-process.env.IRON_SESSION_PASSWORD = TEST_PASSWORD;
+/**
+ * Spec 21 §2 — no sign-in: the proxy gates nothing. It passes every request through and
+ * stamps the security headers on it (the same set next.config.ts declares).
+ */
 
-function makeValidCookie(sid: string): string {
-  const hmac = crypto.createHmac("sha256", TEST_PASSWORD);
-  hmac.update(sid);
-  const sig = hmac.digest("base64url");
-  return `${sid}.${sig}`;
+const ORIGIN = "https://bastion.test";
+
+function get(path: string, init: { headers?: Record<string, string> } = {}): NextRequest {
+  return new NextRequest(`${ORIGIN}${path}`, { headers: init.headers });
 }
 
-// Mock next/server
-vi.mock("next/server", () => {
-  const MockNextResponse = {
-    next: () => ({ type: "next" }),
-    json: (body: unknown, init?: { status?: number }) => ({
-      type: "json",
-      body,
-      status: init?.status ?? 200,
-    }),
-    redirect: (url: URL) => ({ type: "redirect", url: url.toString() }),
-  };
-
-  return { NextResponse: MockNextResponse, NextRequest: class {} };
-});
-
-import { proxy } from "@/proxy";
-
-function makeRequest(pathname: string, cookies: Record<string, string> = {}) {
-  return {
-    nextUrl: {
-      pathname,
-      searchParams: new URLSearchParams(),
-    },
-    url: `http://localhost:3000${pathname}`,
-    cookies: {
-      get(name: string) {
-        return cookies[name] ? { value: cookies[name] } : undefined;
-      },
-    },
-  } as any;
+async function configHeaders(): Promise<Record<string, string>> {
+  const rules = (await nextConfig.headers?.()) ?? [];
+  const catchAll = rules.find((rule) => rule.source === "/(.*)");
+  if (!catchAll) throw new Error("next.config.ts has no catch-all header rule");
+  return Object.fromEntries(catchAll.headers.map((h) => [h.key, h.value]));
 }
 
-describe("proxy", () => {
-  it("allows public path / without session", () => {
-    const result = proxy(makeRequest("/"));
-    expect(result).toEqual({ type: "next" });
-  });
-
-  it("allows /login without session", () => {
-    const result = proxy(makeRequest("/login"));
-    expect(result).toEqual({ type: "next" });
-  });
-
-  it("allows /auth/callback without session", () => {
-    const result = proxy(makeRequest("/auth/callback"));
-    expect(result).toEqual({ type: "next" });
-  });
-
-  it("allows /api/health without session", () => {
-    const result = proxy(makeRequest("/api/health"));
-    expect(result).toEqual({ type: "next" });
-  });
-
-  it("allows /api/health/deep without session (startsWith)", () => {
-    const result = proxy(makeRequest("/api/health/deep"));
-    expect(result).toEqual({ type: "next" });
-  });
-
-  it("allows /api/status without session", () => {
-    const result = proxy(makeRequest("/api/status"));
-    expect(result).toEqual({ type: "next" });
-  });
-
-  it("allows /api/status/sub without session (startsWith)", () => {
-    const result = proxy(makeRequest("/api/status/sub"));
-    expect(result).toEqual({ type: "next" });
-  });
-
-  it("allows /api/public-key without session", () => {
-    const result = proxy(makeRequest("/api/public-key"));
-    expect(result).toEqual({ type: "next" });
-  });
-
-  it("allows /api/public-key/sub without session (startsWith)", () => {
-    const result = proxy(makeRequest("/api/public-key/sub"));
-    expect(result).toEqual({ type: "next" });
-  });
-
-  it("returns 401 JSON for unauthenticated API route", () => {
-    const result = proxy(makeRequest("/api/proxy/something"));
-    expect(result).toEqual({ type: "json", body: { error: "Unauthorized" }, status: 401 });
-  });
-
-  it("redirects to /login for unauthenticated page route", () => {
-    const result = proxy(makeRequest("/dashboard"));
-    expect(result).toMatchObject({ type: "redirect" });
-    expect((result as any).url).toContain("/login");
-  });
-
-  it("allows authenticated page route with valid session cookie", () => {
-    const cookie = makeValidCookie("test-session-id");
-    const result = proxy(makeRequest("/dashboard", { bastion_session: cookie }));
-    expect(result).toEqual({ type: "next" });
-  });
-
-  it("allows authenticated API route with valid session cookie", () => {
-    const cookie = makeValidCookie("test-session-id");
-    const result = proxy(makeRequest("/api/proxy/magpie", { bastion_session: cookie }));
-    expect(result).toEqual({ type: "next" });
-  });
-
-  it("rejects forged session cookie for page route", () => {
-    const result = proxy(makeRequest("/dashboard", { bastion_session: "forged-value" }));
-    expect(result).toMatchObject({ type: "redirect" });
-  });
-
-  it("rejects forged session cookie for API route", () => {
-    const result = proxy(makeRequest("/api/proxy/magpie", { bastion_session: "forged-value" }));
-    expect(result).toEqual({ type: "json", body: { error: "Unauthorized" }, status: 401 });
-  });
-
-  it("empty session cookie value triggers redirect", () => {
-    const result = proxy(makeRequest("/dashboard", { bastion_session: "" }));
-    expect(result).toMatchObject({ type: "redirect" });
-  });
-
-  it("case 34: unauth'd /dashboard redirect URL includes returnTo=/dashboard", () => {
-    const result = proxy(makeRequest("/dashboard"));
-    expect(result).toMatchObject({ type: "redirect" });
-    expect((result as any).url).toContain("/login");
-    expect((result as any).url).toContain("returnTo=%2Fdashboard");
-  });
-
-  it("case 35: unauth'd /dossiers/abc?x=1 redirect preserves query in returnTo", () => {
-    const req = {
-      nextUrl: {
-        pathname: "/dossiers/abc",
-        searchParams: new URLSearchParams("x=1"),
-      },
-      url: "http://localhost:3000/dossiers/abc?x=1",
-      cookies: { get: () => undefined },
-    } as any;
-    const result = proxy(req);
-    expect(result).toMatchObject({ type: "redirect" });
-    // returnTo should encode /dossiers/abc?x=1
-    expect((result as any).url).toContain("returnTo=%2Fdossiers%2Fabc");
-    expect((result as any).url).toContain("x%3D1");
-  });
-
-  it("case 36: unauth'd API request returns 401 JSON (no returnTo)", () => {
-    const result = proxy(makeRequest("/api/proxy/magpie/x"));
-    expect(result).toEqual({ type: "json", body: { error: "Unauthorized" }, status: 401 });
-    expect(JSON.stringify(result)).not.toContain("returnTo");
-  });
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
-describe("20-site: proxy lets crawlers reach the metadata files", () => {
-  const METADATA_PATHS = [
-    "/opengraph-image",
-    "/icon.svg",
-    "/apple-icon.png",
-    "/manifest.webmanifest",
-    "/robots.txt",
-    "/sitemap.xml",
-    "/icon-192.png",
-    "/icon-512.png",
-    "/icon-maskable-512.png",
+describe("proxy — no gating", () => {
+  const PAGES = [
+    "/",
+    "/audit",
+    "/audit/req-1",
+    "/time-travel",
+    "/dashboard",
+    "/d/abc",
+    "/tools/magpie",
   ];
 
-  it.each(METADATA_PATHS)("case 9: %s passes through without a session", (pathname) => {
-    expect(proxy(makeRequest(pathname))).toEqual({ type: "next" });
+  it.each(PAGES)("passes %s through (200, no redirect)", (path) => {
+    const response = proxy(get(path));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+    expect(response.headers.get("location")).toBeNull();
+    expect(getRedirectUrl(response)).toBeNull();
   });
 
-  it("case 9: an icon URL with Next's ?<hash> query passes through without a session", () => {
-    const req = {
-      nextUrl: {
-        pathname: "/apple-icon.png",
-        searchParams: new URLSearchParams("4f2b9c1d0e8a7b6c"),
-      },
-      url: "http://localhost:3000/apple-icon.png?4f2b9c1d0e8a7b6c",
-      cookies: { get: () => undefined },
-    } as any;
-    expect(proxy(req)).toEqual({ type: "next" });
+  it("passes an API route through instead of answering 401", () => {
+    const response = proxy(get("/api/proxy/magpie/sources"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-middleware-next")).toBe("1");
   });
 
-  it("case 10: /dashboard still redirects to /login without a session", () => {
-    const result = proxy(makeRequest("/dashboard"));
-    expect(result).toMatchObject({ type: "redirect" });
-    expect((result as any).url).toContain("/login?returnTo=%2Fdashboard");
+  it("ignores a leftover v1 session cookie — it neither admits nor rejects", () => {
+    const response = proxy(get("/audit", { headers: { cookie: "bastion_session=forged.value" } }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-middleware-next")).toBe("1");
   });
 
-  it("case 10: an unknown /api/x still answers 401 without a session", () => {
-    expect(proxy(makeRequest("/api/x"))).toEqual({
-      type: "json",
-      body: { error: "Unauthorized" },
-      status: 401,
-    });
+  it("sets no cookie", () => {
+    const response = proxy(get("/"));
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+});
+
+describe("proxy — security headers", () => {
+  it("still sets the CSP and the hardening headers", () => {
+    const response = proxy(get("/audit"));
+    expect(response.headers.get("content-security-policy")).toContain("default-src 'self'");
+    expect(response.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
+    expect(response.headers.get("permissions-policy")).toBe(
+      "camera=(), microphone=(), geolocation=()",
+    );
   });
 
-  it("case 10: the paths are exact — a path beneath one still redirects", () => {
-    for (const pathname of ["/robots.txt/x", "/opengraph-image/x", "/icon.svg/dashboard"]) {
-      expect(proxy(makeRequest(pathname)), pathname).toMatchObject({ type: "redirect" });
-    }
+  it.each(["production", "development"])(
+    "in %s, sets exactly the headers next.config.ts declares",
+    async (env) => {
+      vi.stubEnv("NODE_ENV", env);
+      const declared = await configHeaders();
+      const response = proxy(get("/"));
+      for (const [key, value] of Object.entries(declared)) {
+        expect(response.headers.get(key), key).toBe(value);
+      }
+    },
+  );
+
+  it("production CSP does not permit 'unsafe-eval'", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    expect(proxy(get("/")).headers.get("content-security-policy")).not.toContain("unsafe-eval");
+  });
+});
+
+describe("proxy — matcher", () => {
+  it.each(["/", "/audit", "/api/health", "/opengraph-image"])("runs on %s", (url) => {
+    expect(unstable_doesMiddlewareMatch({ config, nextConfig, url })).toBe(true);
+  });
+
+  it.each([
+    "/_next/static/chunks/app.js",
+    "/_next/image?url=x",
+    "/favicon.ico",
+    "/assets/logo.svg",
+  ])("skips %s", (url) => {
+    expect(unstable_doesMiddlewareMatch({ config, nextConfig, url })).toBe(false);
   });
 });

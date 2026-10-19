@@ -6,8 +6,8 @@
  *   pnpm build && pnpm start          # terminal 1
  *   pnpm test:e2e                      # terminal 2
  *
- * The e2e suite assumes DEMO_MODE=true so the guest sign-in shortcut is
- * available. In CI, point PLAYWRIGHT_BASE_URL at a preview deployment.
+ * There is no sign-in (spec 21 §2): every spec runs as an anonymous visitor.
+ * In CI, point PLAYWRIGHT_BASE_URL at a preview deployment.
  */
 import { defineConfig, devices } from "@playwright/test";
 

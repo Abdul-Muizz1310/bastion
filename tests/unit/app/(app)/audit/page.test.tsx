@@ -7,11 +7,6 @@ vi.mock("next/link", () => ({
     createElement("a", { href, className }, children),
 }));
 
-const mockCookieGet = vi.fn();
-vi.mock("next/headers", () => ({
-  cookies: vi.fn().mockResolvedValue({ get: (name: string) => mockCookieGet(name) }),
-}));
-
 vi.mock("next/navigation", () => ({
   redirect: vi.fn(() => {
     throw new Error("REDIRECT_CALLED");
@@ -24,28 +19,19 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
-const mockGetSession = vi.fn();
-vi.mock("@/lib/auth/session", () => ({
-  getSession: (...args: unknown[]) => mockGetSession(...args),
-  COOKIE_NAME: "bastion_session",
-}));
-
-const mockQueryAuditFor = vi.fn();
+const mockQueryAudit = vi.fn();
 vi.mock("@/features/audit/server/query", () => ({
-  queryAuditFor: (...args: unknown[]) => mockQueryAuditFor(...args),
-  queryTraceFor: vi.fn(),
+  queryAudit: (...args: unknown[]) => mockQueryAudit(...args),
+  queryTrace: vi.fn(),
 }));
 
 import AuditPage from "@/app/(app)/audit/page";
 
-function session(role: "admin" | "editor" | "viewer", id = "u1") {
-  return { sid: "s1", user: { id, email: `${role}@x.com`, role, name: null } };
-}
-
 function event(overrides: Record<string, unknown> = {}) {
   return {
     id: 1,
-    actorId: "u1",
+    actorId: null,
+    actor: "v_kk6eooepno",
     action: "gateway.proxy.ok",
     entityType: "proxy",
     entityId: "magpie:scrape",
@@ -59,88 +45,102 @@ function event(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe("18-audit-page: auth + RBAC", () => {
+describe("18-audit-page: public (spec 21 §2)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockQueryAuditFor.mockResolvedValue([]);
+    mockQueryAudit.mockResolvedValue([]);
   });
 
-  it("case 2: admin session renders without forcing actorId", async () => {
-    mockCookieGet.mockReturnValue({ value: "c" });
-    mockGetSession.mockResolvedValue(session("admin"));
-    mockQueryAuditFor.mockResolvedValueOnce([event()]);
+  it("case 2: renders for an anonymous visitor without redirecting", async () => {
+    mockQueryAudit.mockResolvedValueOnce([event()]);
     const el = await AuditPage({ searchParams: Promise.resolve({}) });
     const html = renderToString(el);
     expect(html).toContain("Audit");
     expect(html).toContain("gateway.proxy.ok");
-    expect(mockQueryAuditFor).toHaveBeenCalled();
+    expect(mockQueryAudit).toHaveBeenCalled();
   });
 
-  it("case 4: viewer session shows 'scoped to your events' notice", async () => {
-    mockCookieGet.mockReturnValue({ value: "c" });
-    mockGetSession.mockResolvedValue(session("viewer"));
-    mockQueryAuditFor.mockResolvedValueOnce([]);
-    const el = await AuditPage({ searchParams: Promise.resolve({}) });
-    const html = renderToString(el);
-    expect(html).toContain("scoped to your events");
+  it("shows no role and no 'scoped to your events' notice — everyone reads the same log", async () => {
+    const html = renderToString(await AuditPage({ searchParams: Promise.resolve({}) }));
+    expect(html).not.toContain("scoped to your events");
+    expect(html).not.toContain("role ·");
+  });
+});
+
+describe("18-audit-page: the actor column", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it("unauth → redirects to /login?returnTo=%2Faudit", async () => {
-    mockCookieGet.mockReturnValue(undefined);
-    mockGetSession.mockResolvedValue(null);
-    const { redirect } = await import("next/navigation");
-    await expect(AuditPage({ searchParams: Promise.resolve({}) })).rejects.toThrow(
-      "REDIRECT_CALLED",
-    );
-    expect(redirect).toHaveBeenCalledWith("/login?returnTo=%2Faudit");
+  it("shows a visitor id as the actor", async () => {
+    mockQueryAudit.mockResolvedValueOnce([event({ actor: "v_kk6eooepno" })]);
+    const html = renderToString(await AuditPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain("v_kk6eooepno");
+  });
+
+  it("shows system work as bastion", async () => {
+    mockQueryAudit.mockResolvedValueOnce([event({ actor: "bastion" })]);
+    const html = renderToString(await AuditPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain(">bastion<");
+  });
+
+  it("falls back to the first 8 chars of a v1 row's actor_id", async () => {
+    mockQueryAudit.mockResolvedValueOnce([
+      event({ actor: null, actorId: "550e8400-e29b-41d4-a716-446655440000" }),
+    ]);
+    const html = renderToString(await AuditPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain("550e8400");
+    expect(html).not.toContain("550e8400-e29b");
+  });
+
+  it("shows 'system' for a v1 row with no actor at all", async () => {
+    mockQueryAudit.mockResolvedValueOnce([event({ actor: null, actorId: null })]);
+    const html = renderToString(await AuditPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain(">system<");
   });
 });
 
 describe("18-audit-page: filters + rendering", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockCookieGet.mockReturnValue({ value: "c" });
-    mockGetSession.mockResolvedValue(session("admin"));
   });
 
-  it("case 5: ?service=magpie passes through to queryAuditFor", async () => {
-    mockQueryAuditFor.mockResolvedValueOnce([]);
+  it("case 5: ?service=magpie passes through to queryAudit", async () => {
+    mockQueryAudit.mockResolvedValueOnce([]);
     await AuditPage({ searchParams: Promise.resolve({ service: "magpie" }) });
-    expect(mockQueryAuditFor.mock.calls[0][1]).toEqual(
-      expect.objectContaining({ service: "magpie" }),
-    );
+    expect(mockQueryAudit.mock.calls[0][0]).toEqual(expect.objectContaining({ service: "magpie" }));
   });
 
   it("case 6: ?action=gateway. passes through as actionPrefix", async () => {
-    mockQueryAuditFor.mockResolvedValueOnce([]);
+    mockQueryAudit.mockResolvedValueOnce([]);
     await AuditPage({ searchParams: Promise.resolve({ action: "gateway." }) });
-    expect(mockQueryAuditFor.mock.calls[0][1]).toEqual(
+    expect(mockQueryAudit.mock.calls[0][0]).toEqual(
       expect.objectContaining({ actionPrefix: "gateway." }),
     );
   });
 
   it("service=all is treated as no filter", async () => {
-    mockQueryAuditFor.mockResolvedValueOnce([]);
+    mockQueryAudit.mockResolvedValueOnce([]);
     await AuditPage({ searchParams: Promise.resolve({ service: "all" }) });
-    expect(mockQueryAuditFor.mock.calls[0][1].service).toBeUndefined();
+    expect(mockQueryAudit.mock.calls[0][0].service).toBeUndefined();
   });
 
   it("case 7: empty result renders the 'no events match' message", async () => {
-    mockQueryAuditFor.mockResolvedValueOnce([]);
+    mockQueryAudit.mockResolvedValueOnce([]);
     const el = await AuditPage({ searchParams: Promise.resolve({}) });
     const html = renderToString(el);
     expect(html).toContain("no events match");
   });
 
   it("case 8: rows with requestId wrap in an audit trace link", async () => {
-    mockQueryAuditFor.mockResolvedValueOnce([event({ requestId: "req-link-1" })]);
+    mockQueryAudit.mockResolvedValueOnce([event({ requestId: "req-link-1" })]);
     const el = await AuditPage({ searchParams: Promise.resolve({}) });
     const html = renderToString(el);
     expect(html).toContain('href="/audit/req-link-1"');
   });
 
   it("rows without requestId do NOT wrap in a link", async () => {
-    mockQueryAuditFor.mockResolvedValueOnce([event({ requestId: null })]);
+    mockQueryAudit.mockResolvedValueOnce([event({ requestId: null })]);
     const el = await AuditPage({ searchParams: Promise.resolve({}) });
     const html = renderToString(el);
     // The action text renders, but no /audit/ link is generated for it
@@ -148,7 +148,7 @@ describe("18-audit-page: filters + rendering", () => {
   });
 
   it("status bar includes event count", async () => {
-    mockQueryAuditFor.mockResolvedValueOnce([event(), event({ id: 2 })]);
+    mockQueryAudit.mockResolvedValueOnce([event(), event({ id: 2 })]);
     const el = await AuditPage({ searchParams: Promise.resolve({}) });
     const html = renderToString(el);
     expect(html).toContain("2 events");

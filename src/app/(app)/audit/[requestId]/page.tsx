@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { PageFrame } from "@/components/terminal/PageFrame";
 import { TerminalWindow } from "@/components/terminal/TerminalWindow";
-import { queryTraceFor } from "@/features/audit/server/query";
-import { COOKIE_NAME, getSession } from "@/lib/auth/session";
+import { queryTrace } from "@/features/audit/server/query";
 import type { Event as EventRow } from "@/lib/db/schema";
 
 function formatMsDelta(ms: number): string {
@@ -33,13 +31,7 @@ export async function generateMetadata({
 export default async function TracePage({ params }: { params: Promise<{ requestId: string }> }) {
   const { requestId } = await params;
 
-  const cookieStore = await cookies();
-  const session = await getSession(cookieStore.get(COOKIE_NAME)?.value);
-  if (!session) {
-    redirect(`/login?returnTo=${encodeURIComponent(`/audit/${requestId}`)}`);
-  }
-
-  const events = await queryTraceFor(session, requestId);
+  const events = await queryTrace(requestId);
   if (events.length === 0) {
     notFound();
   }

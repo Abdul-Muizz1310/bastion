@@ -1,61 +1,17 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { verifySealedCookie } from "@/lib/auth/seal";
+import { securityHeaders } from "@/platform/security-headers";
 
-const PUBLIC_PATHS = new Set([
-  "/",
-  "/login",
-  "/auth/callback",
-  "/api/health",
-  "/api/status",
-  "/api/public-key",
-]);
-
-// Metadata files: crawlers and link-preview bots fetch these without a session.
-// Exact paths, not prefixes, so nothing beneath them opens up. Next appends a
-// `?<hash>` query to icon URLs; the pathname is unchanged.
-const METADATA_PATHS = new Set([
-  "/opengraph-image",
-  "/icon.svg",
-  "/apple-icon.png",
-  "/manifest.webmanifest",
-  "/robots.txt",
-  "/sitemap.xml",
-  "/icon-192.png",
-  "/icon-512.png",
-  "/icon-maskable-512.png",
-]);
-
-export function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
-  // Public routes — no auth needed
-  if (
-    PUBLIC_PATHS.has(pathname) ||
-    METADATA_PATHS.has(pathname) ||
-    pathname.startsWith("/api/health") ||
-    pathname.startsWith("/api/status") ||
-    pathname.startsWith("/api/public-key")
-  ) {
-    return NextResponse.next();
+/**
+ * No sign-in (spec 21 §2): the proxy gates nothing. Every request passes through with the
+ * security headers next.config.ts also declares — the proxy is the second layer that keeps
+ * them on responses a config rule could miss.
+ */
+export function proxy(_request: NextRequest): NextResponse {
+  const response = NextResponse.next();
+  for (const { key, value } of securityHeaders(process.env.NODE_ENV)) {
+    response.headers.set(key, value);
   }
-
-  // Check for session cookie and verify HMAC
-  const sessionCookie = request.cookies.get("bastion_session");
-  if (!sessionCookie?.value || !verifySealedCookie(sessionCookie.value)) {
-    // API routes get 401 JSON
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    // Page routes redirect to login with returnTo preserving pathname + query
-    const loginUrl = new URL("/login", request.url);
-    const searchStr = request.nextUrl.searchParams.toString();
-    const returnTo = searchStr ? `${pathname}?${searchStr}` : pathname;
-    loginUrl.searchParams.set("returnTo", returnTo);
-    return NextResponse.redirect(loginUrl);
-  }
-
-  // Full RBAC enforcement happens in Server Actions via withRole()
-  return NextResponse.next();
+  return response;
 }
 
 export const config = {

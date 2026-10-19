@@ -1,16 +1,16 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { PageFrame } from "@/components/terminal/PageFrame";
 import { TerminalWindow } from "@/components/terminal/TerminalWindow";
 import { TimeTravelSlider } from "@/features/time-travel/components/TimeTravelSlider";
 import { toTimeTravelView } from "@/features/time-travel/view";
 import { getTimeTravelState } from "@/lib/audit/replay";
-import { requireRole } from "@/lib/auth/rbac";
 
 export const metadata: Metadata = { title: "time travel" };
 
 export default async function TimeTravelPage() {
-  await requireRole(["admin"], "time-travel.view");
-
+  // Request-time, never prerendered at build: the replay reads the live audit log.
+  await connection();
   // Seed the first paint with the current state; every subsequent position the
   // user drags to is fetched by the client slider through the Server Action.
   const asOf = new Date();
@@ -25,7 +25,7 @@ export default async function TimeTravelPage() {
             Time <span className="text-accent-violet">Travel</span>
           </h1>
           <p className="mt-2 font-mono text-sm text-fg-muted">
-            Rewind the audit log to any point in time. Admin only.
+            Rewind the audit log to any point in time.
           </p>
         </div>
 

@@ -41,19 +41,19 @@ describe("20-site: manifest (case 5)", () => {
 describe("20-site: robots and sitemap (case 6)", () => {
   it("allows the site, disallows only the machine endpoints and names the sitemap", () => {
     expect(robots()).toEqual({
-      rules: [{ userAgent: "*", allow: "/", disallow: ["/api/", "/auth/"] }],
+      rules: [{ userAgent: "*", allow: "/", disallow: ["/api/"] }],
       sitemap: "https://bastion-six.vercel.app/sitemap.xml",
     });
   });
 
   it("gives a site with nothing to disallow a bare allow rule", () => {
-    const site = defineSite({ ...SITE, routes: { sitemap: ["/login"], disallow: [] } });
+    const site = defineSite({ ...SITE, routes: { sitemap: ["/"], disallow: [] } });
     expect(robotsFile(site).rules).toEqual([{ userAgent: "*", allow: "/" }]);
   });
 
-  it("lists the sitemap routes, as absolute URLs, once each", () => {
+  it("lists the sitemap routes, as absolute URLs, once each — the home page, now public", () => {
     const urls = sitemap().map((entry) => entry.url);
-    expect(urls).toEqual(["https://bastion-six.vercel.app/login"]);
+    expect(urls).toEqual(["https://bastion-six.vercel.app/"]);
     expect(new Set(urls).size).toBe(urls.length);
   });
 });

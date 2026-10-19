@@ -78,3 +78,11 @@ describe("next.config.ts security headers", () => {
     expect(headers["Permissions-Policy"]).toBe("camera=(), microphone=(), geolocation=()");
   });
 });
+
+describe("next.config.ts — no sign-in", () => {
+  it("drops experimental.authInterrupts: there are no forbidden/unauthorized pages any more", async () => {
+    vi.resetModules();
+    const config = (await import("../../next.config")).default;
+    expect(config.experimental?.authInterrupts).toBeUndefined();
+  });
+});

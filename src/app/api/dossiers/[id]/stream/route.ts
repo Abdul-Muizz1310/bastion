@@ -1,7 +1,5 @@
-import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { getDossier, getDossierStatus, listDossierEvents } from "@/features/dossier/server/query";
-import { COOKIE_NAME, getSession } from "@/lib/auth/session";
 import type { Dossier, DossierEvent as DossierEventRow } from "@/lib/db/schema";
 
 // The SSE loop can run up to maxIterations * pollIntervalMs; keep this route's
@@ -104,20 +102,14 @@ export async function* streamDossierEvents(
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  // 1. Auth
-  const cookieStore = await cookies();
-  const session = await getSession(cookieStore.get(COOKIE_NAME)?.value);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  // 2. Dossier must exist
+  // Public (spec 21 §2): a dossier's progress is readable by anyone holding its id.
+  // 1. Dossier must exist
   const dossier = await getDossier(id);
   if (!dossier) {
     return NextResponse.json({ error: "Dossier not found" }, { status: 404 });
   }
 
-  // 3. Build the streaming response
+  // 2. Build the streaming response
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {

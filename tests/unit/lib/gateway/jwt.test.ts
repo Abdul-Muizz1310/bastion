@@ -152,13 +152,6 @@ describe("09-gateway: proxy behavior", () => {
     expect(service.healthPath).toBeTruthy();
   });
 
-  it("proxy call is logged as gateway.proxy audit event (integration)", async () => {
-    // Structural: the proxy route handler calls appendEvent with action "gateway.proxy"
-    // We verify the audit module exports appendEvent
-    const auditMod = await import("@/lib/audit/write");
-    expect(auditMod.appendEvent).toBeDefined();
-  });
-
   it("downstream 500 results in 502 from gateway (integration)", () => {
     // Structural: the gateway proxies fetch responses. When the downstream
     // returns 500, the gateway route handler maps this to a 502 Bad Gateway.

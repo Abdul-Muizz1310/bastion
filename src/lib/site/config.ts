@@ -14,6 +14,6 @@ export const SITE = defineSite({
     headline: "one gateway, every call audited.",
     highlight: "audited",
   },
-  // Every page but /login needs a session and redirects there; robots.txt blocks only machine endpoints.
-  routes: { sitemap: ["/login"], disallow: ["/api/", "/auth/"] },
+  // No sign-in (spec 21 §2): every page is public; robots.txt blocks only machine endpoints.
+  routes: { sitemap: ["/"], disallow: ["/api/"] },
 });

@@ -2,16 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Spec 07 — the Server Action the slider calls. It is the ONLY path from the
- * client to `getTimeTravelState`, so the admin gate and the read-only contract
- * are asserted here (cases 11 and 12).
+ * client to `getTimeTravelState`, so its read-only contract is asserted here
+ * (case 12). Spec 21 §2: there is no sign-in, so it is open to every visitor.
  */
-
-const mockRequireRole = vi.fn();
-class MockAccessDeniedError extends Error {}
-vi.mock("@/lib/auth/rbac", () => ({
-  requireRole: (...args: unknown[]) => mockRequireRole(...args),
-  AccessDeniedError: MockAccessDeniedError,
-}));
 
 const mockGetTimeTravelState = vi.fn();
 vi.mock("@/lib/audit/replay", () => ({
@@ -41,26 +34,14 @@ function primeState(overrides: Record<string, unknown> = {}) {
 describe("07-replay server action: loadTimeTravelState", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequireRole.mockResolvedValue({
-      sid: "sess-1",
-      user: { id: "admin-1", email: "a@x.com", role: "admin", name: null },
-    });
     primeState();
   });
 
-  it("case 11: gates on the admin role before touching the database", async () => {
+  it("needs no session: an anonymous visitor's call reaches the replay query", async () => {
     const { loadTimeTravelState } = await import("@/features/time-travel/server/query");
-    await loadTimeTravelState("2026-01-06T00:00:00.000Z");
-    expect(mockRequireRole).toHaveBeenCalledWith(["admin"], "time-travel.query");
-  });
-
-  it("case 11b: a denied role stops the query — getTimeTravelState is never called", async () => {
-    mockRequireRole.mockRejectedValueOnce(new MockAccessDeniedError("denied"));
-    const { loadTimeTravelState } = await import("@/features/time-travel/server/query");
-    await expect(loadTimeTravelState("2026-01-06T00:00:00.000Z")).rejects.toBeInstanceOf(
-      MockAccessDeniedError,
-    );
-    expect(mockGetTimeTravelState).not.toHaveBeenCalled();
+    const res = await loadTimeTravelState("2026-01-06T00:00:00.000Z");
+    expect(res.ok).toBe(true);
+    expect(mockGetTimeTravelState).toHaveBeenCalledTimes(1);
   });
 
   it("case 1: forwards the requested timestamp to the DISTINCT ON query", async () => {

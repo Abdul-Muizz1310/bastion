@@ -1,34 +1,20 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { PageFrame } from "@/components/terminal/PageFrame";
-import { TerminalWindow } from "@/components/terminal/TerminalWindow";
-import { DossierPrompt } from "@/features/dossier/components/DossierPrompt";
 import { RecentDossiers } from "@/features/dossier/components/RecentDossiers";
 import { listRecentDossiers } from "@/features/dossier/server/query";
-import { COOKIE_NAME, getSession } from "@/lib/auth/session";
 
 export const metadata: Metadata = { alternates: { canonical: "/" } };
 
 export default async function Home() {
-  const cookieStore = await cookies();
-  const session = await getSession(cookieStore.get(COOKIE_NAME)?.value);
-  if (!session) {
-    redirect("/login?returnTo=%2F");
-  }
-
-  const canRun = session.user.role === "admin" || session.user.role === "editor";
-  const recentScope = session.user.role === "viewer" ? session.user.id : null;
-  const recent = await listRecentDossiers(recentScope, 8);
+  // Request-time, never prerendered at build: the list is live data. (In v1 the session
+  // cookie made this page dynamic; with no sign-in, connection() has to say so.)
+  await connection();
+  // Public (spec 21 §2): every visitor sees the same recent dossiers.
+  const recent = await listRecentDossiers(null, 8);
 
   return (
-    <PageFrame
-      active="home"
-      role={session.user.role}
-      userEmail={session.user.email}
-      statusLeft={`role · ${session.user.role}`}
-      statusRight={`${recent.length} recent dossiers`}
-    >
+    <PageFrame active="home" statusRight={`${recent.length} recent dossiers`}>
       <div className="space-y-8">
         <div>
           <p className="font-mono text-xs text-fg-faint">{"// bastion // dossier console"}</p>
@@ -43,10 +29,6 @@ export default async function Home() {
           </p>
         </div>
 
-        <TerminalWindow title="$ bastion dossier new" status="yellow">
-          <DossierPrompt canRun={canRun} roleLabel={session.user.role} />
-        </TerminalWindow>
-
         <div className="grid gap-4 sm:grid-cols-3">
           <Step index={1} title="gather" description="magpie scrapes selected sources live" />
           <Step index={2} title="seal" description="inkprint signs every evidence item" />
@@ -60,9 +42,6 @@ export default async function Home() {
         <div>
           <p className="mb-3 font-mono text-xs uppercase tracking-[0.2em] text-fg-muted">
             <span className="text-accent-violet">&gt;</span> recent dossiers
-            {session.user.role === "viewer" ? (
-              <span className="ml-2 text-fg-faint">(yours)</span>
-            ) : null}
           </p>
           <RecentDossiers dossiers={recent} />
         </div>

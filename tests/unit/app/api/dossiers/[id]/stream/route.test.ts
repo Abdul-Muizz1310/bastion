@@ -20,21 +20,6 @@ vi.mock("next/server", () => {
   return { NextResponse: MockNextResponse, NextRequest: class {} };
 });
 
-// Mock next/headers
-const mockCookieGet = vi.fn();
-vi.mock("next/headers", () => ({
-  cookies: vi.fn().mockResolvedValue({
-    get: (name: string) => mockCookieGet(name),
-  }),
-}));
-
-// Mock session
-const mockGetSession = vi.fn();
-vi.mock("@/lib/auth/session", () => ({
-  getSession: (...args: unknown[]) => mockGetSession(...args),
-  COOKIE_NAME: "bastion_session",
-}));
-
 // Mock query helpers
 const mockGetDossier = vi.fn();
 const mockListEvents = vi.fn();
@@ -50,7 +35,8 @@ const DOSSIER_UUID = "550e8400-e29b-41d4-a716-446655440000";
 function makeDossier(overrides: Partial<Dossier> = {}): Dossier {
   return {
     id: DOSSIER_UUID,
-    userId: "user-1",
+    userId: null,
+    visitor: "v_kk6eooepno",
     claim: "test claim",
     sources: ["hackernews"],
     mode: "standard",
@@ -59,6 +45,7 @@ function makeDossier(overrides: Partial<Dossier> = {}): Dossier {
     confidence: null,
     requestId: "req-1",
     envelopeId: null,
+    error: null,
     createdAt: new Date("2026-04-18T10:00:00Z"),
     updatedAt: new Date("2026-04-18T10:00:00Z"),
     ...overrides,
@@ -124,10 +111,7 @@ describe("17-sse: streamDossierEvents generator", () => {
     const getDossierFn = vi
       .fn()
       .mockResolvedValue(makeDossier({ status: "succeeded", verdict: "TRUE", confidence: "0.90" }));
-    const listEventsFn = vi
-      .fn()
-      .mockResolvedValueOnce(events)
-      .mockResolvedValue([]);
+    const listEventsFn = vi.fn().mockResolvedValueOnce(events).mockResolvedValue([]);
 
     const chunks = await collect(
       streamDossierEvents(DOSSIER_UUID, initial, { getDossierFn, listEventsFn }, fastConfig),
@@ -161,9 +145,11 @@ describe("17-sse: streamDossierEvents generator", () => {
 
   it("case 12: emits done event when status becomes terminal and stops", async () => {
     const { streamDossierEvents } = await import("@/app/api/dossiers/[id]/stream/route");
-    const getDossierFn = vi.fn().mockResolvedValue(
-      makeDossier({ status: "succeeded", verdict: "FALSE", confidence: "0.75" }),
-    );
+    const getDossierFn = vi
+      .fn()
+      .mockResolvedValue(
+        makeDossier({ status: "succeeded", verdict: "FALSE", confidence: "0.75" }),
+      );
     const listEventsFn = vi.fn().mockResolvedValue([]);
 
     const chunks = await collect(
@@ -185,7 +171,7 @@ describe("17-sse: streamDossierEvents generator", () => {
     const chunks = await collect(
       streamDossierEvents(DOSSIER_UUID, initial, { getDossierFn, listEventsFn }, fastConfig),
     );
-    expect(chunks.some((c) => c.includes('event: done'))).toBe(true);
+    expect(chunks.some((c) => c.includes("event: done"))).toBe(true);
   });
 
   it("case 13: emits heartbeat when interval elapses", async () => {
@@ -198,7 +184,12 @@ describe("17-sse: streamDossierEvents generator", () => {
         DOSSIER_UUID,
         initial,
         { getDossierFn, listEventsFn },
-        { pollIntervalMs: 0, heartbeatIntervalMs: 0, maxIterations: 2, sleep: () => Promise.resolve() },
+        {
+          pollIntervalMs: 0,
+          heartbeatIntervalMs: 0,
+          maxIterations: 2,
+          sleep: () => Promise.resolve(),
+        },
       ),
     );
 
@@ -216,7 +207,12 @@ describe("17-sse: streamDossierEvents generator", () => {
         DOSSIER_UUID,
         initial,
         { getDossierFn, listEventsFn },
-        { pollIntervalMs: 0, heartbeatIntervalMs: 1_000_000, maxIterations: 2, sleep: () => Promise.resolve() },
+        {
+          pollIntervalMs: 0,
+          heartbeatIntervalMs: 1_000_000,
+          maxIterations: 2,
+          sleep: () => Promise.resolve(),
+        },
       ),
     );
 
@@ -238,27 +234,24 @@ describe("17-sse: streamDossierEvents generator", () => {
   });
 });
 
-describe("17-sse: GET route auth + 404", () => {
+describe("17-sse: GET route — public + 404", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("case 7: returns 401 when no session", async () => {
-    mockCookieGet.mockReturnValue(undefined);
-    mockGetSession.mockResolvedValue(null);
+  it("case 7: streams for an anonymous visitor — no session is read (spec 21 §2)", async () => {
+    mockGetDossier.mockResolvedValue(makeDossier({ status: "succeeded", verdict: "TRUE" }));
+    mockListEvents.mockResolvedValue([]);
     const { GET } = await import("@/app/api/dossiers/[id]/stream/route");
     const req = {} as any;
-    const res = await GET(req, { params: Promise.resolve({ id: DOSSIER_UUID }) });
-    expect(res.status).toBe(401);
-    expect(mockGetDossier).not.toHaveBeenCalled();
+    const res = (await GET(req, {
+      params: Promise.resolve({ id: DOSSIER_UUID }),
+    })) as unknown as Response;
+    expect(res.status).toBe(200);
+    expect(mockGetDossier).toHaveBeenCalledWith(DOSSIER_UUID);
   });
 
   it("case 8: returns 404 when dossier does not exist", async () => {
-    mockCookieGet.mockReturnValue({ value: "valid-cookie" });
-    mockGetSession.mockResolvedValue({
-      sid: "s1",
-      user: { id: "u1", email: "u@x.com", role: "admin", name: null },
-    });
     mockGetDossier.mockResolvedValue(null);
     const { GET } = await import("@/app/api/dossiers/[id]/stream/route");
     const req = {} as any;
@@ -267,11 +260,6 @@ describe("17-sse: GET route auth + 404", () => {
   });
 
   it("case 9: returns text/event-stream for valid request", async () => {
-    mockCookieGet.mockReturnValue({ value: "valid-cookie" });
-    mockGetSession.mockResolvedValue({
-      sid: "s1",
-      user: { id: "u1", email: "u@x.com", role: "admin", name: null },
-    });
     mockGetDossier.mockResolvedValue(makeDossier({ status: "succeeded", verdict: "TRUE" }));
     mockListEvents.mockResolvedValue([]);
     const { GET } = await import("@/app/api/dossiers/[id]/stream/route");

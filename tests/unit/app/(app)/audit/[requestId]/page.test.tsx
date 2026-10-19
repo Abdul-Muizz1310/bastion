@@ -7,11 +7,6 @@ vi.mock("next/link", () => ({
     createElement("a", { href, className }, children),
 }));
 
-const mockCookieGet = vi.fn();
-vi.mock("next/headers", () => ({
-  cookies: vi.fn().mockResolvedValue({ get: (name: string) => mockCookieGet(name) }),
-}));
-
 vi.mock("next/navigation", () => ({
   redirect: vi.fn(() => {
     throw new Error("REDIRECT_CALLED");
@@ -24,28 +19,19 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
-const mockGetSession = vi.fn();
-vi.mock("@/lib/auth/session", () => ({
-  getSession: (...args: unknown[]) => mockGetSession(...args),
-  COOKIE_NAME: "bastion_session",
-}));
-
-const mockQueryTraceFor = vi.fn();
+const mockQueryTrace = vi.fn();
 vi.mock("@/features/audit/server/query", () => ({
-  queryAuditFor: vi.fn(),
-  queryTraceFor: (...args: unknown[]) => mockQueryTraceFor(...args),
+  queryAudit: vi.fn(),
+  queryTrace: (...args: unknown[]) => mockQueryTrace(...args),
 }));
 
 import TracePage from "@/app/(app)/audit/[requestId]/page";
 
-function session(role: "admin" | "editor" | "viewer", id = "u1") {
-  return { sid: "s1", user: { id, email: `${role}@x.com`, role, name: null } };
-}
-
 function event(overrides: Record<string, unknown> = {}) {
   return {
     id: 1,
-    actorId: "u1",
+    actorId: null,
+    actor: "v_kk6eooepno",
     action: "gateway.proxy.ok",
     entityType: "proxy",
     entityId: "magpie:scrape",
@@ -59,36 +45,48 @@ function event(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe("18-trace-page: auth", () => {
+describe("18-trace-page: public (spec 21 §2)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("unauth → redirects to /login with returnTo", async () => {
-    mockCookieGet.mockReturnValue(undefined);
-    mockGetSession.mockResolvedValue(null);
+  it("renders for an anonymous visitor without redirecting", async () => {
+    mockQueryTrace.mockResolvedValueOnce([event()]);
     const { redirect } = await import("next/navigation");
-    await expect(
-      TracePage({ params: Promise.resolve({ requestId: "req-abc" }) }),
-    ).rejects.toThrow("REDIRECT_CALLED");
-    expect(redirect).toHaveBeenCalledWith(
-      expect.stringContaining("returnTo=%2Faudit%2Freq-abc"),
+    const html = renderToString(
+      await TracePage({ params: Promise.resolve({ requestId: "req-abc" }) }),
     );
+    expect(html).toContain("gateway.proxy.ok");
+    expect(redirect).not.toHaveBeenCalled();
+    expect(mockQueryTrace).toHaveBeenCalledWith("req-abc");
   });
 });
 
 describe("18-trace-page: happy path", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockCookieGet.mockReturnValue({ value: "c" });
-    mockGetSession.mockResolvedValue(session("admin"));
   });
 
-  it("case 9: admin + matching trace renders waterfall", async () => {
-    mockQueryTraceFor.mockResolvedValueOnce([
-      event({ id: 1, action: "dossier.created", service: "bastion", createdAt: new Date("2026-04-18T10:00:00Z") }),
-      event({ id: 2, action: "gateway.proxy.ok", service: "magpie", createdAt: new Date("2026-04-18T10:00:01Z") }),
-      event({ id: 3, action: "gateway.proxy.ok", service: "inkprint", createdAt: new Date("2026-04-18T10:00:02Z") }),
+  it("case 9: a matching trace renders the waterfall", async () => {
+    mockQueryTrace.mockResolvedValueOnce([
+      event({
+        id: 1,
+        action: "dossier.created",
+        service: "bastion",
+        createdAt: new Date("2026-04-18T10:00:00Z"),
+      }),
+      event({
+        id: 2,
+        action: "gateway.proxy.ok",
+        service: "magpie",
+        createdAt: new Date("2026-04-18T10:00:01Z"),
+      }),
+      event({
+        id: 3,
+        action: "gateway.proxy.ok",
+        service: "inkprint",
+        createdAt: new Date("2026-04-18T10:00:02Z"),
+      }),
     ]);
     const el = await TracePage({ params: Promise.resolve({ requestId: "req-abc" }) });
     const html = renderToString(el);
@@ -99,7 +97,7 @@ describe("18-trace-page: happy path", () => {
   });
 
   it("case 13: renders total latency from first/last timestamps", async () => {
-    mockQueryTraceFor.mockResolvedValueOnce([
+    mockQueryTrace.mockResolvedValueOnce([
       event({ id: 1, createdAt: new Date("2026-04-18T10:00:00.000Z") }),
       event({ id: 2, createdAt: new Date("2026-04-18T10:00:02.500Z") }),
     ]);
@@ -109,7 +107,7 @@ describe("18-trace-page: happy path", () => {
   });
 
   it("case 10: empty trace → notFound()", async () => {
-    mockQueryTraceFor.mockResolvedValueOnce([]);
+    mockQueryTrace.mockResolvedValueOnce([]);
     const { notFound } = await import("next/navigation");
     await expect(
       TracePage({ params: Promise.resolve({ requestId: "req-empty" }) }),
@@ -118,7 +116,7 @@ describe("18-trace-page: happy path", () => {
   });
 
   it("renders 'back to audit log' link", async () => {
-    mockQueryTraceFor.mockResolvedValueOnce([event()]);
+    mockQueryTrace.mockResolvedValueOnce([event()]);
     const el = await TracePage({ params: Promise.resolve({ requestId: "req-abc" }) });
     const html = renderToString(el);
     expect(html).toContain("back to audit log");
@@ -126,26 +124,13 @@ describe("18-trace-page: happy path", () => {
   });
 
   it("shows first 8 chars of requestId in status bar + heading", async () => {
-    mockQueryTraceFor.mockResolvedValueOnce([event({ requestId: "550e8400-e29b-41d4-a716-446655440000" })]);
+    mockQueryTrace.mockResolvedValueOnce([
+      event({ requestId: "550e8400-e29b-41d4-a716-446655440000" }),
+    ]);
     const el = await TracePage({
       params: Promise.resolve({ requestId: "550e8400-e29b-41d4-a716-446655440000" }),
     });
     const html = renderToString(el);
     expect(html).toContain("550e8400");
-  });
-});
-
-describe("18-trace-page: RBAC (delegated to queryTraceFor)", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockCookieGet.mockReturnValue({ value: "c" });
-    mockGetSession.mockResolvedValue(session("viewer"));
-  });
-
-  it("case 11: viewer + foreign-actor trace → forbidden propagates from queryTraceFor", async () => {
-    mockQueryTraceFor.mockRejectedValueOnce(new Error("FORBIDDEN_CALLED"));
-    await expect(
-      TracePage({ params: Promise.resolve({ requestId: "req-abc" }) }),
-    ).rejects.toThrow("FORBIDDEN_CALLED");
   });
 });

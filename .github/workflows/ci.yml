@@ -64,9 +64,10 @@ jobs:
       - uses: actions/setup-node@v7
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      # `migrate` (not `push`) — the append-only guard lives in a migration
-      # file, so only the migration path installs it.
-      - run: pnpm drizzle-kit migrate
+      # The same script `pnpm build` runs on Vercel. VERCEL_ENV is unset here, so
+      # --force makes it migrate this service container. `migrate` (not `push`):
+      # the append-only guard lives in a migration file.
+      - run: node scripts/migrate.mjs --force
       - run: pnpm test:integration
   e2e:
     needs: build
@@ -87,7 +88,6 @@ jobs:
     env:
       DATABASE_URL: "postgresql://bastion:bastion@localhost:5432/bastion"
       IRON_SESSION_PASSWORD: "test-password-at-least-32-characters-long"
-      DEMO_MODE: "true"
       NEXT_PUBLIC_SITE_URL: "http://localhost:3000"
     steps:
       - uses: actions/checkout@v7
@@ -99,6 +99,6 @@ jobs:
       # @playwright/test is a committed devDependency (installed by the frozen
       # lockfile above); only the browser binaries need provisioning here.
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm drizzle-kit push --force
+      - run: node scripts/migrate.mjs --force
       - run: pnpm build
       - run: pnpm test:e2e

@@ -205,15 +205,6 @@ describe("07-replay: security", () => {
     mocks.mockSelect.mockReturnValue({ from: mocks.mockFrom });
   });
 
-  it("/time-travel requires admin role (tested in RBAC spec)", async () => {
-    // Structural: the time-travel page/route uses withRole(["admin"], ...)
-    const { AccessDeniedError, withRole } = await import("@/lib/auth/rbac");
-    const editor = { id: "2", role: "editor" as const };
-    await expect(withRole(["admin"], editor, "time-travel.view")).rejects.toThrow(
-      AccessDeniedError,
-    );
-  });
-
   it("case 12: the SQL it executes is a SELECT — no INSERT/UPDATE/DELETE/TRUNCATE", async () => {
     mocks.mockFrom.mockResolvedValueOnce([{ earliest: new Date("2026-01-01") }]);
     mocks.mockExecute.mockResolvedValueOnce([]);

@@ -8,34 +8,11 @@ vi.mock("next/link", () => ({
     createElement("a", { href, className }, children),
 }));
 
-// Mock cookies()
-const mockCookieGet = vi.fn();
-vi.mock("next/headers", () => ({
-  cookies: vi.fn().mockResolvedValue({
-    get: (name: string) => mockCookieGet(name),
-  }),
-}));
-
-// Mock forbidden() / unauthorized() with sentinel throws
-vi.mock("next/navigation", () => ({
-  forbidden: vi.fn(() => {
-    throw new Error("FORBIDDEN_CALLED");
-  }),
-  unauthorized: vi.fn(() => {
-    throw new Error("UNAUTHORIZED_CALLED");
-  }),
-}));
-
-// Mock session module
-const mockGetSession = vi.fn();
-vi.mock("@/lib/auth/session", () => ({
-  getSession: (...args: unknown[]) => mockGetSession(...args),
-  COOKIE_NAME: "bastion_session",
-}));
-
-// Mock audit write (rbac logs denials)
-vi.mock("@/lib/audit/write", () => ({
-  appendEvent: vi.fn().mockResolvedValue(1),
+// Spy on connection(): the page must wait for a request before it reads the database.
+const mockConnection = vi.fn().mockResolvedValue(undefined);
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  connection: () => mockConnection(),
 }));
 
 // Mock the replay query the page seeds its first render from
@@ -72,36 +49,13 @@ function primeReplay(overrides: Record<string, unknown> = {}) {
   });
 }
 
-function adminSession() {
-  return {
-    sid: "sess-1",
-    user: { id: "admin-1", email: "a@x.com", role: "admin" as const, name: null },
-  };
-}
-
-function editorSession() {
-  return {
-    sid: "sess-2",
-    user: { id: "editor-1", email: "e@x.com", role: "editor" as const, name: null },
-  };
-}
-
-function viewerSession() {
-  return {
-    sid: "sess-3",
-    user: { id: "viewer-1", email: "v@x.com", role: "viewer" as const, name: null },
-  };
-}
-
-describe("TimeTravelPage (admin-gated)", () => {
+describe("TimeTravelPage (public)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     primeReplay();
   });
 
-  it("case 9: renders for admin session", async () => {
-    mockCookieGet.mockReturnValue({ value: "valid-cookie" });
-    mockGetSession.mockResolvedValue(adminSession());
+  it("case 9: renders for an anonymous visitor — no sign-in, no role", async () => {
     const element = await TimeTravelPage();
     const html = renderToString(element);
     expect(html).toContain("Time");
@@ -110,8 +64,6 @@ describe("TimeTravelPage (admin-gated)", () => {
   });
 
   it("case 2: seeds the first render from a real replay query at the current moment", async () => {
-    mockCookieGet.mockReturnValue({ value: "valid-cookie" });
-    mockGetSession.mockResolvedValue(adminSession());
     const before = Date.now();
     const element = await TimeTravelPage();
     const after = Date.now();
@@ -128,62 +80,28 @@ describe("TimeTravelPage (admin-gated)", () => {
   });
 
   it("no longer renders the static mockup placeholder", async () => {
-    mockCookieGet.mockReturnValue({ value: "valid-cookie" });
-    mockGetSession.mockResolvedValue(adminSession());
     const html = renderToString(await TimeTravelPage());
     expect(html).not.toContain("drag slider to rewind");
     expect(html).not.toContain("state reconstructed from append-only events");
   });
 
   it("case 9b: an empty event table renders the disabled-slider message", async () => {
-    mockCookieGet.mockReturnValue({ value: "valid-cookie" });
-    mockGetSession.mockResolvedValue(adminSession());
     primeReplay({ entities: [], bounds: { min: null, max: MAX }, message: "No audit data yet." });
     const html = renderToString(await TimeTravelPage());
     expect(html).toContain("No audit data yet.");
     expect(html).toContain("disabled");
   });
 
-  it("case 10: throws forbidden() for editor session", async () => {
-    mockCookieGet.mockReturnValue({ value: "valid-cookie" });
-    mockGetSession.mockResolvedValue(editorSession());
-    const { forbidden } = await import("next/navigation");
-    await expect(TimeTravelPage()).rejects.toThrow("FORBIDDEN_CALLED");
-    expect(forbidden).toHaveBeenCalled();
-  });
-
-  it("case 11: throws forbidden() for viewer session", async () => {
-    mockCookieGet.mockReturnValue({ value: "valid-cookie" });
-    mockGetSession.mockResolvedValue(viewerSession());
-    const { forbidden } = await import("next/navigation");
-    await expect(TimeTravelPage()).rejects.toThrow("FORBIDDEN_CALLED");
-    expect(forbidden).toHaveBeenCalled();
-  });
-
-  it("case 12: throws unauthorized() when no session", async () => {
-    mockCookieGet.mockReturnValue(undefined);
-    mockGetSession.mockResolvedValue(null);
-    const { unauthorized } = await import("next/navigation");
-    await expect(TimeTravelPage()).rejects.toThrow("UNAUTHORIZED_CALLED");
-    expect(unauthorized).toHaveBeenCalled();
-  });
-
-  it("case 11b: viewer denial is audit-logged with time-travel.view action", async () => {
-    mockCookieGet.mockReturnValue({ value: "valid-cookie" });
-    mockGetSession.mockResolvedValue(viewerSession());
-    const { appendEvent } = await import("@/lib/audit/write");
-    try {
-      await TimeTravelPage();
-    } catch {
-      // expected
-    }
-    expect(appendEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "security.denied",
-        entityType: "rbac",
-        entityId: "time-travel.view",
-        actorId: "viewer-1",
-      }),
+  it("is rendered per request, never prerendered at build: connection() precedes the query", async () => {
+    await TimeTravelPage();
+    expect(mockConnection).toHaveBeenCalledTimes(1);
+    expect(mockConnection.mock.invocationCallOrder[0]).toBeLessThan(
+      mockGetTimeTravelState.mock.invocationCallOrder[0],
     );
+  });
+
+  it("no longer claims the page is admin-only", async () => {
+    const html = renderToString(await TimeTravelPage());
+    expect(html).not.toMatch(/admin only/i);
   });
 });

@@ -14,8 +14,8 @@ pnpm exec playwright install chromium
 ## Run
 
 ```bash
-# Terminal 1 — server (DEMO_MODE=true required for guest sign-in used by the specs)
-DEMO_MODE=true pnpm build && pnpm start
+# Terminal 1 — server (no sign-in: the specs browse as an anonymous visitor)
+pnpm build && pnpm start
 
 # Terminal 2 — tests
 pnpm test:e2e
@@ -29,9 +29,10 @@ PLAYWRIGHT_BASE_URL=https://bastion-six.vercel.app pnpm test:e2e
 
 ## What's covered
 
-- `auth-flow.spec.ts` — redirect with returnTo + demo-mode viewer sign-in + role-pill rendering + read-only UX.
-- `rbac.spec.ts` — viewer/editor hitting `/time-travel` get the styled 403 page.
-- `metadata.spec.ts` — `/login`'s head tags (title, Open Graph, Twitter card, icons, manifest) and every metadata route answering anonymously with its content type (spec 20).
+- `metadata.spec.ts` — the home page's head tags (title, Open Graph, Twitter card, icons, manifest) and every metadata route answering anonymously with its content type (spec 20).
+
+The v1 sign-in specs (`auth-flow`, `rbac`) were removed with sign-in itself (bastion v2, plan Task 1);
+the v2 flows are rebuilt in plan Task 15.
 
 ## What's not covered yet
 
