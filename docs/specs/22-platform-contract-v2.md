@@ -61,9 +61,13 @@ under the test settings.
 **Roles.** Only feathers-generated services gate on `role` (rank viewer < editor < admin; `frontend`
 ranks as viewer). Other backends authenticate only.
 
-**Rate limiting.** When a request is authenticated, rate-limit buckets key on `"{iss}:{sub}"`; otherwise
-on the leftmost `X-Forwarded-For` address (uvicorn runs with `--proxy-headers --forwarded-allow-ips='*'`
-behind Render).
+**Rate limiting.** A request authenticated with **bastion's** key keys its bucket on `"bastion:{sub}"`
+(`sub` is the visitor pseudonym). A request authenticated with a **frontend** key keys on
+`"{iss}:{leftmost X-Forwarded-For}"` — a frontend's `sub` is constant, so keying on it would put every
+visitor of that site in one bucket; its proxy forwards exactly one client address, which it sets itself.
+An unauthenticated request keys on the leftmost `X-Forwarded-For` address (uvicorn runs with
+`--proxy-headers --forwarded-allow-ips='*'` behind Render). *(Amended 2026-10-20: the first draft keyed
+every authenticated request on `iss:sub`.)*
 
 **CORS.** Allowed request headers include `x-platform-token`, `x-request-id`, `content-type`.
 
@@ -82,7 +86,8 @@ behind Render).
 11. present-but-invalid token with `DEMO_MODE=true` ⇒ still 401 invalid
 12. no trusted key configured (non-test settings) ⇒ 503 on a protected route, 200 on `/health`
 13. every public route answers without a token
-14. rate-limit key is `iss:sub` for an authenticated request
+14. rate-limit key is `bastion:{sub}` for a bastion token and `{iss}:{forwarded address}` for a frontend
+    token (two visitors through the same frontend land in different buckets)
 
 ## 4. Minters
 
