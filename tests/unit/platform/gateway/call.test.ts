@@ -1,9 +1,9 @@
 import * as jose from "jose";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from "vitest";
 import { z } from "zod";
 import type { Capability } from "@/platform/gateway/call";
 import { type RawBody, rawBodySchema } from "@/platform/gateway/result";
-import { SERVICES } from "@/platform/registry/products";
+import { SERVICES, type ServiceId } from "@/platform/registry/products";
 import type { VisitorId } from "@/platform/visitor";
 import { newSigningEnv, type SigningEnv, stubSigningEnv, VISITOR } from "./keys-fixture";
 
@@ -36,6 +36,7 @@ let gateway: CallModule;
 let budget: BudgetModule;
 let ConfigError: typeof import("@/platform/secrets").ConfigError;
 let keys: SigningEnv;
+let warn: MockInstance<typeof console.warn>;
 const fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>();
 
 const Verdict = z.object({ verdict: z.string() });
@@ -71,11 +72,17 @@ const hang = (_url: string, init: RequestInit) =>
     init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
   });
 const debateLeft = async () => (await budget.budgetsLeft()).debate.left;
+/** The structured lines the gateway logs for refusals it does not audit (Ruling H). */
+const refusalLines = () =>
+  warn.mock.calls
+    .map((call) => call[0])
+    .filter((line): line is string => typeof line === "string" && line.includes("gateway.refused"))
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
 
 beforeEach(async () => {
   vi.stubEnv("UPSTASH_REDIS_REST_URL", "");
   vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "");
-  vi.spyOn(console, "warn").mockImplementation(() => {});
+  warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   keys = newSigningEnv();
   stubSigningEnv(keys);
   limiterConfigs.length = 0;
@@ -497,12 +504,6 @@ describe("callCapability — audit", () => {
   });
 
   it.each([
-    ["invalid input", { claim: "" }, () => {}],
-    [
-      "rate limited",
-      { claim: "c" },
-      () => check.mockResolvedValueOnce({ success: false, limit: 30, remaining: 0 }),
-    ],
     ["budget exhausted", { claim: "c" }, () => vi.stubEnv("BUDGET_DEBATE", "0")],
     ["timeout", { claim: "c" }, () => fetchMock.mockImplementationOnce(hang)],
     [
@@ -520,6 +521,41 @@ describe("callCapability — audit", () => {
     await gateway.callCapability({ ...debate, timeoutMs: 20 }, input, ctx);
     expect(appendEvent).toHaveBeenCalledTimes(1);
     expect(appendEvent.mock.calls[0]?.[0].metadata.ok).toBe(false);
+  });
+
+  it.each([
+    ["invalid input", { claim: "" }, () => {}, "invalid_input", 422],
+    [
+      "rate limited",
+      { claim: "SECRET-CLAIM" },
+      () => check.mockResolvedValueOnce({ success: false, limit: 30, remaining: 0 }),
+      "rate_limited",
+      429,
+    ],
+  ])("writes no audit row for a %s refusal, only one structured log line (Ruling H)", async (_label, input, arrange, error, status) => {
+    arrange();
+    await gateway.callCapability(debate, input, ctx);
+    expect(appendEvent).not.toHaveBeenCalled();
+    const lines = refusalLines();
+    expect(lines).toStrictEqual([
+      {
+        event: "gateway.refused",
+        capability: "test.debate",
+        service: "paper-trail",
+        actor: VISITOR,
+        requestId: "req-1",
+        error,
+        status,
+      },
+    ]);
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/SECRET/);
+  });
+
+  it("logs no refusal line for a call that reached the budget", async () => {
+    vi.stubEnv("BUDGET_DEBATE", "0");
+    await gateway.callCapability(debate, { claim: "c" }, ctx);
+    expect(refusalLines()).toStrictEqual([]);
+    expect(appendEvent).toHaveBeenCalledTimes(1);
   });
 
   it("records the system actor for runner calls", async () => {
@@ -571,6 +607,7 @@ describe("callCapability — refuses programming errors before any side effect",
     ["a zero timeout", { timeoutMs: 0 }],
     ["a fractional per-visitor limit", { perVisitorPerMin: 1.5 }],
     ["an unknown raw kind", { raw: "gif" as Capability<unknown, unknown>["raw"] }],
+    ["an llm cost but no budget", { budget: undefined }],
   ])("throws on a capability with %s", async (_label, patch) => {
     await expect(
       gateway.callCapability({ ...debate, ...patch }, { claim: "c" }, ctx),
@@ -589,5 +626,171 @@ describe("callCapability — refuses programming errors before any side effect",
     await expect(gateway.callCapability(debate, { claim: "c" }, ctx)).rejects.toThrow(ConfigError);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(await debateLeft()).toBe(4);
+  });
+});
+
+describe("callCapability — paths are canonical before anything happens (Ruling G)", () => {
+  /** Interpolates the raw input on purpose: the gateway is the last line, not the first. */
+  const scrape: Capability<{ name: string }, { items: string[] }> = {
+    id: "test.scrape",
+    service: "magpie",
+    method: "POST",
+    path: (i) => `/api/scrape/${i.name}/once`,
+    body: () => ({}),
+    input: z.object({ name: z.string() }),
+    output: z.object({ items: z.array(z.string()) }),
+    grant: "editor",
+    cost: "quota",
+    budget: "scrape",
+  };
+  const scrapeLeft = async () => (await budget.budgetsLeft()).scrape.left;
+  const expectRefusedBeforeSideEffects = async (name: string) => {
+    const result = await gateway.callCapability(scrape, { name }, ctx);
+    expect(result).toMatchObject({ ok: false, error: "invalid_input", status: 422 });
+    expect(check).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(appendEvent).not.toHaveBeenCalled();
+    expect(await scrapeLeft()).toBe(30);
+  };
+
+  it.each([
+    ["..", ".."],
+    [".", "."],
+    ["lowercase %2e%2e", "%2e%2e"],
+    ["uppercase %2E%2E", "%2E%2E"],
+    ["mixed %2e%2E", "%2e%2E"],
+    ["half-encoded .%2e", ".%2e"],
+    ["half-encoded %2E.", "%2E."],
+    ["a single %2e", "%2e"],
+  ])("refuses the dot segment %s", async (_label, name) => {
+    await expectRefusedBeforeSideEffects(name);
+  });
+
+  it.each([
+    ["a space", "a b"],
+    ["a backslash", "a\\b"],
+    ["a fragment", "a#b"],
+    ["a non-ASCII letter", "café"],
+    ["a quote", 'a"b'],
+    ["a newline", "a\nb"],
+    ["a tab", "a\tb"],
+  ])("refuses a path the URL parser would rewrite (%s)", async (_label, name) => {
+    await expectRefusedBeforeSideEffects(name);
+  });
+
+  it.each([
+    ["dots inside a segment", "a..b"],
+    ["a leading dot", ".hidden"],
+    ["three dots", "..."],
+    ["an encoded slash", "a%2Fb"],
+  ])("allows %s", async (_label, name) => {
+    fetchMock.mockResolvedValueOnce(Response.json({ items: [] }));
+    const result = await gateway.callCapability(scrape, { name }, ctx);
+    expect(result.ok).toBe(true);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${SERVICES.magpie.baseUrl}/api/scrape/${name}/once`);
+  });
+
+  it("keeps a query string that the URL parser leaves alone", async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ items: [] }));
+    expect((await gateway.callCapability(items, { name: "hn" }, ctx)).ok).toBe(true);
+  });
+
+  it("accepts a base URL with its own path prefix", async () => {
+    vi.stubEnv("MAGPIE_BACKEND_URL", "https://magpie.example/api/v2/");
+    vi.resetModules();
+    const prefixed = await import("@/platform/gateway/call");
+    fetchMock.mockResolvedValueOnce(Response.json({ items: [] }));
+    expect((await prefixed.callCapability(items, { name: "hn" }, ctx)).ok).toBe(true);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://magpie.example/api/v2/sources/hn/items?limit=5",
+    );
+  });
+
+  it("logs the refusal like any other invalid input (no audit row)", async () => {
+    await gateway.callCapability(scrape, { name: ".." }, ctx);
+    expect(refusalLines()).toMatchObject([{ capability: "test.scrape", error: "invalid_input" }]);
+  });
+});
+
+describe("callCapability — capabilities routed by their input", () => {
+  const queries: Capability<{ service: "magpie" | "slowquery" }, unknown[]> = {
+    id: "test.queries",
+    service: "slowquery",
+    routeTo: (i) => i.service,
+    method: "GET",
+    path: () => "/_slowquery/queries",
+    input: z.object({ service: z.enum(["magpie", "slowquery"]) }),
+    output: z.array(z.unknown()),
+    grant: "viewer",
+    cost: "free",
+  };
+
+  beforeEach(() => {
+    fetchMock.mockImplementation(async () => Response.json([]));
+  });
+
+  it("calls the service the input names, with a token for that audience", async () => {
+    const result = await gateway.callCapability(queries, { service: "magpie" }, ctx);
+    expect(result.ok).toBe(true);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${SERVICES.magpie.baseUrl}/_slowquery/queries`);
+    const token = sentHeaders().get("x-platform-token") ?? "";
+    const { payload } = await jose.jwtVerify(token, keys.publicKey, {
+      issuer: "bastion",
+      audience: "magpie",
+    });
+    expect(payload).toMatchObject({ service: "magpie", cap: "test.queries" });
+    expect(appendEvent.mock.calls[0]?.[0]).toMatchObject({ service: "magpie" });
+  });
+
+  it("goes to the capability's own service when the input names it", async () => {
+    await gateway.callCapability(queries, { service: "slowquery" }, ctx);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${SERVICES.slowquery.baseUrl}/_slowquery/queries`);
+  });
+
+  it("throws before any side effect when the route names an unknown service", async () => {
+    const bad = { ...queries, routeTo: () => "evil" as ServiceId };
+    await expect(gateway.callCapability(bad, { service: "magpie" }, ctx)).rejects.toThrow(
+      TypeError,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(check).not.toHaveBeenCalled();
+    expect(appendEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe("callCapability — PEM text", () => {
+  const pem: Capability<Record<string, never>, RawBody> = {
+    id: "test.pem",
+    service: "inkprint",
+    method: "GET",
+    path: () => "/public-key.pem",
+    input: z.object({}),
+    output: rawBodySchema,
+    grant: "viewer",
+    cost: "free",
+    raw: "pem",
+  };
+  const PEM = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA\n-----END PUBLIC KEY-----\n";
+
+  it.each([
+    "text/plain; charset=utf-8",
+    "application/x-pem-file",
+  ])("passes a PEM served as %s through as bytes", async (contentType) => {
+    fetchMock.mockResolvedValueOnce(new Response(PEM, { headers: { "content-type": contentType } }));
+    const result = await gateway.callCapability(pem, {}, ctx);
+    if (!result.ok) throw new Error(`expected ok, got ${result.error}`);
+    expect(new TextDecoder().decode(result.data.bytes)).toBe(PEM);
+    expect(result.data.contentType).toBe(contentType);
+    expect(sentHeaders().get("accept")).toBe("text/plain, application/x-pem-file");
+  });
+
+  it("refuses a PEM capability answered with HTML", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response("<html/>", { headers: { "content-type": "text/html" } }),
+    );
+    expect(await gateway.callCapability(pem, {}, ctx)).toMatchObject({
+      ok: false,
+      error: "invalid_response",
+    });
   });
 });

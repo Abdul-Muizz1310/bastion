@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { deriveKey } from "@/platform/secrets";
 import {
+  clientAddress,
   isVisitorId,
   VISITOR_ID_PATTERN,
   VISITOR_KEY_INFO,
@@ -229,5 +230,32 @@ describe("visitorFromRequest", () => {
     vi.stubEnv("IRON_SESSION_PASSWORD", SECRET);
     const req = request({ "x-forwarded-for": "203.0.113.7" });
     expect(() => visitorFromRequest(req, new Date(Number.NaN))).toThrow(/date/i);
+  });
+});
+
+describe("clientAddress — the single address the gateway forwards", () => {
+  it("is the leftmost x-forwarded-for entry when it is an IP", () => {
+    expect(clientAddress(request({ "x-forwarded-for": " 203.0.113.7 , 10.0.0.1" }))).toBe(
+      "203.0.113.7",
+    );
+  });
+
+  it("falls back to x-real-ip", () => {
+    expect(clientAddress(request({ "x-real-ip": "2001:db8::1" }))).toBe("2001:db8::1");
+  });
+
+  it("is undefined, never 0.0.0.0, without a usable address", () => {
+    expect(clientAddress(request({}))).toBeUndefined();
+    expect(clientAddress(request({ "x-forwarded-for": "unknown", "x-real-ip": "nope" }))).toBe(
+      undefined,
+    );
+  });
+
+  it("agrees with the address the visitor id is derived from", () => {
+    vi.stubEnv("IRON_SESSION_PASSWORD", SECRET);
+    const req = request({ "x-forwarded-for": "198.51.100.4, 10.0.0.1" });
+    const now = new Date("2026-10-20T12:00:00Z");
+    const ip = clientAddress(req) ?? "";
+    expect(visitorFromRequest(req, now)).toBe(visitorId(ip, DAY, deriveKey(VISITOR_KEY_INFO)));
   });
 });

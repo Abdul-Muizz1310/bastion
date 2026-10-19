@@ -43,11 +43,13 @@ export const GATEWAY_ERROR_STATUS: Readonly<Record<GatewayError, number>> = {
  * which the capability's `output` schema (normally `rawBodySchema`) still parses. The content type
  * must be one the raw kind declares, or the call is `invalid_response`.
  */
-export type RawKind = "png" | "zip";
+export type RawKind = "png" | "zip" | "pem";
 
 export const RAW_CONTENT_TYPES: Readonly<Record<RawKind, readonly string[]>> = {
   png: ["image/png"],
   zip: ["application/zip", "application/x-zip-compressed"],
+  // A PEM public key: inkprint serves `text/plain; charset=utf-8`; the PEM type is also accepted.
+  pem: ["text/plain", "application/x-pem-file"],
 };
 
 export const rawBodySchema = z.object({

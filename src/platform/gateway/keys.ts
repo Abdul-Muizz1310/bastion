@@ -23,9 +23,24 @@ export type PublicJwk = {
   use: "sig";
 };
 
+const KEY_ID_VARIABLE = "BASTION_KEY_ID";
+const KEY_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+/**
+ * The one reader of `BASTION_KEY_ID` (token header, JWKS, `/api/public-key`). A byte-order mark and
+ * edge whitespace — what a value pasted from a Windows shell carries — are stripped; unset or blank
+ * means the default; anything else must be `[A-Za-z0-9._-]+`, else a `ConfigError` names the
+ * variable (never the value).
+ */
 export function keyId(): string {
-  const kid = process.env.BASTION_KEY_ID;
-  return kid === undefined || kid === "" ? DEFAULT_KEY_ID : kid;
+  // `trim` strips U+FEFF (a byte-order mark is ECMAScript whitespace) and only at the edges, so a
+  // mark inside the value still fails the pattern.
+  const kid = (process.env[KEY_ID_VARIABLE] ?? "").trim();
+  if (kid === "") return DEFAULT_KEY_ID;
+  if (!KEY_ID_PATTERN.test(kid)) {
+    throw new ConfigError(KEY_ID_VARIABLE, "must contain only letters, digits, '.', '_' and '-'");
+  }
+  return kid;
 }
 
 function readKey(variable: string): Buffer {

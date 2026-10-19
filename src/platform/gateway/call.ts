@@ -26,9 +26,14 @@ import { type Grant, mintToken, tokenClaims } from "./token";
  * The one gateway pipeline (spec 21 §4). Every call to a downstream service goes through
  * `callCapability`, in this order:
  *
- *   parse input → per-visitor rate limit → reserve the daily budget → mint a contract-v2 token →
- *   call (X-Request-Id, X-Forwarded-For = the visitor's address) → parse the response →
- *   append exactly one `gateway.call` audit event → return a typed `GatewayResult`.
+ *   parse input → build a canonical request → per-visitor rate limit → reserve the daily budget →
+ *   mint a contract-v2 token → call (X-Request-Id, X-Forwarded-For = the visitor's address) →
+ *   parse the response → append exactly one `gateway.call` audit event → return a typed
+ *   `GatewayResult`.
+ *
+ * Refusals that cost nothing — `invalid_input` and the gateway's own `rate_limited` — are not
+ * audited (Ruling H): they would let one visitor grow the append-only log without bound. Each is
+ * one structured console line instead. Every call that reaches the budget is audited.
  *
  * Downstream failures are results, never throws. Throws are bastion's own bugs (a malformed
  * capability or context) and configuration errors (no signing key), raised before any side effect
@@ -37,7 +42,13 @@ import { type Grant, mintToken, tokenClaims } from "./token";
 
 export type Capability<I, O> = {
   id: string;
+  /** The service the capability belongs to, and where it is called unless `routeTo` says. */
   service: ServiceId;
+  /**
+   * The service one call goes to, when that depends on the input (slowquery's routes are installed
+   * in several services). The token's audience and the audit event follow it.
+   */
+  routeTo?: (input: I) => ServiceId;
   method: "GET" | "POST" | "PATCH" | "DELETE";
   path: (input: I) => string;
   /** JSON-serialised, or a `FormData` passed through as multipart. Never on a GET. */
@@ -48,6 +59,7 @@ export type Capability<I, O> = {
   /** The role minted into the token. */
   grant: Grant;
   cost: "free" | "quota" | "llm";
+  /** Required when `cost` is `llm`: model calls are the scarcest thing the platform spends. */
   budget?: BudgetKey;
   /** A per-visitor limit for this capability, on top of the gateway's 30 calls a minute. */
   perVisitorPerMin?: number;
@@ -100,25 +112,66 @@ function assertCapability<I, O>(cap: Capability<I, O>): void {
   if (cap.raw !== undefined && !Object.hasOwn(RAW_CONTENT_TYPES, cap.raw)) {
     throw new TypeError(`capability ${cap.id}: unknown raw kind`);
   }
+  if (cap.cost === "llm" && cap.budget === undefined) {
+    throw new TypeError(`capability ${cap.id}: an llm capability needs a daily budget`);
+  }
+}
+
+function routedService<I, O>(cap: Capability<I, O>, input: I): ServiceId {
+  const service = cap.routeTo?.(input) ?? cap.service;
+  if (!isServiceId(service)) {
+    throw new TypeError(`capability ${cap.id}: routed to an unknown service`);
+  }
+  return service;
 }
 
 // ---- pure core -------------------------------------------------------------------------------
 
 type Outbound = { url: string; method: Capability<unknown, unknown>["method"]; body?: BodyInit };
 
-function buildRequest<I, O>(cap: Capability<I, O>, input: I): Outbound {
+type Built = { ok: true; request: Outbound } | { ok: false; detail: string };
+
+/** `.` or `..`, spelled plainly or with `%2e` in either case — what a URL parser resolves away. */
+function isDotSegment(segment: string): boolean {
+  const decoded = segment.replace(/%2e/gi, ".");
+  return decoded === "." || decoded === "..";
+}
+
+/**
+ * The path as sent must be the path as built: no dot segment (the request would land on another
+ * route), and nothing the URL parser rewrites (a space, a backslash, a `#`, a non-ASCII letter).
+ */
+function canonicalUrl(baseUrl: string, path: string): URL | null {
+  const pathname = path.split(/[?#]/, 1)[0] ?? "";
+  if (pathname.split("/").some(isDotSegment)) return null;
+  const base = new URL(baseUrl);
+  let url: URL;
+  try {
+    url = new URL(`${baseUrl}${path}`);
+  } catch {
+    return null;
+  }
+  const expected = `${base.pathname.replace(/\/$/, "")}${path}`;
+  return url.origin === base.origin && `${url.pathname}${url.search}` === expected ? url : null;
+}
+
+function buildRequest<I, O>(cap: Capability<I, O>, service: ServiceId, input: I): Built {
   const path = cap.path(input);
   // The base URL carries no trailing slash (products.ts), so a leading "/" can never move the
   // request to another origin ("https://host" + "@evil/x" would).
   if (!path.startsWith("/")) throw new TypeError(`capability ${cap.id}: path must start with /`);
-  const url = `${SERVICES[cap.service].baseUrl}${path}`;
+  const url = canonicalUrl(SERVICES[service].baseUrl, path);
+  if (url === null) return { ok: false, detail: "path: not a canonical URL path" };
   const payload = cap.body?.(input);
-  if (payload === undefined) return { url, method: cap.method };
+  if (payload === undefined) return { ok: true, request: { url: url.href, method: cap.method } };
   if (cap.method === "GET") throw new TypeError(`capability ${cap.id}: a GET carries no body`);
   return {
-    url,
-    method: cap.method,
-    body: payload instanceof FormData ? payload : JSON.stringify(payload),
+    ok: true,
+    request: {
+      url: url.href,
+      method: cap.method,
+      body: payload instanceof FormData ? payload : JSON.stringify(payload),
+    },
   };
 }
 
@@ -172,6 +225,14 @@ type Outcome<O> =
   | { ok: false; error: GatewayError; status?: number; detail?: string; retryAfterS?: number };
 
 type Interpreted<O> = { outcome: Outcome<O>; release: boolean };
+
+/** The refusals that happen before the budget, and so are logged rather than audited. */
+type Refusal = {
+  ok: false;
+  error: "invalid_input" | "rate_limited";
+  detail?: string;
+  retryAfterS?: number;
+};
 
 function parseSuccess<I, O>(
   cap: Capability<I, O>,
@@ -295,9 +356,10 @@ function outboundHeaders<I, O>(
   return headers;
 }
 
-/** Exactly one event per call: service, capability, status, latency — never a body. */
+/** Exactly one event per audited call: service, capability, status, latency — never a body. */
 async function audit<I, O>(
   cap: Capability<I, O>,
+  service: ServiceId,
   ctx: CallContext,
   result: GatewayResult<O>,
   ms: number,
@@ -310,13 +372,34 @@ async function audit<I, O>(
       action: "gateway.call",
       entityType: "capability",
       entityId: cap.id,
-      service: cap.service,
+      service,
       requestId: ctx.requestId,
       metadata,
     });
   } catch (err) {
     console.error(`gateway: audit append failed for ${cap.id}`, err);
   }
+}
+
+/** Ruling H: a refusal that cost nothing is one log line, not an audit row — and never a body. */
+function logRefusal<I, O>(
+  cap: Capability<I, O>,
+  service: ServiceId,
+  ctx: CallContext,
+  error: Refusal["error"],
+  status: number,
+): void {
+  console.warn(
+    JSON.stringify({
+      event: "gateway.refused",
+      capability: cap.id,
+      service,
+      actor: ctx.actor,
+      requestId: ctx.requestId,
+      error,
+      status,
+    }),
+  );
 }
 
 export async function callCapability<I, O>(
@@ -328,9 +411,9 @@ export async function callCapability<I, O>(
   assertContext(ctx);
   assertCapability(cap);
 
-  const finish = async (outcome: Outcome<O>): Promise<GatewayResult<O>> => {
-    const ms = Math.round(performance.now() - started);
-    const result: GatewayResult<O> = outcome.ok
+  const elapsed = () => Math.round(performance.now() - started);
+  const toResult = (outcome: Outcome<O>, ms: number): GatewayResult<O> =>
+    outcome.ok
       ? { ok: true, data: outcome.data, status: outcome.status, requestId: ctx.requestId, ms }
       : {
           ok: false,
@@ -340,22 +423,36 @@ export async function callCapability<I, O>(
           ...(outcome.detail === undefined ? {} : { detail: outcome.detail }),
           ...(outcome.retryAfterS === undefined ? {} : { retryAfterS: outcome.retryAfterS }),
         };
-    await audit(cap, ctx, result, ms);
+  const refuse = (service: ServiceId, outcome: Refusal): GatewayResult<O> => {
+    const result = toResult(outcome, elapsed());
+    logRefusal(cap, service, ctx, outcome.error, result.status);
     return result;
   };
 
   const parsed = cap.input.safeParse(input);
   if (!parsed.success) {
-    return finish({
+    return refuse(cap.service, {
       ok: false,
       error: "invalid_input",
       detail: describeIssues(parsed.error, true),
     });
   }
-  const request = buildRequest(cap, parsed.data);
+  const service = routedService(cap, parsed.data);
+  const built = buildRequest(cap, service, parsed.data);
+  if (!built.ok)
+    return refuse(service, { ok: false, error: "invalid_input", detail: built.detail });
+  const { request } = built;
 
   const retryAfterS = await rateLimited(cap, ctx);
-  if (retryAfterS !== null) return finish({ ok: false, error: "rate_limited", retryAfterS });
+  if (retryAfterS !== null)
+    return refuse(service, { ok: false, error: "rate_limited", retryAfterS });
+
+  const finish = async (outcome: Outcome<O>): Promise<GatewayResult<O>> => {
+    const ms = elapsed();
+    const result = toResult(outcome, ms);
+    await audit(cap, service, ctx, result, ms);
+    return result;
+  };
 
   // One instant for the reservation and its release, so both hit the same UTC day's counter.
   const day = new Date();
@@ -378,7 +475,7 @@ export async function callCapability<I, O>(
   try {
     token = await mintToken(
       tokenClaims({
-        service: cap.service,
+        service,
         sub: ctx.actor,
         role: cap.grant,
         cap: cap.id,

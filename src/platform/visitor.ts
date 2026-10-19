@@ -67,13 +67,17 @@ export function visitorId(ip: string, day: string, key: Uint8Array): VisitorId {
   return `v_${base32(mac).slice(0, ID_CHARS)}` as VisitorId;
 }
 
-/** The leftmost `x-forwarded-for` entry, else `x-real-ip`, else 0.0.0.0 — never a non-address. */
-function clientIp(headers: Headers): string {
-  const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+/**
+ * The client's single address: the leftmost `x-forwarded-for` entry, else `x-real-ip` — or
+ * `undefined` when neither is an IP. It is what the gateway forwards in `X-Forwarded-For`, and the
+ * address a visitor id is derived from (with 0.0.0.0 standing in for `undefined`).
+ */
+export function clientAddress(req: Request): string | undefined {
+  const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   if (forwarded && isIP(forwarded) !== 0) return forwarded;
-  const real = headers.get("x-real-ip")?.trim();
+  const real = req.headers.get("x-real-ip")?.trim();
   if (real && isIP(real) !== 0) return real;
-  return FALLBACK_IP;
+  return undefined;
 }
 
 function utcDay(now: Date): string {
@@ -84,5 +88,5 @@ function utcDay(now: Date): string {
 }
 
 export function visitorFromRequest(req: Request, now: Date = new Date()): VisitorId {
-  return visitorId(clientIp(req.headers), utcDay(now), deriveKey(VISITOR_KEY_INFO));
+  return visitorId(clientAddress(req) ?? FALLBACK_IP, utcDay(now), deriveKey(VISITOR_KEY_INFO));
 }

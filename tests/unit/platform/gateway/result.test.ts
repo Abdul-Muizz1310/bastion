@@ -32,5 +32,6 @@ describe("raw bodies", () => {
   it("knows which content types each raw kind accepts", () => {
     expect(RAW_CONTENT_TYPES.png).toStrictEqual(["image/png"]);
     expect(RAW_CONTENT_TYPES.zip).toContain("application/zip");
+    expect(RAW_CONTENT_TYPES.pem).toStrictEqual(["text/plain", "application/x-pem-file"]);
   });
 });
