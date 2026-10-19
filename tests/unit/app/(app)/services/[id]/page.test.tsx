@@ -2,13 +2,11 @@ import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-// Mock next/link
 vi.mock("next/link", () => ({
   default: ({ href, children, className }: any) =>
     createElement("a", { href, className }, children),
 }));
 
-// Mock next/navigation
 const mockNotFound = vi.fn();
 vi.mock("next/navigation", () => ({
   notFound: () => {
@@ -17,63 +15,67 @@ vi.mock("next/navigation", () => ({
   },
 }));
 
-// Mock registry
-const mockCheckServiceHealth = vi.fn();
-vi.mock("@/lib/registry", () => ({
-  checkServiceHealth: (...args: unknown[]) => mockCheckServiceHealth(...args),
+const probe = vi.fn();
+vi.mock("@/platform/registry/health", () => ({
+  probe: (...args: unknown[]) => probe(...args),
 }));
 
 import ServiceDetailPage from "@/app/(app)/services/[id]/page";
 
+const render = async (id: string) =>
+  renderToString(await ServiceDetailPage({ params: Promise.resolve({ id }) }));
+
 describe("ServiceDetailPage", () => {
-  it("renders a known service with health data", async () => {
-    mockCheckServiceHealth.mockResolvedValueOnce({
-      id: "paper-trail",
-      healthy: true,
+  it("renders a product with its live health, repo, backend and frontend", async () => {
+    probe.mockResolvedValueOnce({
+      service: "paper-trail",
+      state: "live",
       latencyMs: 150,
       version: "1.2.3",
+      checkedAt: "2026-10-20T00:00:00.000Z",
     });
-    const jsx = await ServiceDetailPage({ params: Promise.resolve({ id: "paper-trail" }) });
-    const html = renderToString(jsx);
-    expect(html).toContain("Paper Trail");
-    expect(html).toContain("healthy");
+    const html = await render("paper-trail");
+    expect(probe).toHaveBeenLastCalledWith("paper-trail", 8000);
+    expect(html).toContain("paper-trail");
+    expect(html).toContain("live");
     expect(html).toContain("150");
     expect(html).toContain("1.2.3");
     expect(html).toContain("github");
+    expect(html).toContain("paper-trail-backend-jjpf.onrender.com");
+    expect(html).toContain("paper-trail-frontend-sable.vercel.app");
   });
 
-  it("renders a CLI service (feathers)", async () => {
-    const jsx = await ServiceDetailPage({ params: Promise.resolve({ id: "feathers" }) });
-    const html = renderToString(jsx);
-    expect(html).toContain("Feathers");
-    expect(html).toContain("CLI tool");
-  });
-
-  it("renders unhealthy service", async () => {
-    mockCheckServiceHealth.mockResolvedValueOnce({
-      id: "inkprint",
-      healthy: false,
-      latencyMs: 5000,
-      error: "timeout",
+  it("renders an asleep service as asleep", async () => {
+    probe.mockResolvedValueOnce({
+      service: "inkprint",
+      state: "asleep",
+      latencyMs: 8000,
+      checkedAt: "2026-10-20T00:00:00.000Z",
     });
-    const jsx = await ServiceDetailPage({ params: Promise.resolve({ id: "inkprint" }) });
-    const html = renderToString(jsx);
-    expect(html).toContain("unhealthy");
+    expect(await render("inkprint")).toContain("asleep");
   });
 
-  it("calls notFound for unknown service", async () => {
+  it("renders a product without a hosted backend (bastion)", async () => {
+    probe.mockClear();
+    const html = await render("bastion");
+    expect(html).toContain("no hosted backend");
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it("calls notFound for an unknown product", async () => {
     mockNotFound.mockClear();
-    await expect(
-      ServiceDetailPage({ params: Promise.resolve({ id: "nonexistent" }) }),
-    ).rejects.toThrow("NOT_FOUND");
+    await expect(render("nonexistent")).rejects.toThrow("NOT_FOUND");
     expect(mockNotFound).toHaveBeenCalled();
   });
 
-  it("renders without health data when fetch fails", async () => {
-    mockCheckServiceHealth.mockRejectedValueOnce(new Error("network error"));
-    const jsx = await ServiceDetailPage({ params: Promise.resolve({ id: "paper-trail" }) });
-    const html = renderToString(jsx);
-    expect(html).toContain("Paper Trail");
+  it("calls notFound for a prototype key", async () => {
+    await expect(render("constructor")).rejects.toThrow("NOT_FOUND");
+  });
+
+  it("renders without health data when probing fails", async () => {
+    probe.mockRejectedValueOnce(new Error("network error"));
+    const html = await render("magpie");
+    expect(html).toContain("magpie");
     expect(html).toContain("failed to fetch health");
   });
 });

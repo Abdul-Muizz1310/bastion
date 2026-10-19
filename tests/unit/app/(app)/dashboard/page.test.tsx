@@ -1,42 +1,70 @@
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PRODUCTS } from "@/platform/registry/products";
 
-// Mock next/link
 vi.mock("next/link", () => ({
   default: ({ href, children, className }: any) =>
     createElement("a", { href, className }, children),
 }));
 
-// Mock registry
-vi.mock("@/lib/registry", () => ({
-  getAggregatedStatus: vi.fn().mockResolvedValue([
-    { id: "paper-trail", healthy: true, latencyMs: 120, version: "1.0.0" },
-    { id: "inkprint", healthy: false, latencyMs: 5000, error: "timeout" },
-  ]),
+const probe = vi.fn();
+vi.mock("@/platform/registry/health", () => ({
+  probe: (...args: unknown[]) => probe(...args),
 }));
 
 import DashboardPage from "@/app/(app)/dashboard/page";
 
+const health = (service: string, state: string, extra: Record<string, unknown> = {}) => ({
+  service,
+  state,
+  latencyMs: 120,
+  checkedAt: "2026-10-20T00:00:00.000Z",
+  ...extra,
+});
+
+beforeEach(() => {
+  probe.mockReset();
+  probe.mockImplementation(async (service: string) =>
+    service === "inkprint"
+      ? health(service, "asleep", { latencyMs: 8000 })
+      : health(service, "live", { version: "1.0.0" }),
+  );
+});
+
 describe("DashboardPage", () => {
-  it("renders service registry with health data", async () => {
-    const jsx = await DashboardPage();
-    const html = renderToString(jsx);
+  it("lists every product from the v2 registry", async () => {
+    const html = renderToString(await DashboardPage());
     expect(html).toContain("Platform");
-    expect(html).toContain("Services");
-    expect(html).toContain("Paper Trail");
-    expect(html).toContain("120ms");
-    expect(html).toContain("1.0.0");
-    expect(html).toContain("timeout");
+    for (const product of PRODUCTS) {
+      expect(html).toContain(product.name);
+      expect(html).toContain(`/services/${product.id}`);
+    }
   });
 
-  it("renders services without health data when fetch fails", async () => {
-    const { getAggregatedStatus } = await import("@/lib/registry");
-    (getAggregatedStatus as any).mockRejectedValueOnce(new Error("fail"));
-    const jsx = await DashboardPage();
-    const html = renderToString(jsx);
+  it("shows live latency and version, and asleep as asleep", async () => {
+    const html = renderToString(await DashboardPage());
+    expect(html).toContain("120ms");
+    expect(html).toContain("1.0.0");
+    expect(html).toContain("asleep");
+  });
+
+  it("probes each service once with the 8 s budget", async () => {
+    await DashboardPage();
+    const services = probe.mock.calls.map((c) => c[0]);
+    expect(new Set(services).size).toBe(services.length);
+    for (const call of probe.mock.calls) expect(call[1]).toBe(8000);
+  });
+
+  it("renders without health data when probing fails", async () => {
+    probe.mockRejectedValue(new Error("fail"));
+    const html = renderToString(await DashboardPage());
     expect(html).toContain("Platform");
-    expect(html).toContain("Feathers");
-    expect(html).toContain("CLI");
+    expect(html).toContain("feathers");
+  });
+
+  it("marks bastion as having no hosted backend", async () => {
+    const html = renderToString(await DashboardPage());
+    expect(html).toContain("no hosted backend");
   });
 });

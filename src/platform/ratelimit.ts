@@ -16,9 +16,12 @@ export type RateLimitResult = {
 };
 
 /**
- * A limiter built without Upstash credentials is not a limiter: fail-open ones
- * become a no-op and fail-closed ones reject everything. Neither is visible in
- * a request log, so say it out loud — once per process, at construction time.
+ * Sliding-window rate limits on Upstash (spec 05, spec 21 §4). Each caller builds its own limiter
+ * (the gateway's 30 calls a minute per visitor, the wake route's 5) — there are no shared presets.
+ *
+ * A limiter built without Upstash credentials is not a limiter: fail-open ones become a no-op and
+ * fail-closed ones reject everything. Neither is visible in a request log, so say it out loud —
+ * once per process, when the first such limiter is built.
  */
 let warnedMissingRedis = false;
 
@@ -27,8 +30,8 @@ function warnMissingRedisOnce(): void {
   warnedMissingRedis = true;
   console.warn(
     "Rate limiter: UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN are not set. " +
-      "Fail-open limiters (gateway 60/min) are INACTIVE and fail-closed limiters " +
-      "(auth 10/min) will reject every request.",
+      "Fail-open limiters (the gateway's per-visitor limit, wake) are INACTIVE and " +
+      "fail-closed limiters will reject every request.",
   );
 }
 
@@ -86,10 +89,3 @@ export function createRateLimiter(config: RateLimitConfig & { failClosed?: boole
     },
   };
 }
-
-// Pre-configured limiters
-// Auth limiter fails CLOSED — Redis outage must not bypass auth rate limiting
-export const authLimiter = createRateLimiter({ max: 10, windowMs: 60_000, failClosed: true });
-export const gatewayLimiter = createRateLimiter({ max: 60, windowMs: 60_000 });
-// Throttles CSRF token minting (GET /api/csrf) per session.
-export const csrfLimiter = createRateLimiter({ max: 30, windowMs: 60_000 });

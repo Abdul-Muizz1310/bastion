@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import { createRateLimiter } from "@/lib/rate-limit";
-import { probe } from "@/platform/registry/health";
+import { createRateLimiter } from "@/platform/ratelimit";
+import { wake } from "@/platform/registry/health";
 import { isServiceId } from "@/platform/registry/products";
 import { visitorFromRequest } from "@/platform/visitor";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 100;
 
+// The whole wake, re-probing a cold start; the /version read fits inside it (maxDuration 100).
 const WAKE_TIMEOUT_MS = 90_000;
 const wakeLimiter = createRateLimiter({ max: 5, windowMs: 60_000 });
 
@@ -25,6 +26,6 @@ export async function POST(
       { status: 429, headers: { "retry-after": String(limit.retryAfter ?? 60) } },
     );
   }
-  const health = await probe(service, WAKE_TIMEOUT_MS);
+  const health = await wake(service, WAKE_TIMEOUT_MS);
   return NextResponse.json(health, { headers: { "cache-control": "no-store" } });
 }

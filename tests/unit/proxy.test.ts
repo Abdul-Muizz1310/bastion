@@ -46,7 +46,7 @@ describe("proxy — no gating", () => {
   });
 
   it("passes an API route through instead of answering 401", () => {
-    const response = proxy(get("/api/proxy/magpie/sources"));
+    const response = proxy(get("/api/platform/status"));
     expect(response.status).toBe(200);
     expect(response.headers.get("x-middleware-next")).toBe("1");
   });

@@ -1,10 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { check, probe } = vi.hoisted(() => ({ check: vi.fn(), probe: vi.fn() }));
-vi.mock("@/lib/rate-limit", () => ({ createRateLimiter: () => ({ check }) }));
+const { check, probe, wake: wakeProbe } = vi.hoisted(() => ({
+  check: vi.fn(),
+  probe: vi.fn(),
+  wake: vi.fn(),
+}));
+vi.mock("@/platform/ratelimit", () => ({ createRateLimiter: () => ({ check }) }));
 vi.mock("@/platform/registry/health", async (orig) => ({
   ...(await orig<typeof import("@/platform/registry/health")>()),
   probe: (...a: unknown[]) => probe(...a),
+  wake: (...a: unknown[]) => wakeProbe(...a),
 }));
 
 import * as status from "@/app/api/platform/status/route";
@@ -26,6 +31,8 @@ beforeEach(() => {
   check.mockReset();
   check.mockResolvedValue({ success: true, limit: 5, remaining: 4 });
   probe.mockImplementation(async (s: string) => health(s));
+  wakeProbe.mockReset();
+  wakeProbe.mockImplementation(async (s: string) => health(s));
 });
 
 describe("GET /api/platform/status", () => {
@@ -52,17 +59,18 @@ describe("POST /api/platform/wake/[service]", () => {
   it("404s an unknown service without probing", async () => {
     const res = await call("nope");
     expect(res.status).toBe(404);
-    expect(probe).not.toHaveBeenCalled();
+    expect(wakeProbe).not.toHaveBeenCalled();
   });
 
   it("404s prototype keys", async () => {
     expect((await call("constructor")).status).toBe(404);
   });
 
-  it("wakes with a 90 s timeout, keyed by visitor", async () => {
+  it("wakes with a 90 s deadline (re-probing a cold start), keyed by visitor", async () => {
     const res = await call("magpie");
     expect(res.status).toBe(200);
-    expect(probe).toHaveBeenCalledWith("magpie", 90_000);
+    expect(wakeProbe).toHaveBeenCalledWith("magpie", 90_000);
+    expect(probe).not.toHaveBeenCalled();
     expect(check).toHaveBeenCalledWith(expect.stringMatching(/^wake:v_[a-z2-7]{10}$/));
   });
 
@@ -71,6 +79,6 @@ describe("POST /api/platform/wake/[service]", () => {
     const res = await call("magpie");
     expect(res.status).toBe(429);
     expect(res.headers.get("retry-after")).toBe("17");
-    expect(probe).not.toHaveBeenCalled();
+    expect(wakeProbe).not.toHaveBeenCalled();
   });
 });

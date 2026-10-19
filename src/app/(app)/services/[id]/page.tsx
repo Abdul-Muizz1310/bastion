@@ -3,10 +3,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageFrame } from "@/components/terminal/PageFrame";
 import { TerminalWindow } from "@/components/terminal/TerminalWindow";
-import { SERVICES } from "@/lib/gateway/services";
-import { checkServiceHealth } from "@/lib/registry";
+import { type Health, probe } from "@/platform/registry/health";
+import { PRODUCTS, SERVICES } from "@/platform/registry/products";
 
 export const revalidate = 60;
+
+const PROBE_TIMEOUT_MS = 8_000;
 
 // The title comes from the id alone: it never reads the record.
 export async function generateMetadata({
@@ -18,18 +20,28 @@ export async function generateMetadata({
   return { title: `service ${id}` };
 }
 
+const STATE_CLASS: Record<Health["state"], string> = {
+  live: "text-success",
+  asleep: "text-warning",
+  down: "text-error",
+};
+
 export default async function ServiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const service = SERVICES.find((s) => s.id === id);
-  if (!service) notFound();
+  const product = PRODUCTS.find((p) => p.id === id);
+  if (!product) notFound();
 
-  const isCli = !service.backendUrl;
-  let health: Awaited<ReturnType<typeof checkServiceHealth>> | null = null;
-  try {
-    health = await checkServiceHealth(service.id);
-  } catch {
-    // continue without health data
+  const serviceId = product.services[0];
+  let health: Health | null = null;
+  if (serviceId !== undefined) {
+    try {
+      health = await probe(serviceId, PROBE_TIMEOUT_MS);
+    } catch {
+      // continue without health data
+    }
   }
+  const backendUrl = serviceId === undefined ? undefined : SERVICES[serviceId].baseUrl;
+  const repo = product.repos[0];
 
   return (
     <PageFrame active="registry">
@@ -38,24 +50,30 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
           <Link href="/dashboard" className="font-mono text-xs text-fg-faint hover:text-fg-muted">
             ← registry
           </Link>
-          <h1 className="mt-2 font-mono text-3xl font-semibold tracking-tight">{service.name}</h1>
-          <p className="mt-1 font-mono text-sm text-fg-muted">{service.role}</p>
+          <h1 className="mt-2 font-mono text-3xl font-semibold tracking-tight">{product.name}</h1>
+          <p className="mt-1 font-mono text-sm text-fg-muted">{product.tagline}</p>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
           <TerminalWindow
             title="health"
-            status={isCli ? "green" : health?.healthy ? "green" : "red"}
+            status={
+              serviceId === undefined
+                ? "green"
+                : health?.state === "live"
+                  ? "green"
+                  : health?.state === "asleep"
+                    ? "yellow"
+                    : "red"
+            }
           >
-            {isCli ? (
-              <div className="text-accent-violet">CLI tool — no hosted backend</div>
+            {serviceId === undefined ? (
+              <div className="text-accent-violet">no hosted backend</div>
             ) : health ? (
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span className="text-fg-muted">status</span>
-                  <span className={health.healthy ? "text-success" : "text-error"}>
-                    {health.healthy ? "healthy" : "unhealthy"}
-                  </span>
+                  <span className={STATE_CLASS[health.state]}>{health.state}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-fg-muted">latency</span>
@@ -75,40 +93,42 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
 
           <TerminalWindow title="links">
             <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-fg-muted">repo</span>
-                <a
-                  href={service.repoUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-accent-violet hover:underline"
-                >
-                  github ↗
-                </a>
-              </div>
-              {service.backendUrl && (
+              {repo && (
                 <div className="flex justify-between">
-                  <span className="text-fg-muted">backend</span>
+                  <span className="text-fg-muted">repo</span>
                   <a
-                    href={service.backendUrl}
+                    href={repo.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-fg-faint hover:text-foreground"
+                    className="text-accent-violet hover:underline"
                   >
-                    {new URL(service.backendUrl).host}
+                    github ↗
                   </a>
                 </div>
               )}
-              {service.frontendUrl && (
+              {backendUrl && (
                 <div className="flex justify-between">
-                  <span className="text-fg-muted">frontend</span>
+                  <span className="text-fg-muted">backend</span>
                   <a
-                    href={service.frontendUrl}
+                    href={backendUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="text-fg-faint hover:text-foreground"
                   >
-                    {new URL(service.frontendUrl).host}
+                    {new URL(backendUrl).host}
+                  </a>
+                </div>
+              )}
+              {product.frontendUrl && (
+                <div className="flex justify-between">
+                  <span className="text-fg-muted">frontend</span>
+                  <a
+                    href={product.frontendUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-fg-faint hover:text-foreground"
+                  >
+                    {new URL(product.frontendUrl).host}
                   </a>
                 </div>
               )}
@@ -117,12 +137,12 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {service.tags.map((tag) => (
+          {product.repos.map((r) => (
             <span
-              key={tag}
+              key={r.name}
               className="rounded-md border border-border bg-surface px-3 py-1 font-mono text-xs text-fg-muted"
             >
-              {tag}
+              {r.name}
             </span>
           ))}
         </div>

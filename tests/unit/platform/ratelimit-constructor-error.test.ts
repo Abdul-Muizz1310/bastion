@@ -17,7 +17,7 @@ vi.mock("@upstash/ratelimit", () => {
 
 describe("rate-limit: constructor error path", () => {
   it("fails open when Redis constructor throws", async () => {
-    const { createRateLimiter } = await import("@/lib/rate-limit");
+    const { createRateLimiter } = await import("@/platform/ratelimit");
     const limiter = createRateLimiter({
       max: 10,
       windowMs: 60_000,

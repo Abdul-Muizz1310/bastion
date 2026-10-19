@@ -17,7 +17,14 @@ export default defineConfig({
       provider: "v8",
       include: ["src/**/*.ts", "src/**/*.tsx"],
       exclude: ["src/**/*.d.ts"],
-      thresholds: { lines: 80, statements: 80, functions: 75, branches: 75 },
+      thresholds: {
+        lines: 80,
+        statements: 80,
+        functions: 75,
+        branches: 75,
+        // Per-module floor (plan "Coverage"): the security core is held higher than the rest.
+        "src/platform/**": { lines: 90 },
+      },
     },
   },
 });

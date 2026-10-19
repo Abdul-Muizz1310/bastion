@@ -31,7 +31,7 @@ describe("rate-limit: Redis-connected paths", () => {
       reset: Date.now() + 60000,
     });
 
-    const { createRateLimiter } = await import("@/lib/rate-limit");
+    const { createRateLimiter } = await import("@/platform/ratelimit");
     const limiter = createRateLimiter({
       max: 10,
       windowMs: 60_000,
@@ -54,7 +54,7 @@ describe("rate-limit: Redis-connected paths", () => {
       reset: resetTime,
     });
 
-    const { createRateLimiter } = await import("@/lib/rate-limit");
+    const { createRateLimiter } = await import("@/platform/ratelimit");
     const limiter = createRateLimiter({
       max: 10,
       windowMs: 60_000,
@@ -72,7 +72,7 @@ describe("rate-limit: Redis-connected paths", () => {
   it("check fails open when Redis ratelimit.limit() throws", async () => {
     mockLimit.mockRejectedValueOnce(new Error("Redis connection lost"));
 
-    const { createRateLimiter } = await import("@/lib/rate-limit");
+    const { createRateLimiter } = await import("@/platform/ratelimit");
     const limiter = createRateLimiter({
       max: 10,
       windowMs: 60_000,
@@ -96,7 +96,7 @@ describe("rate-limit: Redis-connected paths", () => {
       reset: Date.now() + 60000,
     });
 
-    const { createRateLimiter } = await import("@/lib/rate-limit");
+    const { createRateLimiter } = await import("@/platform/ratelimit");
     const limiter = createRateLimiter({ max: 5, windowMs: 60_000 });
     const result = await limiter.check("env-key");
     expect(result.success).toBe(true);
