@@ -231,6 +231,15 @@ product's name, tagline, the §5 row, then the workbench. Every action is a call
 rate-limited, budgeted and audited by the gateway; the browser parses every answer with the
 capability's own output schema (`src/capabilities/*`), never a copy of it.
 
+Three capabilities are not tools: `/api/tools/<id>` answers them 404 `not_a_tool`, naming who
+calls them, before anything is parsed or called. `inkthread.upload` goes through `/api/uploads`
+(its size and type checks); `feathers.deleteUser` only through the soft-delete proof (review fix 1);
+`inkprint.envelope` only through the dossier runner (final review): inkprint keeps one envelope per
+`dossier_id` and answers 409 to any other bundle for it, so a visitor who sealed first would fail
+that dossier's envelope stage for good. Every other capability is safe in a visitor's hands — a
+read, or a write that spends the visitor's own budget and binds nothing a dossier owns
+(`inkprint.certifyBatch` is `inkprint.certify` N times, one `certify` unit each).
+
 **Wake gate** (Ruling F). On load the gate calls `POST /api/platform/wake/<service>` for each of the
 product's services, in parallel. Each service reads *checking* until its wake request starts, then
 *waking* with the elapsed seconds counting up, then the wake route's own answer — *live*, *asleep*
@@ -337,7 +346,8 @@ Invariants and cases:
    the page says why.
 8. The token preview carries no signature, and its iat, exp and jti are labelled illustrative; the
    transcript check never passes what it could not check.
-9. No visitor can delete a feathers user other than the one their own proof created.
+9. No visitor can delete a feathers user other than the one their own proof created, nor seal a
+   dossier's envelope.
 10. A reading whose table claims more header rows than rows is refused (`invalid_response`); an
     error while rendering a page shows bastion's own error page, never the error's message.
 

@@ -16,6 +16,7 @@ vi.mock("@/platform/gateway/call", async (orig) => {
 });
 
 import * as route from "@/app/api/tools/[capability]/route";
+import { CAPABILITY_LIST } from "@/capabilities";
 import { callCapability } from "@/platform/gateway/call";
 import { SERVICES } from "@/platform/registry/products";
 import { isVisitorId } from "@/platform/visitor";
@@ -120,6 +121,42 @@ describe("which capabilities answer", () => {
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  // inkprint keeps one envelope per dossier_id and answers 409 to any other bundle: a visitor who
+  // sealed a running dossier's id first would fail its envelope stage for good (final review).
+  const ENVELOPE_INPUT = {
+    dossier_id: DOC,
+    evidence_cert_ids: [USER],
+    debate_transcript_hash: "a".repeat(64),
+    perf_receipt_hash: "b".repeat(64),
+  };
+
+  it.each([
+    ["POST", () => post("inkprint.envelope", ENVELOPE_INPUT)],
+    ["GET", () => get("inkprint.envelope")],
+  ])("refuses inkprint.envelope on %s: only the dossier runner seals", async (_m, send) => {
+    const res = await send();
+    expect(res.status).toBe(404);
+    expect(await res.json()).toStrictEqual({
+      error: "not_a_tool",
+      detail: "the dossier runner only",
+      requestId: expect.any(String),
+    });
+    expect(callCapability).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(appendEvent).not.toHaveBeenCalled();
+  });
+
+  const NOT_TOOLS = ["inkthread.upload", "feathers.deleteUser", "inkprint.envelope"];
+
+  it.each(CAPABILITY_LIST.filter((c) => !NOT_TOOLS.includes(c.id)).map((c) => [c.id, c.method]))(
+    "routes %s as a tool (a wrong method is a 405, not not_a_tool)",
+    async (id, method) => {
+      const res = method === "GET" ? await post(id, {}) : await get(id);
+      expect(res.status).toBe(405);
+      expect(callCapability).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("GET — input from the query string", () => {

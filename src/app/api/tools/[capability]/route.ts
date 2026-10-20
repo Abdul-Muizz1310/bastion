@@ -16,13 +16,18 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 100;
 
 /**
- * Reached only through their own routes: uploads go through `/api/uploads` (size and type checks),
- * and a feathers delete only through the soft-delete proof, which deletes the user it created
- * itself — as a tool it would let any visitor delete any user (review fix 1).
+ * Reached only through their own callers (spec 21 §5): uploads go through `/api/uploads` (size and
+ * type checks); a feathers delete only through the soft-delete proof, which deletes the user it
+ * created itself — as a tool it would let any visitor delete any user (review fix 1); a dossier
+ * envelope only through the runner — inkprint keeps one envelope per `dossier_id` and answers 409
+ * to any other bundle, so a visitor sealing a running dossier's id first would fail its envelope
+ * stage for good (final review). Every other capability is a read or spends the visitor's own
+ * budget on something no dossier owns.
  */
 const NOT_TOOLS: ReadonlyMap<string, string> = new Map([
   ["inkthread.upload", "use /api/uploads"],
   ["feathers.deleteUser", "use /api/platform/feathers-proof"],
+  ["inkprint.envelope", "the dossier runner only"],
 ]);
 
 type Verb = "GET" | "POST";
