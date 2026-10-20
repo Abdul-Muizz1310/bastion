@@ -23,6 +23,8 @@ export const SLOWQUERY_HOSTS = [
   "slowquery",
 ] as const satisfies readonly ServiceId[];
 
+export type SlowqueryHost = (typeof SLOWQUERY_HOSTS)[number];
+
 /** slowquery-detective's `REQUEST_ID_PATTERN` (tagging.py). */
 const REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 

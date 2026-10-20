@@ -1,6 +1,15 @@
 import type { Capability } from "@/platform/gateway/call";
 import { type FetchLike, failureFrom, type ToolOutcome } from "./outcome";
 
+/** Any schema with a `safeParse` — Zod classic (the capabilities) or zod/mini (route answers). */
+export type Parser<O> = {
+  safeParse(
+    value: unknown,
+  ):
+    | { success: true; data: O }
+    | { success: false; error: { issues: readonly { path: PropertyKey[]; code: string }[] } };
+};
+
 /**
  * The browser edge of every workbench action (spec 21 §5.1): one call to `/api/tools/<id>` — a GET
  * with its input in the query string, anything else a POST with a JSON body — and the answer parsed
@@ -48,24 +57,19 @@ async function readJson(res: Response): Promise<{ ok: true; value: unknown } | {
   }
 }
 
-export async function callTool<I, O>(
-  cap: Capability<I, O>,
-  input: I,
-  options: CallOptions = {},
-): Promise<ToolOutcome<O>> {
+type Exchange<O> = {
+  path: string;
+  init: RequestInit;
+  parser: Parser<O>;
+  /** A success must carry `x-request-id` (the tools route always sets it). */
+  requireRequestId: boolean;
+};
+
+async function exchange<O>(x: Exchange<O>, options: CallOptions): Promise<ToolOutcome<O>> {
   const fetchImpl: FetchLike = options.fetchImpl ?? fetch;
-  const isGet = cap.method === "GET";
   let res: Response;
   try {
-    res = await fetchImpl(toolPath(cap, input), {
-      method: isGet ? "GET" : "POST",
-      cache: "no-store",
-      signal: options.signal,
-      headers: isGet
-        ? { accept: "application/json" }
-        : { accept: "application/json", "content-type": "application/json" },
-      ...(isGet ? {} : { body: JSON.stringify(input) }),
-    });
+    res = await fetchImpl(x.path, { ...x.init, cache: "no-store", signal: options.signal });
   } catch (err) {
     if (isAbort(err) || options.signal?.aborted) throw err;
     return {
@@ -79,9 +83,14 @@ export async function callTool<I, O>(
   const headerRequestId = res.headers.get("x-request-id");
   const body = await readJson(res);
   if (!res.ok) {
-    return failureFrom(res.status, body.ok ? body.value : undefined, headerRequestId);
+    return failureFrom(
+      res.status,
+      body.ok ? body.value : undefined,
+      headerRequestId,
+      res.headers.get("retry-after"),
+    );
   }
-  if (headerRequestId === null || headerRequestId === "") {
+  if (x.requireRequestId && (headerRequestId === null || headerRequestId === "")) {
     return {
       ok: false,
       kind: "invalid_response",
@@ -89,23 +98,77 @@ export async function callTool<I, O>(
       requestId: null,
     };
   }
+  const requestId = headerRequestId ?? "";
   if (!body.ok) {
-    return {
-      ok: false,
-      kind: "invalid_response",
-      detail: "the answer is not JSON",
-      requestId: headerRequestId,
-    };
+    return { ok: false, kind: "invalid_response", detail: "the answer is not JSON", requestId };
   }
-  const parsed = cap.output.safeParse(body.value);
+  const parsed = x.parser.safeParse(body.value);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     return {
       ok: false,
       kind: "invalid_response",
-      detail: `${issue?.path.join(".") || "(root)"}: ${issue?.code ?? "invalid"}`,
-      requestId: headerRequestId,
+      detail: `${issue?.path.map(String).join(".") || "(root)"}: ${issue?.code ?? "invalid"}`,
+      requestId,
     };
   }
-  return { ok: true, data: parsed.data, status: res.status, requestId: headerRequestId };
+  return { ok: true, data: parsed.data, status: res.status, requestId };
+}
+
+export async function callTool<I, O>(
+  cap: Capability<I, O>,
+  input: I,
+  options: CallOptions = {},
+): Promise<ToolOutcome<O>> {
+  const isGet = cap.method === "GET";
+  return exchange<O>(
+    {
+      path: toolPath(cap, input),
+      init: isGet
+        ? { method: "GET", headers: { accept: "application/json" } }
+        : {
+            method: "POST",
+            headers: { accept: "application/json", "content-type": "application/json" },
+            body: JSON.stringify(input),
+          },
+      parser: cap.output,
+      requireRequestId: true,
+    },
+    options,
+  );
+}
+
+/** One of bastion's own JSON routes (token preview, transcript check), read like a tool call. */
+export async function getRoute<O>(
+  path: string,
+  parser: Parser<O>,
+  options: CallOptions = {},
+): Promise<ToolOutcome<O>> {
+  return exchange<O>(
+    {
+      path,
+      init: { method: "GET", headers: { accept: "application/json" } },
+      parser,
+      requireRequestId: false,
+    },
+    options,
+  );
+}
+
+/** A multipart POST to one of bastion's routes (`/api/uploads`). */
+export async function postForm<O>(
+  path: string,
+  form: FormData,
+  parser: Parser<O>,
+  options: CallOptions = {},
+): Promise<ToolOutcome<O>> {
+  return exchange<O>(
+    {
+      path,
+      init: { method: "POST", headers: { accept: "application/json" }, body: form },
+      parser,
+      requireRequestId: true,
+    },
+    options,
+  );
 }

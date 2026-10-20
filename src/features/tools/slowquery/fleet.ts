@@ -1,5 +1,4 @@
-import type { QueryRow } from "@/capabilities/slowquery";
-import type { ServiceId } from "@/platform/registry/products";
+import type { QueryRow, SlowqueryHost } from "@/capabilities/slowquery";
 import type { FailedOutcome, ToolOutcome } from "../outcome";
 
 /**
@@ -8,13 +7,13 @@ import type { FailedOutcome, ToolOutcome } from "../outcome";
  * reads as an empty one. Pure.
  */
 
-export type HostAnswer = { service: ServiceId; outcome: ToolOutcome<QueryRow[]> };
+export type HostAnswer = { service: SlowqueryHost; outcome: ToolOutcome<QueryRow[]> };
 
 export type HostState =
-  | { service: ServiceId; state: "ok"; count: number; requestId: string }
-  | { service: ServiceId; state: "failed"; failure: FailedOutcome };
+  | { service: SlowqueryHost; state: "ok"; count: number; requestId: string }
+  | { service: SlowqueryHost; state: "failed"; failure: FailedOutcome };
 
-export type FleetRow = { service: ServiceId; row: QueryRow; requestId: string };
+export type FleetRow = { service: SlowqueryHost; row: QueryRow; requestId: string };
 
 export type FleetView = { rows: FleetRow[]; hosts: HostState[] };
 

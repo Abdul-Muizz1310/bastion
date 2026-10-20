@@ -35,19 +35,28 @@ export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 const DEFAULT_RETRY_S = 60;
 
-/** The tools route's error body (`src/platform/gateway/http.ts`). */
+/**
+ * The tools route's error body (`src/platform/gateway/http.ts`); bastion's other routes send the
+ * same shape without a request id.
+ */
 const errorBody = z.object({
   error: z.string().check(z.minLength(1)),
   detail: z.optional(z.string()),
   retryAfterS: z.optional(z.number().check(z.nonnegative())),
-  requestId: z.string().check(z.minLength(1)),
+  requestId: z.optional(z.string().check(z.minLength(1))),
 });
+
+function retryAfterHeader(value: string | null): number | undefined {
+  const trimmed = value?.trim() ?? "";
+  return /^\d+$/.test(trimmed) ? Math.max(1, Number(trimmed)) : undefined;
+}
 
 /** A non-2xx answer from one of bastion's own routes, as a named failure. */
 export function failureFrom(
   status: number,
   body: unknown,
   headerRequestId: string | null,
+  retryAfter: string | null = null,
 ): FailedOutcome {
   const parsed = errorBody.safeParse(body);
   if (!parsed.success) {
@@ -59,7 +68,9 @@ export function failureFrom(
       requestId: headerRequestId,
     };
   }
-  const { error, detail, retryAfterS, requestId } = parsed.data;
+  const { error, detail } = parsed.data;
+  const requestId = parsed.data.requestId ?? headerRequestId;
+  const retryAfterS = parsed.data.retryAfterS ?? retryAfterHeader(retryAfter);
   const base = { ok: false as const, requestId };
   const withDetail = detail === undefined ? {} : { detail };
   switch (error) {

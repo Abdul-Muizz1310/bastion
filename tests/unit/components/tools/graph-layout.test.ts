@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { type Graph, type GraphNode, ROLES } from "@/capabilities/inkthread";
 import {
   graphLayoutInput,
+  labelPlacement,
   layoutGraph,
   MAX_GRAPH_NODES,
   ROLE_GROUP,
@@ -123,5 +124,17 @@ describe("layoutGraph", () => {
     const before = structuredClone(input);
     layoutGraph(input);
     expect(input).toEqual(before);
+  });
+});
+
+describe("labelPlacement", () => {
+  const box = { x: -100, y: -100, width: 200, height: 200 };
+
+  it("writes a label to the right of a node on the left half", () => {
+    expect(labelPlacement({ x: -40, y: 0, r: 5 }, box)).toEqual({ x: -29, anchor: "start" });
+  });
+
+  it("writes it to the left of a node on the right half, so it never runs off the drawing", () => {
+    expect(labelPlacement({ x: 60, y: 0, r: 5 }, box)).toEqual({ x: 49, anchor: "end" });
   });
 });

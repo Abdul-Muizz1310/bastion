@@ -203,3 +203,16 @@ export function layoutGraph(input: LayoutInput, ticks: number = LAYOUT_TICKS): P
   };
   return { nodes, links, viewBox };
 }
+
+const LABEL_GAP = 6;
+
+/** Where a node's label goes: right of a node on the left half, left of one on the right half. */
+export function labelPlacement(
+  node: { x: number; y: number; r: number },
+  viewBox: Placed["viewBox"],
+): { x: number; anchor: "start" | "end" } {
+  const centre = viewBox.x + viewBox.width / 2;
+  return node.x <= centre
+    ? { x: node.x + node.r + LABEL_GAP, anchor: "start" }
+    : { x: node.x - node.r - LABEL_GAP, anchor: "end" };
+}

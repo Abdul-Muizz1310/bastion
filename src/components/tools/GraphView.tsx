@@ -6,6 +6,7 @@ import { SvgDecoration } from "@/components/platform/SvgDecoration";
 import {
   type EdgeFamily,
   graphLayoutInput,
+  labelPlacement,
   layoutGraph,
   type NodeKind,
   type PlacedNode,
@@ -186,8 +187,9 @@ export function GraphView({
           {chosen ? (
             <SvgDecoration>
               <text
-                x={chosen.x + chosen.r + 6}
+                x={labelPlacement(chosen, placed.viewBox).x}
                 y={chosen.y + fontSize / 3}
+                textAnchor={labelPlacement(chosen, placed.viewBox).anchor}
                 fontSize={fontSize}
                 className="graph-label"
               >
