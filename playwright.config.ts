@@ -62,8 +62,8 @@ function stubRunServers(): WebServer[] {
       BASTION_SIGNING_KEY_PRIVATE: files.signingKeyPrivate,
       BASTION_SIGNING_KEY_PUBLIC: files.signingKeyPublic,
       BASTION_KEY_ID: "e2e-stub-key",
-      // Blank, so a developer's .env cannot point the run at a real Upstash: budgets and rate
-      // limits are counted in-process.
+      // Blank, so a developer's .env cannot point the run at a real Upstash: budgets are counted
+      // in-process and the rate limits are off.
       UPSTASH_REDIS_REST_URL: "",
       UPSTASH_REDIS_REST_TOKEN: "",
       VERCEL_GIT_COMMIT_SHA: "",

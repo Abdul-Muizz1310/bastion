@@ -219,7 +219,7 @@ node scripts/migrate.mjs --force  # migrates the database DATABASE_URL names
 pnpm dev                          # http://localhost:3000
 ```
 
-Without Upstash, budgets and rate limits are counted in-process (a warning says so). The downstream services default to their live Render hosts; each can be pointed elsewhere with `<SERVICE>_BACKEND_URL` (https only). Every variable is listed, with its default, in [`.env.example`](.env.example).
+Without Upstash, the daily budgets are counted in-process (per instance, reset on restart) and the rate limits are off: every limiter lets each request through. A warning says each once. The downstream services default to their live Render hosts; each can be pointed elsewhere with `<SERVICE>_BACKEND_URL` (https only). Every variable is listed, with its default, in [`.env.example`](.env.example).
 
 | Script | Does |
 |---|---|
@@ -305,7 +305,7 @@ Measured 2026-10-21 on Node 24.19, linux-x64. A quarter of a millisecond is thre
 - **Signatures are checked against the issuers' current keys.** Rotating an issuer's key would turn its old dossiers to fail until key history is published.
 - **The perf receipt is only as request-scoped as each service.** It lists the queries each service attributes to the dossier's request id; a service not yet on slowquery-detective 0.2 answers with everything it saw.
 - **Uploads are gone after an hour** (DR-0029): their quoted passages stay in the dossier, and the documents check reports the graph as expired, not failed.
-- **Without Upstash** (local and the e2e run) budgets and limits are per process.
+- **Without Upstash** (local and the e2e run) budgets are per process and rate limits are off.
 
 ---
 

@@ -32,7 +32,7 @@ must be on the `PATH` (it makes the stub's certificate).
    inkprint signed before anything is written.
 
 Each app gets a throwaway Ed25519 key and `IRON_SESSION_PASSWORD` (made once into `.e2e/`, which git
-ignores), blank Upstash settings (budgets and limits count in-process), and
+ignores), blank Upstash settings (budgets count in-process; rate limits are off), and
 `NODE_EXTRA_CA_CERTS` pointing at the stub's certificate.
 
 ## The specs

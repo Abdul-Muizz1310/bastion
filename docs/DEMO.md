@@ -87,10 +87,9 @@ reading a finished dossier needs no service at all, so start there.
 - **Verifiable**: nothing is taken on bastion's word; every receipt is re-checked against the
   service that issued it.
 
-## Before v2 is deployed
+## Run it locally against the stub
 
-The live site serves v1 until the six backends ship contract v2 (spec 22 §5). The same path runs
-locally against a stub of every service, in a visible browser:
+The same path runs locally against a stub of every service, in a visible browser:
 
 ```bash
 pnpm build

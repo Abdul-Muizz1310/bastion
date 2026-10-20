@@ -19,7 +19,7 @@ Implement an API gateway at `/api/proxy/[service]/[...path]` that proxies authen
 ## Enumerated Test Cases
 
 ### Happy path
-1. `GET /api/proxy/paper-trail/health` proxies to `https://paper-trail-backend.onrender.com/health` and returns the response.
+1. `GET /api/proxy/paper-trail/health` proxies to `https://paper-trail-backend-jjpf.onrender.com/health` and returns the response.
 2. Proxied request includes `X-Platform-Token` header with a valid Ed25519-signed JWT.
 3. JWT contains correct `sub` (user ID), `role`, `service`, `kid`, and has `exp` = `iat + 60`.
 4. Proxied request includes `X-Request-Id` header (UUID).

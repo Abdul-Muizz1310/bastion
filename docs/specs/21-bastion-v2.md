@@ -741,7 +741,7 @@ production host or database.
   (`BUDGET_DEBATE=0`; feathers-demo's `/health` hangs until a test wakes it). Each reaches the stub
   under its own prefix, so a test can ask the stub what one app called.
 - The run gets its own throwaway Ed25519 key, `IRON_SESSION_PASSWORD` and blank Upstash settings, so
-  budgets and limits are in-process. `DATABASE_URL` must name a local, migrated Postgres; the
+  budgets are in-process and rate limits are off. `DATABASE_URL` must name a local, migrated Postgres; the
   configuration refuses any other host.
 - Before any test, the golden dossier — signed by inkprint's and paper-trail's own code — is written to
   the database with its audit events at their exact ids. A database whose ids are taken by other events
