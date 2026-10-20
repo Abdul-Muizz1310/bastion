@@ -16,8 +16,9 @@ pnpm test:e2e
 
 `DATABASE_URL` must name a local host; the config refuses anything else. Use a fresh database: the
 golden dossier's audit events are written at fixed ids, and a database whose ids are taken by
-other events is refused (re-running on the same e2e database is fine). `openssl` must be on the
-`PATH` (it makes the stub's certificate).
+other events is refused. Re-running on the same e2e database is fine: the golden dossier is
+written again with the current time, so it stays among the home gallery's six newest. `openssl`
+must be on the `PATH` (it makes the stub's certificate).
 
 ## What starts, in order
 

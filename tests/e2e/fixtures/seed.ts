@@ -166,7 +166,10 @@ export default async function seedGoldenDossier(): Promise<void> {
   const D = G.dossier.id;
   const DOC = G.documents[0];
   if (DOC === undefined) throw new Error("e2e seed: the golden dossier has no document");
-  const t0 = new Date("2026-10-20T08:58:00.000Z");
+  // The dossier's own times are now, so it stays among the gallery's 6 newest however many runs
+  // went before on this database (each run adds 2 succeeded dossiers). Only the events' times feed
+  // the signed audit digest, and those keep the golden fixture's.
+  const t0 = new Date(Date.now() - 110_000);
   const at = (s: number) => new Date(t0.getTime() + s * 1000);
   const recorded = G.events.filter((e) => e.id <= G.recordUpTo);
   const e = ENV.response;
