@@ -34,12 +34,19 @@ describe("createBodySchema", () => {
     ["a bad slug", { claim: "c", sources: ["../x"] }],
     ["four documents", { claim: "c", documents: [DOC_A, DOC_B, JOB, "9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d"].map(sample) }],
     ["a repeated document", { claim: "c", documents: [sample(DOC_A), sample(DOC_A)] }],
-    ["an upload without its job", { claim: "c", documents: [{ document_id: DOC_A, kind: "upload" }] }],
     ["an unknown mode", { claim: "c", sources: ["hn"], mode: "yolo" }],
     ["an unknown key", { claim: "c", sources: ["hn"], extra: 1 }],
     ["a non-uuid document", { claim: "c", documents: [sample("nope")] }],
   ])("refuses %s", (_name, body) => {
     expect(parse(body).success).toBe(false);
+  });
+
+  it("accepts an upload without a job_id (a deduplicated one) and stores null", async () => {
+    const r = parse({ claim: "c", documents: [{ document_id: DOC_A, kind: "upload" }] });
+    expect(r.success).toBe(true);
+    const d = deps();
+    await createDossier(createBodySchema.parse({ claim: "c", documents: [{ document_id: DOC_A, kind: "upload" }] }), ctx, d);
+    expect(vi.mocked(d.insert).mock.calls[0]?.[2]?.[0]?.jobId).toBeNull();
   });
 
   it("accepts documents alone, samples and uploads", () => {

@@ -48,9 +48,6 @@ export const createBodySchema = z
   })
   .refine((b) => b.sources.length + b.documents.length > 0, {
     message: "select at least one source or document",
-  })
-  .refine((b) => b.documents.every((d) => d.kind !== "upload" || d.job_id !== undefined), {
-    message: "an upload must carry its job_id",
   });
 
 export type CreateInput = z.infer<typeof createBodySchema>;

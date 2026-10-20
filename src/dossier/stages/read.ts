@@ -133,9 +133,13 @@ export function readStage(deps: ReadDeps, siteUrl: string): StageHandler {
       }
       if (job.data.status !== "succeeded") return { kind: "waiting" };
     }
+    // No job to poll (a deduplicated upload): inkthread's 409 graph_not_ready means "still processing".
+    const notReady = (r: GatewayResult<unknown>) => doc.jobId === null && !r.ok && r.status === 409;
     const graph = await deps.graph(ctx, doc.documentId);
+    if (notReady(graph)) return { kind: "waiting" };
     if (!graph.ok) return { kind: "error", outcome: failure("inkthread.graph", graph) };
     const reading = await deps.reading(ctx, doc.documentId);
+    if (notReady(reading)) return { kind: "waiting" };
     if (!reading.ok) return { kind: "error", outcome: failure("inkthread.reading", reading) };
     await deps.save(ctx.dossier.id, doc.documentId, {
       sha256: graph.data.document.sha256,

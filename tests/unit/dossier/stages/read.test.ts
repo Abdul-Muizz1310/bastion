@@ -169,6 +169,31 @@ describe("read stage", () => {
   });
 });
 
+describe("read stage: an upload with no job", () => {
+  const notReady = { ok: false, error: "downstream_error", status: 409, requestId: "r" } as const;
+  const upload = () => [row({ kind: "upload", jobId: null })];
+
+  it("waits (polling) while inkthread answers 409 graph_not_ready", async () => {
+    const out = await run(deps({ documents: async () => upload(), graph: async () => notReady }));
+    expect(out).toMatchObject({ kind: "waiting", retryInMs: 3_000 });
+  });
+
+  it("waits when the reading is the part that is not ready", async () => {
+    const out = await run(deps({ documents: async () => upload(), reading: async () => notReady }));
+    expect(out).toMatchObject({ kind: "waiting" });
+  });
+
+  it("still fails hard on other downstream errors", async () => {
+    const bad = { ...notReady, status: 404 } as const;
+    const out = await run(deps({ documents: async () => upload(), graph: async () => bad }));
+    expect(out).toMatchObject({ kind: "error" });
+  });
+
+  it("reads straight away when the graph is there", async () => {
+    expect(await run(deps({ documents: async () => upload() }))).toMatchObject({ kind: "ok" });
+  });
+});
+
 describe("documentCandidates", () => {
   it("includes a node with no evidence role when its text overlaps the claim", () => {
     const withClaim = documentCandidates("patent fees", SITE, DOSSIER_ID, DOC, graph(), reading());
