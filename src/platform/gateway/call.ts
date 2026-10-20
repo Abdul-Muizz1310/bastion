@@ -27,8 +27,9 @@ import { type Grant, mintToken, tokenClaims } from "./token";
  * The one gateway pipeline (spec 21 §4). Every call to a downstream service goes through
  * `callCapability`, in this order:
  *
- *   parse input → build a canonical request → per-visitor rate limit → reserve the daily budget →
- *   mint a contract-v2 token → call (X-Request-Id, X-Forwarded-For = the visitor's address) →
+ *   parse input → build a canonical request → per-visitor rate limit → reserve the daily budget
+ *   (unless the call is prepaid) → mint a contract-v2 token → call (X-Request-Id,
+ *   X-Forwarded-For = the visitor's address) →
  *   parse the response → append exactly one `gateway.call` audit event → return a typed
  *   `GatewayResult`.
  *
@@ -79,6 +80,12 @@ export type CallContext = {
   requestId: string;
   /** The visitor's address as bastion resolved it — never a client-supplied header chain. */
   clientIp?: string;
+  /**
+   * The unit this call spends was reserved up front (a dossier's debate, reserved at compose):
+   * the call neither reserves nor releases its budget. Budgets only — the rate limits still apply.
+   * Only for a capability that has a budget.
+   */
+  prepaid?: true;
 };
 
 /** Every call but a free read: what spends, writes or reaches an LLM. */
@@ -105,6 +112,16 @@ function assertContext(ctx: CallContext): void {
   }
   if (ctx.clientIp !== undefined && isIP(ctx.clientIp) === 0) {
     throw new TypeError("callCapability: clientIp must be a single IPv4 or IPv6 address");
+  }
+  if (ctx.prepaid !== undefined && ctx.prepaid !== true) {
+    throw new TypeError("callCapability: prepaid must be true or absent");
+  }
+}
+
+/** A prepaid call skips a budget, so it must have one: anything else is a caller's mistake. */
+function assertPrepaid<I, O>(cap: Capability<I, O>, ctx: CallContext): void {
+  if (ctx.prepaid === true && cap.budget === undefined) {
+    throw new TypeError(`capability ${cap.id}: a prepaid call needs a budget it was prepaid from`);
   }
 }
 
@@ -438,6 +455,7 @@ export async function callCapability<I, O>(
   const started = performance.now();
   assertContext(ctx);
   assertCapability(cap);
+  assertPrepaid(cap, ctx);
 
   const elapsed = () => Math.round(performance.now() - started);
   const toResult = (outcome: Outcome<O>, ms: number): GatewayResult<O> =>
@@ -484,8 +502,9 @@ export async function callCapability<I, O>(
   };
 
   // One instant for the reservation and its release, so both hit the same UTC day's counter.
+  // A prepaid call's unit was reserved before it (spec 21 §4): nothing to reserve or give back.
   const day = new Date();
-  const budget = cap.budget;
+  const budget = ctx.prepaid === true ? undefined : cap.budget;
   if (budget !== undefined) {
     const reserved = await reserveBudget(budget, units, day);
     if (!reserved.ok) {

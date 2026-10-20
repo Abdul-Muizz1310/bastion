@@ -92,6 +92,23 @@ describe("debate stage", () => {
     expect(paperTrail.debate.input.safeParse(input).success).toBe(true);
   });
 
+  it("starts the first debate prepaid: compose reserved its one debate unit (spec 21 §4)", async () => {
+    const { stage, start } = setup();
+    await stage(first());
+    expect(start.mock.calls[0]?.[2]).toBe(true);
+  });
+
+  it("stays prepaid on a retry after a start that failed before any debate existed", async () => {
+    const start = vi
+      .fn()
+      .mockResolvedValueOnce(fail("downstream_error", 503))
+      .mockResolvedValueOnce(res<Created>(created()));
+    const { stage } = setup({ start });
+    expect(await stage(first())).toMatchObject({ kind: "error", retryable: true });
+    expect(await stage(first())).toMatchObject({ kind: "waiting" });
+    expect(start.mock.calls.map((c) => c[2])).toEqual([true, true]);
+  });
+
   it("omits the evidence pool when nothing was sealed", async () => {
     const { stage, start } = setup({ items: [] });
     await stage(first());
@@ -157,6 +174,8 @@ describe("debate stage", () => {
       output: { debateId: DEBATE_ID, failedDebateIds: [OLD_ID] },
       retryInMs: POLL_MS,
     });
+    // The composed unit went to the failed debate: this restart reserves its own (Ruling T).
+    expect(start.mock.calls[0]?.[2]).toBe(false);
   });
 
   it("a failed poll keeps the debate id (the runner keeps the stored output)", async () => {

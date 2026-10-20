@@ -203,6 +203,14 @@ token `sub`, the rate-limit key and the audit actor. System work (the runner) ac
 limited to 50 requests a day across every product: debates 4/day, uploads 3/day, leak scans 10/day,
 scrapes 30/day, certificates 200/day. `/platform` and each workbench show what is left today.
 
+A dossier spends exactly one `debate` unit, reserved when it is composed (§6.6; a refused or failed
+compose spends none). Its debate stage calls the gateway with a prepaid context
+(`CallContext.prepaid: true`): that one call skips the reservation and every release — budgets
+only; the rate limits still apply — so the last unit of the day, once composed, still runs its
+debate. Only a restart after a failed debate (Ruling T: `failedDebateIds` is not empty) reserves
+again, through the gateway as any call does. A prepaid call to a capability with no budget is a
+programming error, refused before any side effect.
+
 **Cold starts.** Render's free services sleep after ~15 minutes and take 50–70 s to wake. Health checks
 time out at 8 s and report **asleep**, not down; connection refusal or 5xx reports **down**. Workbenches
 and the dossier's first stage call `POST /api/platform/wake/[service]` (rate-limited), which holds a

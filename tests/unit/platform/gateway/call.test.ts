@@ -342,6 +342,53 @@ describe("callCapability — pipeline order", () => {
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
+  describe("a prepaid call (its unit was reserved up front: a dossier's debate)", () => {
+    const prepaid = { actor: "bastion" as const, requestId: "req-dossier", prepaid: true as const };
+
+    it("reaches the downstream with the day's budget already spent, and spends nothing", async () => {
+      vi.stubEnv("BUDGET_DEBATE", "0");
+      const result = await gateway.callCapability(debate, { claim: "c" }, prepaid);
+      expect(result.ok).toBe(true);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(await debateLeft()).toBe(0);
+    });
+
+    it("neither reserves on a 2xx nor releases on a 4xx", async () => {
+      await gateway.callCapability(debate, { claim: "c" }, prepaid);
+      expect(await debateLeft()).toBe(4);
+      fetchMock.mockResolvedValueOnce(Response.json({ detail: "no" }, { status: 422 }));
+      const refused = await gateway.callCapability(debate, { claim: "c" }, prepaid);
+      expect(refused).toMatchObject({ ok: false, error: "downstream_error", status: 422 });
+      // A release would credit a unit that this call never took: the day would gain a debate.
+      expect(await debateLeft()).toBe(4);
+    });
+
+    it("is still rate-limited: prepaid skips budgets only", async () => {
+      check.mockResolvedValueOnce({ success: false, limit: 30, remaining: 0, retryAfter: 9 });
+      const result = await gateway.callCapability(debate, { claim: "c" }, { ...ctx, prepaid: true });
+      expect(result).toMatchObject({ ok: false, error: "rate_limited", retryAfterS: 9 });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("is audited like any call that reached the budget", async () => {
+      await gateway.callCapability(debate, { claim: "c" }, prepaid);
+      expect(appendEvent).toHaveBeenCalledOnce();
+      expect(appendEvent.mock.calls[0]?.[0]).toMatchObject({
+        action: "gateway.call",
+        entityId: "test.debate",
+        requestId: "req-dossier",
+      });
+    });
+
+    it("refuses a prepaid call to an unbudgeted capability before any side effect", async () => {
+      await expect(
+        gateway.callCapability(items, { name: "hn" }, { ...prepaid }),
+      ).rejects.toThrow(TypeError);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(appendEvent).not.toHaveBeenCalled();
+    });
+  });
+
   it("does not touch any budget for an unbudgeted capability", async () => {
     fetchMock.mockResolvedValueOnce(Response.json({ items: [] }));
     await gateway.callCapability(items, { name: "hn" }, ctx);

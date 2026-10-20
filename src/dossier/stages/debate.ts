@@ -15,7 +15,8 @@ import { callContext, failure } from "./shared";
  * debate itself ended in `error` (Ruling T), or its transcript names another debate
  * (`transcript_mismatch`): either outcome moves the id into `failedDebateIds`, so "retry from this
  * stage" starts a new debate. The verdict and confidence come only from a transcript that parsed
- * and belongs to the stored debate.
+ * and belongs to the stored debate. The first start is prepaid by the unit compose reserved
+ * (spec 21 §4: a dossier spends one `debate` unit); a restart after a failed debate reserves its own.
  */
 
 export { ROUNDS };
@@ -28,8 +29,17 @@ export type DebateDeps = {
   record: typeof recordTranscript;
 };
 
-function callStart(ctx: StageContext, input: Parameters<typeof paperTrail.debate.input.parse>[0]) {
-  return callCapability(paperTrail.debate, input, callContext(ctx));
+/**
+ * Start a debate. `prepaid`: the dossier's one `debate` unit, reserved at compose, pays for it, so
+ * the gateway reserves nothing (spec 21 §4); a restart after a failed debate is not prepaid.
+ */
+function callStart(
+  ctx: StageContext,
+  input: Parameters<typeof paperTrail.debate.input.parse>[0],
+  prepaid: boolean,
+) {
+  const call = callContext(ctx);
+  return callCapability(paperTrail.debate, input, prepaid ? { ...call, prepaid: true } : call);
 }
 function callGet(ctx: StageContext, id: string) {
   return callCapability(paperTrail.debateGet, { id }, callContext(ctx));
@@ -88,11 +98,17 @@ export function debateStage(deps: DebateDeps, siteUrl: string): StageHandler {
       const pool = (await deps.sealed(ctx.dossier.id)).map((e) =>
         poolItem(siteUrl, ctx.dossier.id, e),
       );
-      const started = await deps.start(ctx, {
-        claim: ctx.dossier.claim,
-        max_rounds: ROUNDS[ctx.dossier.mode],
-        ...(pool.length > 0 ? { evidence_pool: pool } : {}),
-      });
+      // Compose reserved one unit for the dossier's first debate; a restart after a failed one
+      // (Ruling T) spends a unit of its own.
+      const started = await deps.start(
+        ctx,
+        {
+          claim: ctx.dossier.claim,
+          max_rounds: ROUNDS[ctx.dossier.mode],
+          ...(pool.length > 0 ? { evidence_pool: pool } : {}),
+        },
+        failedDebateIds.length === 0,
+      );
       if (!started.ok) return failure("paper-trail.debate", started);
       return waiting(started.data.debate_id);
     }
