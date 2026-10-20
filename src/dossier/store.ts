@@ -1,6 +1,6 @@
 import { and, eq, lt, lte } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
-import { dossierSteps, dossiers } from "@/lib/db/schema";
+import { dossierDocuments, dossierSteps, dossiers } from "@/lib/db/schema";
 import {
   claimStep,
   type DossierRow,
@@ -171,4 +171,27 @@ export async function resetStep(dossierId: string, stage: Stage, now: Date): Pro
     const { status } = await syncDossier(tx, dossierId, now);
     return { ok: true, dossier: status };
   });
+}
+
+export type NewDossier = typeof dossiers.$inferInsert;
+export type NewDossierDocument = typeof dossierDocuments.$inferInsert;
+
+/**
+ * Creates a dossier, its step rows and its documents in ONE transaction: a dossier without step
+ * rows would verify as `steps: fail`, so no partial dossier may ever be visible.
+ */
+export async function insertDossier(
+  dossier: NewDossier,
+  steps: readonly StepRow[],
+  documents: readonly NewDossierDocument[],
+): Promise<void> {
+  await getDb().transaction(async (tx) => {
+    await tx.insert(dossiers).values(dossier);
+    await tx.insert(dossierSteps).values(steps.map(columnsWithKey));
+    if (documents.length > 0) await tx.insert(dossierDocuments).values([...documents]);
+  });
+}
+
+function columnsWithKey(row: StepRow) {
+  return { dossierId: row.dossierId, stage: row.stage, ...columns(row) };
 }
