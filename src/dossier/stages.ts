@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
 import type { Dossier } from "@/lib/db/schema";
 import { DOSSIER_STAGES, STEP_STATUSES } from "@/lib/db/schema";
+import type { Json } from "@/platform/canonical-json";
 
 /**
  * The dossier step machine (spec 21 §6.2, §6.4; DR-0035) — pure. A dossier is eight `dossier_steps`
@@ -20,7 +21,7 @@ export type StepStatus = (typeof STEP_STATUSES)[number];
 export type DossierStatus = "pending" | "running" | "succeeded" | "failed";
 export type DossierRow = Dossier;
 
-export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+export type { Json };
 
 /** One stage's attempt budget; the lease outlives it so the result can still be recorded. */
 export const STAGE_BUDGET_MS = 240_000;

@@ -1,59 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { HANDLERS } from "@/dossier/handlers";
 import { STAGES } from "@/dossier/stages";
-import type { Dossier } from "@/lib/db/schema";
 
 /**
- * The default stage handler map the advance route runs. Task 5 ships every stage as a stub; Tasks
- * 6–8 replace them one by one. A stub must fail the dossier loudly (non-retryable), never pretend.
+ * The default stage handler map the advance route runs: one real handler per stage (Tasks 6–8).
  */
-
-const dossier: Dossier = {
-  id: "550e8400-e29b-41d4-a716-446655440000",
-  userId: null,
-  visitor: "v_kk6eooepno",
-  claim: "c",
-  sources: [],
-  mode: "rapid",
-  status: "running",
-  verdict: null,
-  confidence: null,
-  requestId: "r",
-  envelopeId: null,
-  error: null,
-  createdAt: new Date(0),
-  updatedAt: new Date(0),
-};
 
 describe("HANDLERS", () => {
   it("has exactly one handler per stage", () => {
     expect(Object.keys(HANDLERS).sort()).toEqual([...STAGES].sort());
   });
 
-  it("wires the real wake, gather, read, seal and debate stages", async () => {
-    const { gather } = await import("@/dossier/stages/gather");
-    const { read } = await import("@/dossier/stages/read");
-    const { wake } = await import("@/dossier/stages/wake");
-    expect(HANDLERS.wake).toBe(wake);
-    expect(HANDLERS.gather).toBe(gather);
-    expect(HANDLERS.read).toBe(read);
-    expect(HANDLERS.seal).toBe((await import("@/dossier/stages/seal")).seal);
-    expect(HANDLERS.debate).toBe((await import("@/dossier/stages/debate")).debate);
+  it("wires the real handler of every stage (no stub is left)", async () => {
+    const real = {
+      wake: (await import("@/dossier/stages/wake")).wake,
+      gather: (await import("@/dossier/stages/gather")).gather,
+      read: (await import("@/dossier/stages/read")).read,
+      seal: (await import("@/dossier/stages/seal")).seal,
+      debate: (await import("@/dossier/stages/debate")).debate,
+      measure: (await import("@/dossier/stages/measure")).measure,
+      envelope: (await import("@/dossier/stages/envelope")).envelope,
+      record: (await import("@/dossier/stages/record")).record,
+    };
+    for (const stage of STAGES) expect(HANDLERS[stage]).toBe(real[stage]);
   });
-
-  it.each(STAGES.filter((s) => !["wake", "gather", "read", "seal", "debate"].includes(s)))(
-    "%s is a stub that fails non-retryably as not_implemented",
-    async (stage) => {
-      const outcome = await HANDLERS[stage]({
-        dossier,
-        requestId: "r",
-        outputs: {},
-        now: new Date(),
-        attempt: 1,
-        startedAt: new Date(),
-        signal: new AbortController().signal,
-      });
-      expect(outcome).toEqual({ kind: "error", error: "not_implemented", retryable: false });
-    },
-  );
 });
