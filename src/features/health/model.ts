@@ -27,7 +27,8 @@ export class StatusParseError extends Error {
   override name = "StatusParseError";
 }
 
-const healthSchema: z.ZodMiniType<ServiceHealth> = z.object({
+/** One service's Health as the status and wake routes send it. */
+export const healthSchema: z.ZodMiniType<ServiceHealth> = z.object({
   service: z.string().check(z.minLength(1)),
   state: z.enum(["live", "asleep", "down"]),
   latencyMs: z.number().check(z.nonnegative()),

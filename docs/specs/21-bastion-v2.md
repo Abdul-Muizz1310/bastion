@@ -130,6 +130,94 @@ health request open for up to 90 s and reports **waking → live**.
 | feathers | The YAML schema that generated feathers-demo; live CRUD on it (create, list, soft-delete, then a 404) | The generated contract: role-gated endpoints, soft delete honoured |
 | bastion | Token inspector (the decoded claims of the last call, never the token), JWKS | The audit event for the call |
 
+### 5.1 How a workbench behaves
+
+`/tools` lists the eight workbenches (each with its live health from the shared status poll, what it
+operates and the receipt it hands back) and links each to `/tools/<id>`; an unknown id is a 404.
+`/tools/[product]` is rendered per request: the product's name, tagline, the §5 row, then the
+workbench. Every action is a call to `/api/tools/<capability>` (or `/api/uploads`), so it is
+rate-limited, budgeted and audited by the gateway; the browser parses every answer with the
+capability's own output schema (`src/capabilities/*`), never a copy of it.
+
+**Wake gate** (Ruling F). On load the gate calls `POST /api/platform/wake/<service>` for each of the
+product's services, in parallel. Each service reads *checking* until its wake request starts, then
+*waking* with the elapsed seconds counting up, then the wake route's own answer — *live*, *asleep*
+(it did not wake within 90 s) or *down*. The 30 s shared status is never used here. A wake request
+that fails (no answer, a non-2xx, a body that does not parse) makes the service *unknown*, never a
+guessed state; a 429 says when to retry. Actions stay disabled until every service is live; any
+other end offers a retry. bastion has no service of its own: its gate is live at once. Only phase
+changes are announced to assistive tech, not every second.
+
+**Budgets.** The page renders with today's budgets (`budgetsLeft()`; unavailable ⇒ none shown) and
+re-reads `GET /api/platform/budgets` after every budgeted action. A budgeted action shows its meter
+and is disabled when fewer units are left than it spends (feathers' soft-delete proof spends 2);
+when the budgets cannot be read the action stays enabled and says so, because the gateway still
+enforces them.
+
+**Results and receipts.** Every result panel shows the data and its receipt (`ReceiptCard`) with a
+copy button (the receipt as plain text) and the request id linking to `/audit/<requestId>`. A
+failure is said for what it is: *asleep*, *rate limited* (with the wait), *budget spent* (resets
+00:00 UTC) are never shown as the product failing; a downstream 4xx shows the product's own status
+and reason; an answer in an unexpected shape says so; bastion unreachable says so.
+
+**Per product.**
+- *magpie*: sources (`magpie.sources`); for the chosen source, items with their content hashes
+  (`magpie.items`), scrape once (budget `scrape`), heal history with each PR link (`magpie.heals`).
+- *inkgrid*: a sample (`inkthread.samples`) or an upload (`/api/uploads`, budget `upload`, then
+  `inkthread.job` every 3 s until it ends); the reading (`inkthread.reading`): every table as a cell
+  grid with its header rows marked, its exact text as Markdown, the findings, and the verification
+  report as the receipt. inkgrid has no HTTP surface of its own; the page says in one line that the
+  reading is inkthread's, which runs inkgrid on every document.
+- *inkthread*: the same document (the inkgrid page links here with `?doc=<id>`) as a graph
+  (`inkthread.graph`), laid out with `d3-force` for a fixed number of ticks (deterministic, no
+  running animation; at most 400 nodes drawn, with a note when there are more), nodes coloured by
+  role group with a text legend, edges by thread family; click or Enter on a node ⇒ its why
+  (`inkthread.why`), the why of each of its roles and threads, and the page (`inkthread.page`) with
+  the node's regions drawn as boxes. Boxes are PDF points with a top-left origin on the unrotated
+  page (inkthread spec 01, 11), drawn in an SVG whose viewBox is the page size, so they scale with the
+  image. Receipt: `graph_hash` and provenance; each why names the rule or model behind it.
+- *inkprint*: certify (budget `certify`), verify a certificate (its manifest and text, which the
+  visitor may alter to watch a check fail), diff against a parent (budget `certify`, Ruling M), leak
+  scan (budget `leakscan`, then `inkprint.leakScanStatus` every 3 s until it ends), and the public key.
+- *paper-trail*: debate a claim (budget `debate`, 1–3 rounds), then `paper-trail.debateGet` every
+  2 s until the debate is done or failed, the rounds shown as they arrive (a 429 waits as long as it
+  is told, an asleep answer waits and asks again); or open a recent debate (`paper-trail.list`). The
+  receipt is checked live by `GET /api/platform/transcript-check?id=` — one request id for the
+  transcript and paper-trail's key — which recomputes `transcript_hash` and verifies the Ed25519
+  signature with the published key.
+- *slowquery*: the fleet — `slowquery.queries` on each of the five hosts in parallel, merged and
+  ranked by p95 (else max, else mean), each host's own state shown — a fingerprint's EXPLAIN plan
+  and its exact `CREATE INDEX` (`slowquery.query`), and the demo's branch (`slowquery.branch`,
+  `slowquery.switch`).
+- *feathers*: `feathers.yaml` as feathers-demo's contract-v2 branch holds it (embedded at build
+  time), the contract read from it (each endpoint and its role gate), the users (`feathers.users`),
+  create (budget `feathers.write`), and the soft-delete proof: create a user → delete it → read it,
+  which must answer 404.
+- *bastion*: the token inspector — `GET /api/platform/token-preview?capability=<id>` returns the
+  header and the claims bastion would mint for that capability as this visitor, never a signed
+  token — with the JWKS; and a free call whose receipt is its audit trail.
+
+**Routes added.**
+- `GET /api/platform/budgets` — `{<key>: {limit, left}}` for every budget; dynamic, `no-store`,
+  60 a minute per visitor (429 + `retry-after`); the budget store unreachable ⇒ 503
+  `budgets_unavailable`.
+- `GET /api/platform/token-preview?capability=<id>` — `{header: {alg, kid}, claims, jwks,
+  capability}`; a missing or repeated parameter ⇒ 422, an unknown id ⇒ 404, a bad key id ⇒ 503;
+  60 a minute per visitor; never signs anything.
+- `GET /api/platform/transcript-check?id=<uuid>` — `{debateId, transcriptHash, hash: {state, form},
+  signature: {state, detail}}` under one `x-request-id`; the transcript unavailable ⇒ its gateway
+  error; the key unavailable ⇒ the signature reads `unavailable`, never a pass.
+
+Invariants and cases:
+1. No action is enabled before its gate is live, nor a budgeted one with too few units left.
+2. A failed wake request never crashes the page and never shows a guessed state.
+3. Every success shows a receipt with a copy button and a link to `/audit/<requestId>`.
+4. asleep, rate_limited and budget_exhausted are named as such, never as the product failing.
+5. A poll stops at its terminal state, its deadline, or when the visitor leaves; it never overlaps.
+6. The graph layout is the same for the same graph; with reduced motion nothing moves at all.
+7. A box outside its page is clamped to it; an inverted or non-finite box is not drawn.
+8. The token preview carries no signature; the transcript check never passes what it could not check.
+
 ## 6. Dossier v2
 
 ### 6.1 Stages

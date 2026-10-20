@@ -1,6 +1,7 @@
 import { Redis } from "@upstash/redis";
 import { z } from "zod";
 import { ConfigError } from "@/platform/secrets";
+import { BUDGET_KEYS, type BudgetKey, type BudgetLeft, DEFAULT_BUDGETS } from "./budget-keys";
 
 /**
  * Daily budgets (spec 21 §4). The account's free OpenRouter models allow 50 requests a day across
@@ -16,25 +17,7 @@ import { ConfigError } from "@/platform/secrets";
  * is refused (fail closed): an outage must never switch the budgets off.
  */
 
-export type BudgetKey = "debate" | "upload" | "leakscan" | "scrape" | "certify" | "feathers.write";
-
-export const BUDGET_KEYS: readonly BudgetKey[] = [
-  "debate",
-  "upload",
-  "leakscan",
-  "scrape",
-  "certify",
-  "feathers.write",
-];
-
-export const DEFAULT_BUDGETS: Readonly<Record<BudgetKey, number>> = {
-  debate: 4,
-  upload: 3,
-  leakscan: 10,
-  scrape: 30,
-  certify: 200,
-  "feathers.write": 50,
-};
+export { BUDGET_KEYS, type BudgetKey, type BudgetLeft, DEFAULT_BUDGETS };
 
 const COUNTER_TTL_S = 2 * 24 * 60 * 60;
 const DAY_S = 24 * 60 * 60;
@@ -205,9 +188,7 @@ export async function releaseBudget(key: BudgetKey, n = 1, now: Date = new Date(
   }
 }
 
-export async function budgetsLeft(
-  now: Date = new Date(),
-): Promise<Record<BudgetKey, { limit: number; left: number }>> {
+export async function budgetsLeft(now: Date = new Date()): Promise<Record<BudgetKey, BudgetLeft>> {
   const counters = BUDGET_KEYS.map((key) => budgetCounterKey(key, now));
   const used = await counterStore().read(counters);
   const entries = BUDGET_KEYS.map((key, i) => {
@@ -215,5 +196,5 @@ export async function budgetsLeft(
     const left = Math.min(limit, Math.max(0, limit - (used[i] ?? 0)));
     return [key, { limit, left }] as const;
   });
-  return Object.fromEntries(entries) as Record<BudgetKey, { limit: number; left: number }>;
+  return Object.fromEntries(entries) as Record<BudgetKey, BudgetLeft>;
 }
