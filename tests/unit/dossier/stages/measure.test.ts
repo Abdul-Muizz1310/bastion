@@ -212,31 +212,40 @@ describe("measure stage", () => {
 
   it.each([
     ["asleep", fail("asleep", 504), "asleep"],
+    ["400", fail("downstream_error", 400), "400"],
     ["401", fail("downstream_error", 401), "401"],
     ["403", fail("downstream_error", 403), "403"],
     ["404", fail("downstream_error", 404), "404"],
+    ["422", fail("downstream_error", 422), "422"],
+    ["429 (the service's own limit)", fail("downstream_error", 429), "429"],
     ["500", fail("downstream_error", 500), "500"],
     ["503", fail("downstream_error", 503), "503"],
     ["an unreadable answer", fail("invalid_response", 502), "invalid_response"],
-  ] as const)("a service answering %s contributes that code", async (_what, answer, code) => {
-    const { stage, saved } = setup({ answers: { magpie: answer, "paper-trail": answer } });
-    expect((await stage(stageCtx())).kind).toBe("ok");
-    expect(servicesOf(saved[0] as SingletonReceipt)).toEqual([
-      { service: "magpie", queries: [], error: code },
-      { service: "paper-trail", queries: [], error: code },
-    ]);
-  });
+    ["the gateway's rate limit", fail("rate_limited", 429), "rate_limited"],
+    ["a budget refusal", fail("budget_exhausted", 429), "budget_exhausted"],
+    ["a refused input", fail("invalid_input", 422), "invalid_input"],
+  ] as const)(
+    "Ruling U: a service answering %s contributes that code and the stage succeeds",
+    async (_what, answer, code) => {
+      const { stage, saved } = setup({ answers: { magpie: answer, "paper-trail": answer } });
+      expect((await stage(stageCtx())).kind).toBe("ok");
+      expect(servicesOf(saved[0] as SingletonReceipt)).toEqual([
+        { service: "magpie", queries: [], error: code },
+        { service: "paper-trail", queries: [], error: code },
+      ]);
+    },
+  );
 
-  it.each([
-    ["the gateway's rate limit (retryable)", fail("rate_limited", 429), true],
-    ["a refused input", fail("invalid_input", 422), false],
-    ["a downstream 422", fail("downstream_error", 422), false],
-  ] as const)("fails the stage on %s and stores nothing", async (_what, answer, retryable) => {
-    const { stage, saved } = setup({ answers: { magpie: answer } });
-    const out = await stage(stageCtx());
-    expect(out).toMatchObject({ kind: "error", retryable });
-    expect(out.kind === "error" && out.error).toContain("slowquery.queries (magpie)");
-    expect(saved).toHaveLength(0);
+  it("Ruling U: only a fault of bastion's own (the receipt write) fails the stage", async () => {
+    const stage = measureStage({
+      events: async () => [ev(1, "magpie")],
+      queries: (async () => fail("downstream_error", 429)) as never,
+      stored: async () => null,
+      save: async () => {
+        throw new Error("connection terminated");
+      },
+    });
+    await expect(stage(stageCtx())).rejects.toThrow("connection terminated");
   });
 
   it("stores an empty receipt when the dossier called no measured service", async () => {

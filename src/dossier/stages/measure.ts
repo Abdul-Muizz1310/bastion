@@ -12,15 +12,16 @@ import {
 } from "../receipt-math";
 import { findReceipt, saveReceiptOnce } from "../receipts";
 import type { StageContext, StageHandler, StageOutcome } from "../stages";
-import { callContext, failure } from "./shared";
+import { callContext } from "./shared";
 
 /**
  * Stage `measure` (spec 21 §6.1): the perf receipt. Every service the dossier called — read off the
  * audit log for its request id — that keeps a slowquery log is asked, in parallel, for the queries
- * it ran under that request id (Ruling P put the id on every call). A service that is asleep or
- * answers 401/403/404/5xx or something unreadable contributes `{service, queries: [], error}` and
- * the stage still succeeds; a failure that is bastion's own (its rate limit, a refused input,
- * another 4xx) fails it. The receipt is stored once per dossier: a re-run reuses it.
+ * it ran under that request id (Ruling P put the id on every call). Ruling U: the perf receipt is
+ * observational, so no answer fails the dossier — every per-service failure (asleep, any 4xx or 5xx,
+ * an unreadable answer, the gateway's own budget, rate or input refusal) contributes
+ * `{service, queries: [], error: "<code>"}` and the stage succeeds. Only a fault of bastion's own
+ * (the receipt write throwing) fails it. The receipt is stored once per dossier: a re-run reuses it.
  *
  * Output `{perfReceiptHash, auditUpTo}`: `auditUpTo` is the last audit event id for the request
  * once measuring is done — the envelope's audit digest covers exactly the events up to it, so a
@@ -66,18 +67,17 @@ function toPerfQuery(row: QueryRow): PerfQuery {
 
 type Failure = Extract<GatewayResult<unknown>, { ok: false }>;
 
-/** The code a service that did not answer contributes, or null when the failure is bastion's. */
-function unanswered(f: Failure): string | null {
+/** The code a service that did not answer contributes: its HTTP status, else the gateway's error. */
+function unanswered(f: Failure): string {
   switch (f.error) {
+    case "downstream_error":
+      return String(f.status);
     case "asleep":
     case "invalid_response":
-      return f.error;
-    case "downstream_error":
-      return [401, 403, 404].includes(f.status) || f.status >= 500 ? String(f.status) : null;
     case "rate_limited":
     case "budget_exhausted":
     case "invalid_input":
-      return null;
+      return f.error;
   }
 }
 
@@ -108,9 +108,7 @@ export function measureStage(deps: MeasureDeps): StageHandler {
         measured.push({ service, queries: result.data.map(toPerfQuery).sort(byId) });
         continue;
       }
-      const code = unanswered(result);
-      if (code === null) return failure(`slowquery.queries (${service})`, result);
-      measured.push({ service, queries: [], error: code });
+      measured.push({ service, queries: [], error: unanswered(result) });
     }
 
     const receipt: PerfReceipt = {

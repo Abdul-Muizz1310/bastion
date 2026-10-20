@@ -13,8 +13,9 @@ import { callContext, failure } from "./shared";
 /**
  * Stage `envelope` (spec 21 §6.1, §6.5): inkprint signs one envelope over the dossier — the stored
  * certificate ids, the transcript receipt's hash, the perf receipt's hash — with metadata (all
- * strings, inkprint's `dict[str, str]`): the request id, the audit digest, the documents' graph
- * hashes (sorted, comma-joined), the transcript signature and the debate id.
+ * strings, inkprint's `dict[str, str]`): the request id, the audit digest and its event-id bound
+ * (`audit_up_to`, Ruling V — signed, so a stranger knows which events to recompute it over), the
+ * documents' graph hashes (sorted, comma-joined), the transcript signature and the debate id.
  *
  * Everything comes from what earlier stages stored, never from a fresh call, so the bundle is the
  * same on every attempt: the audit digest covers the request's events up to measure's `auditUpTo`.
@@ -100,6 +101,7 @@ export function envelopeStage(deps: EnvelopeDeps): StageHandler {
       metadata: {
         request_id: requestId,
         audit_digest_at_envelope: auditDigest(await deps.events(requestId, auditUpTo)),
+        audit_up_to: String(auditUpTo),
         graph_hashes: graphHashes.join(","),
         transcript_signature: transcript.signature ?? "",
         debate_id: debateId,

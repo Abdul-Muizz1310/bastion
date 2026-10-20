@@ -238,6 +238,7 @@ describe.skipIf(!LOCAL)("measure → envelope → record, composed, against Post
     expect(receipt).toMatchObject({ ref: id, signature: expect.any(String) });
     expect(payload.request).toEqual(body);
     const upTo = payload.audit_up_to as number;
+    expect(body.metadata.audit_up_to).toBe(String(upTo));
     expect(body.metadata.audit_digest_at_envelope).toBe(
       auditDigest(await requestEvents(requestId, upTo)),
     );

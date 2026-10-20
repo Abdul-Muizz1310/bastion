@@ -122,6 +122,7 @@ describe("envelope stage", () => {
       metadata: {
         request_id: REQUEST_ID,
         audit_digest_at_envelope: auditDigest(EVENTS.filter((e) => e.id <= 8)),
+        audit_up_to: "8",
         graph_hashes: `${"a".repeat(64)},${"b".repeat(64)}`,
         transcript_signature: "tsig==",
         debate_id: DEBATE_ID,
