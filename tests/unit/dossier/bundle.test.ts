@@ -165,3 +165,33 @@ describe("receiptsBundle", () => {
     expect(() => bundleFilename('x"; filename="evil')).toThrow(RangeError);
   });
 });
+
+describe("receiptsBundle never publishes an internal error's message (review round 1)", () => {
+  const SQL = "syntax error at or near \"FROM\" in SELECT password_hash FROM users WHERE id = 7";
+
+  it("reduces the dossier's stage_threw error to its bare code", () => {
+    const bundle = receiptsBundle({
+      dossier: row({ status: "failed", verdict: null, confidence: null, envelopeId: null, error: `debate: stage_threw: ${SQL}` }),
+      evidence: [],
+      documents: [],
+      receipts: [],
+    });
+    const json = canonicalJson(bundle);
+    expect(json).not.toContain("SELECT");
+    expect(json).not.toContain("password_hash");
+    expect((bundle as { dossier: { error: string } }).dossier.error).toBe("debate: stage_threw");
+  });
+
+  it("keeps a downstream error as recorded", () => {
+    const bundle = receiptsBundle({
+      dossier: row({ status: "failed", error: "debate: paper-trail.debate: budget_exhausted" }),
+      evidence: [],
+      documents: [],
+      receipts: [],
+    });
+    expect((bundle as { dossier: { error: string } }).dossier.error).toBe(
+      "debate: paper-trail.debate: budget_exhausted",
+    );
+  });
+});
+

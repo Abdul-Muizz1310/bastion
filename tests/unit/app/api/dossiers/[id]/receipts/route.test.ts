@@ -105,6 +105,17 @@ describe("GET /api/dossiers/[id]/receipts", () => {
     expect(body).not.toContain(row.visitor ?? "never");
   });
 
+  it("never downloads an internal error's message (review round 1)", async () => {
+    m.findDossier.mockResolvedValue({
+      ...row,
+      status: "failed",
+      error: "seal: stage_threw: relation \"evidence_items\" does not exist (SELECT * FROM evidence_items)",
+    });
+    const body = await (await get()).text();
+    expect(body).toContain('"error":"seal: stage_threw"');
+    expect(body).not.toContain("SELECT");
+  });
+
   it("answers 404 for an unknown dossier, in the gateway's error shape", async () => {
     m.findDossier.mockResolvedValue(null);
     const res = await get("not-a-dossier");

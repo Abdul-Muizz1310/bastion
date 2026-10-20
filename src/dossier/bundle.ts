@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Dossier, DossierDocument, EvidenceItem } from "@/lib/db/schema";
 import type { Json } from "@/platform/canonical-json";
+import { publicDossierError } from "./public-error";
 import type { StoredReceipt } from "./receipts";
 
 /**
@@ -32,7 +33,8 @@ function dossierJson(d: Dossier): Json {
     confidence: d.confidence === null ? null : Number(d.confidence),
     request_id: d.requestId,
     envelope_id: d.envelopeId,
-    error: d.error,
+    // Never an internal error's message (review round 1): only its code.
+    error: publicDossierError(d.error),
     created_at: d.createdAt.toISOString(),
   };
 }

@@ -195,6 +195,26 @@ describe("advance — one stage per invocation", () => {
     });
   });
 
+  it("audits a thrown stage with its bare code — the public log never gets the message (review round 1)", async () => {
+    seed();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    await advance(
+      ID,
+      handlers({
+        wake: async () => {
+          throw new Error("password authentication failed for user \"bastion\" (SELECT 1)");
+        },
+      }),
+      { now: clock },
+    );
+    expect(appendEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { stage: "wake", attempt: 1, error: "stage_threw" } }),
+    );
+    expect(JSON.stringify(appendEvent.mock.calls)).not.toContain("SELECT 1");
+    // The operator still gets it, in the server log.
+    expect(JSON.stringify(logged.mock.calls)).toContain("SELECT 1");
+  });
+
   it("records a handler that throws synchronously, or throws a non-Error, the same way", async () => {
     seed();
     const sync: StageHandler = () => {

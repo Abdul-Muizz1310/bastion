@@ -56,7 +56,7 @@ function productOf(stage: Stage, error: string): string {
 
 export function errorView(stage: Stage, error: string): ErrorView {
   if (/^(stage_threw|invalid_outcome)\b/.test(error)) {
-    // Never the message: the stream already carries the bare code (publicError).
+    // Never the message: every public surface carries the bare code (publicStepError).
     return {
       tone: "bastion",
       title: "bastion hit an internal error running this stage",

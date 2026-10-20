@@ -1,3 +1,4 @@
+import { publicStepError } from "@/dossier/public-error";
 import type { Stage, StepRow, StepStatus } from "@/dossier/stages";
 import { type OutputSummary, type StepSummaryRow, summarize } from "@/dossier/step-summary";
 import type { Json } from "@/platform/canonical-json";
@@ -26,20 +27,6 @@ export type StepView = {
 
 const iso = (d: Date | null): string | null => (d === null ? null : d.toISOString());
 
-/** bastion's own failures, whose recorded text carries an exception's message after the code. */
-export const INTERNAL_ERRORS = ["stage_threw", "invalid_outcome"] as const;
-
-/**
- * The error as the page may publish it (review round 1): an internal error is reduced to its bare
- * code — an exception's message can name hosts, queries or secrets — and anything else (a
- * downstream code with the gateway's own detail, a timeout) is kept as recorded.
- */
-export function publicError(error: string | null): string | null {
-  if (error === null) return null;
-  const internal = INTERNAL_ERRORS.find((code) => error === code || error.startsWith(`${code}:`));
-  return internal ?? error;
-}
-
 /** A full row (the page) or a summary row (the stream): the view is the same either way. */
 export function stepView(row: StepRow | StepSummaryRow): StepView {
   const waits = row.status === "pending" || row.status === "waiting";
@@ -47,7 +34,7 @@ export function stepView(row: StepRow | StepSummaryRow): StepView {
     stage: row.stage,
     status: row.status,
     attempt: row.attempt,
-    error: publicError(row.error),
+    error: publicStepError(row.error),
     nextAt: waits ? row.notBefore.toISOString() : null,
     leaseUntil: row.leaseUntil.getTime() > 0 ? row.leaseUntil.toISOString() : null,
     startedAt: iso(row.startedAt),

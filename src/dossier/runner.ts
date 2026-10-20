@@ -1,5 +1,6 @@
 import { type Actor, SYSTEM_ACTOR } from "@/platform/audit/event";
 import { appendEvent } from "@/platform/audit/write";
+import { publicStepError } from "./public-error";
 import {
   applyOutcome,
   applyTimeout,
@@ -127,6 +128,17 @@ function isTransition(previous: StepRow, next: StepRow): boolean {
 }
 
 async function auditOutcome(dossier: DossierRow, row: StepRow): Promise<void> {
+  // The audit log is public and append-only: an internal error goes in as its bare code, and its
+  // message only to the server log (review round 1).
+  const error = publicStepError(row.error);
+  if (error !== row.error) {
+    console.error("dossier stage failed inside bastion", {
+      dossierId: dossier.id,
+      stage: row.stage,
+      attempt: row.attempt,
+      error: row.error,
+    });
+  }
   await appendEvent({
     actor: SYSTEM_ACTOR,
     action: `dossier.stage.${row.status}`,
@@ -137,7 +149,7 @@ async function auditOutcome(dossier: DossierRow, row: StepRow): Promise<void> {
     metadata: {
       stage: row.stage,
       attempt: row.attempt,
-      ...(row.error === null ? {} : { error: row.error }),
+      ...(error === null ? {} : { error }),
     },
   });
 }

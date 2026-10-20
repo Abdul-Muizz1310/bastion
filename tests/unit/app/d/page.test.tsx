@@ -198,6 +198,27 @@ describe("/d/[id]", () => {
     expect(textOf(html)).toMatch(/no transcript/);
   });
 
+  it("never renders an internal error's message, in the timeline or anywhere else (review round 1)", async () => {
+    const secret = "stage_threw: SELECT api_key FROM secrets WHERE owner = 'bastion'";
+    store.findDossier.mockResolvedValue(
+      dossierRow({ status: "failed", verdict: null, confidence: null, envelopeId: null, error: `seal: ${secret}` }),
+    );
+    store.loadSteps.mockResolvedValue(
+      stepRows({
+        seal: { status: "error", error: secret },
+        debate: { status: "pending", attempt: 0 },
+        measure: { status: "pending", attempt: 0 },
+        envelope: { status: "pending", attempt: 0 },
+        record: { status: "pending", attempt: 0 },
+      }),
+    );
+    receipts.mockResolvedValue([]);
+    const html = await render();
+    expect(html).not.toContain("SELECT");
+    expect(html).not.toContain("api_key");
+    expect(textOf(sliceByAttr(html, "data-stage", "seal"))).toMatch(/bastion hit an internal error/);
+  });
+
   it("still renders a dossier whose step rows are not one per stage, and says it cannot follow it", async () => {
     // Only tampering produces this; verification fails its steps check. The page must not crash.
     store.findDossier.mockResolvedValue(

@@ -318,6 +318,16 @@ describe("GET /api/dossiers/[id]/stream", () => {
     expect(mockSummaries).toHaveBeenCalledWith(DOSSIER_ID);
   });
 
+  it("never streams an internal error's message (review round 1)", async () => {
+    mockFind.mockResolvedValue(dossierRow({ status: "failed", error: "seal: stage_threw: SELECT token FROM keys" }));
+    mockSummaries.mockResolvedValue(
+      summarized(stepRows({ seal: { status: "error", error: "stage_threw: SELECT token FROM keys" } })),
+    );
+    const body = await (await GET(req() as never, ctx)).text();
+    expect(body).toContain('"error":"stage_threw"');
+    expect(body).not.toContain("SELECT");
+  });
+
   it("answers 404 for an unknown dossier", async () => {
     mockFind.mockResolvedValue(null);
     const res = await GET(req() as never, ctx);
