@@ -110,6 +110,35 @@ describe("canonicalJson", () => {
     expect(canonicalJson(parsed)).toBe('{"__proto__":{"x":1},"a":0}');
   });
 
+  describe("is RFC 8785 (JCS) for I-JSON values — the RFC's own examples", () => {
+    it("§3.2.2: numbers, strings and literals", () => {
+      const value = JSON.parse(
+        '{"numbers":[333333333.33333329,1E30,4.50,2e-3,0.000000000000000000000000001],' +
+          '"string":"\\u20ac$\\u000F\\u000aA\'\\u0042\\u0022\\u005c\\\\\\"\\/",' +
+          '"literals":[null,true,false]}',
+      ) as Json;
+      expect(canonicalJson(value)).toBe(
+        '{"literals":[null,true,false],"numbers":[333333333.3333333,1e+30,4.5,0.002,1e-27],' +
+          '"string":"€$\\u000f\\nA\'B\\"\\\\\\\\\\"/"}',
+      );
+    });
+
+    it("§3.2.3: property sorting by UTF-16 code units", () => {
+      const value: Json = {
+        "€": "Euro Sign",
+        "\r": "Carriage Return",
+        "דּ": "Hebrew Letter Dalet With Dagesh",
+        "1": "One",
+        "😀": "Emoji: Grinning Face",
+        "\u0080": "Control",
+        "ö": "Latin Small Letter O With Diaeresis",
+      };
+      // Integer-like keys enumerate first in a parsed JS object, so read the string's own order.
+      const order = [...canonicalJson(value).matchAll(/"([^"]*)":/g)].map((m) => m[1]);
+      expect(order).toEqual(["\\r", "1", "\u0080", "ö", "€", "😀", "דּ"]);
+    });
+  });
+
   it("accepts an object without a prototype", () => {
     const bare = Object.assign(Object.create(null) as { [key: string]: Json }, { b: 1, a: 2 });
     expect(canonicalJson(bare)).toBe('{"a":2,"b":1}');
@@ -136,6 +165,21 @@ describe("canonicalJson", () => {
     ];
     it.each(bad)("%s", (_name, value) => {
       expect(() => canonicalJson(value as Json)).toThrow(TypeError);
+    });
+
+    it("a hole made up for by an extra property (the key count alone would match)", () => {
+      // biome-ignore lint/suspicious/noSparseArray: the hole is the case under test.
+      const holed = Object.assign([1, , 3], { x: 2 });
+      expect(Object.keys(holed)).toHaveLength(holed.length);
+      expect(() => canonicalJson(holed as Json)).toThrow(TypeError);
+    });
+
+    it("a hole an inherited index would fill", () => {
+      // biome-ignore lint/suspicious/noSparseArray: the hole is the case under test.
+      const holed = [1, , 3];
+      const inherited = Object.create(Array.prototype, { 1: { value: 2, enumerable: true } });
+      Object.setPrototypeOf(holed, inherited);
+      expect(() => canonicalJson(holed as Json)).toThrow(TypeError);
     });
 
     it("a cycle", () => {

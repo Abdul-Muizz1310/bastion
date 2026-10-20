@@ -11,9 +11,10 @@ import { callContext, failure } from "./shared";
  * evidence, poll it, and keep its signed transcript. A debate spends LLM budget, so the id is the
  * stage's output from the first run: every later poll, and every retry after an error (the runner
  * keeps the previous output), continues that debate and never starts another — except after the
- * debate itself ended in `error` (Ruling T): that outcome moves the id into `failedDebateIds`, so
- * "retry from this stage" starts a new debate. The verdict and confidence come only from a
- * transcript that parsed and belongs to the stored debate.
+ * debate itself ended in `error` (Ruling T), or its transcript names another debate
+ * (`transcript_mismatch`): either outcome moves the id into `failedDebateIds`, so "retry from this
+ * stage" starts a new debate. The verdict and confidence come only from a transcript that parsed
+ * and belongs to the stored debate.
  */
 
 export const ROUNDS = { rapid: 1, standard: 2, adversarial: 3 } as const;
@@ -75,6 +76,13 @@ export function debateStage(deps: DebateDeps, siteUrl: string): StageHandler {
       output: { debateId, failedDebateIds },
       retryInMs: POLL_MS,
     });
+    /** Ruling T: a terminal failure of this debate drops its id, so a retry starts a new one. */
+    const abandon = (debateId: string, error: string): StageOutcome => ({
+      kind: "error",
+      error,
+      retryable: false,
+      output: { failedDebateIds: [...failedDebateIds, debateId] },
+    });
     if (known === null) {
       const pool = (await deps.sealed(ctx.dossier.id)).map((e) =>
         poolItem(siteUrl, ctx.dossier.id, e),
@@ -95,12 +103,7 @@ export function debateStage(deps: DebateDeps, siteUrl: string): StageHandler {
       case "running":
         return waiting(known);
       case "error":
-        return {
-          kind: "error",
-          error: `debate_failed: ${known}`,
-          retryable: false,
-          output: { failedDebateIds: [...failedDebateIds, known] },
-        };
+        return abandon(known, `debate_failed: ${known}`);
       case "done":
         break;
     }
@@ -116,7 +119,8 @@ export function debateStage(deps: DebateDeps, siteUrl: string): StageHandler {
       verdict: t.verdict,
       confidence: t.confidence,
     });
-    if (!saved.ok) return { kind: "error", error: saved.error, retryable: false };
+    // The transcript names another debate: fetching it again would too, so the id goes as well.
+    if (!saved.ok) return abandon(known, saved.error);
     return {
       kind: "ok",
       output: { debateId: known, verdict: t.verdict, confidence: t.confidence, failedDebateIds },

@@ -185,17 +185,28 @@ describe("envelope stage", () => {
   });
 
   it.each([
-    ["the debate output has no id", ctx({ debate: { failedDebateIds: [] } }), {}],
-    ["there is no debate output", ctx({ debate: null }), {}],
-    ["no transcript receipt is stored for the debate", ctx(), { receipts: { transcript: null } }],
+    ["the debate output has no id", ctx({ debate: { failedDebateIds: [] } })],
+    ["there is no debate output", ctx({ debate: null })],
+  ] as const)("is skipped with no_transcript when %s", async (_why, context) => {
+    const { stage, envelope } = setup();
+    expect(await stage(context)).toEqual({ kind: "skipped", reason: "no_transcript" });
+    expect(envelope).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["no transcript receipt is stored for the debate", { receipts: { transcript: null } }],
     [
       "the stored transcript is another debate's",
-      ctx(),
       { receipts: { transcript: { ...TRANSCRIPT, ref: "other" } } },
     ],
-  ] as const)("is skipped with no_transcript when %s", async (_why, context, opts) => {
+  ] as const)("fails non-retryably with transcript_receipt_missing when %s", async (_why, opts) => {
+    // A debate id with no receipt is a broken dossier, not a dossier without a debate.
     const { stage, envelope } = setup(opts as never);
-    expect(await stage(context)).toEqual({ kind: "skipped", reason: "no_transcript" });
+    expect(await stage(ctx())).toEqual({
+      kind: "error",
+      error: `envelope: transcript_receipt_missing (debate ${DEBATE_ID})`,
+      retryable: false,
+    });
     expect(envelope).not.toHaveBeenCalled();
   });
 

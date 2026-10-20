@@ -164,6 +164,21 @@ their pages; the perf receipt per service with any index suggestion; the envelop
 
 Each check is ✓ / ✗ / unavailable with the reason. The bundle downloads as `dossier-<id>.receipts.json`.
 
+**Canonical form.** bastion's own receipts (the perf receipt, the audit digest, the envelope receipt's
+hash) are hashed over `canonicalJson`, whose output is **RFC 8785 (JCS)** for any I-JSON value: keys
+sorted by UTF-16 code units, no whitespace, numbers and strings exactly as ECMAScript's
+`JSON.stringify` writes them. Any JCS library reproduces it byte for byte; Python's
+`json.dumps(sort_keys=True)` does not (it writes `1.0` and `1e-05`, and sorts by code point). Every
+digest is the lower-case hex SHA-256 of the UTF-8 bytes.
+
+- **Perf receipt:** the digest of the stored payload, which holds exactly the hashed fields.
+- **Audit digest:** the `events` rows with the dossier's `request_id` and `id` ≤ the bound (the audit
+  receipt's `payload.up_to_event_id`, or the envelope's signed `metadata.audit_up_to`), ordered by `id`,
+  each as `[id, action, service, created_at]`; `service` may be null; `created_at` is **truncated (not
+  rounded) to milliseconds**, UTC, `YYYY-MM-DDTHH:MM:SS.mmmZ` — in SQL,
+  `to_char(date_trunc('milliseconds', created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`.
+  The digest is over the JCS form of that array of arrays.
+
 ## 7. Platform token contract v2 (DR-0033)
 
 Minted by bastion (and, for their own backend, by the standalone frontends of DR-0030):

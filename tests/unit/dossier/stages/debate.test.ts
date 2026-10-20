@@ -166,15 +166,18 @@ describe("debate stage", () => {
     expect(out.kind === "error" && out.output).toBeUndefined();
   });
 
-  it("a transcript for another debate is a non-retryable error and stores no verdict", async () => {
+  it("a transcript for another debate is a non-retryable error that clears the id (like Ruling T)", async () => {
     const { stage } = setup({
       saved: { ok: false, error: `transcript_mismatch: expected ${DEBATE_ID}, got ${OLD_ID}` },
     });
-    const out = await stage(polling());
+    const out = await stage(polling([OLD_ID]));
+    // No debateId in the output: "retry from this stage" starts a new debate instead of fetching
+    // the same mismatched transcript forever.
     expect(out).toEqual({
       kind: "error",
       error: `transcript_mismatch: expected ${DEBATE_ID}, got ${OLD_ID}`,
       retryable: false,
+      output: { failedDebateIds: [OLD_ID, DEBATE_ID] },
     });
   });
 

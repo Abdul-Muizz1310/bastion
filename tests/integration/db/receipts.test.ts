@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
+import { auditDigest } from "@/dossier/receipt-math";
 import { findReceipt, saveEnvelopeReceipt, saveReceiptOnce } from "@/dossier/receipts";
 import { getDb } from "@/lib/db/client";
 import { dossiers, receipts } from "@/lib/db/schema";
 import { appendEvent } from "@/platform/audit/write";
 import { requestEvents } from "@/platform/audit/request-events";
+import { canonicalJson, type Json } from "@/platform/canonical-json";
+import { sha256Hex } from "@/platform/sha256";
 
 /**
  * The receipts adapter and the audit-log reader against a real Postgres (spec 21 §6.3, §6.5): a
@@ -188,5 +191,35 @@ describe.skipIf(!LOCAL)("receipts against Postgres", () => {
     expect((await requestEvents(requestId, ids[1])).map((e) => e.id)).toEqual(ids.slice(0, 2));
     expect(await requestEvents(requestId, 0)).toEqual([]);
     expect(await requestEvents(`it-receipts-none-${randomUUID()}`)).toEqual([]);
+  });
+
+  it("the documented audit-digest recipe, run as SQL, gives the same digest (truncated ms)", async () => {
+    const { id, requestId } = await newDossier();
+    // Microseconds that rounding would carry into the next millisecond (and the next second).
+    for (const [at, service] of [
+      ["2026-10-20 10:00:00.123999+00", "magpie"],
+      ["2026-10-20 10:00:00.999999+00", null],
+      ["2026-10-20 10:00:01.000400+00", "bastion"],
+    ] as const) {
+      await getDb().execute(sql`
+        INSERT INTO events (actor, action, entity_type, entity_id, service, request_id, created_at)
+        VALUES ('bastion', 'gateway.call', 'dossier', ${id}, ${service}, ${requestId}, ${at}::timestamptz)
+      `);
+    }
+    const rows = await getDb().execute<{ row: string }>(sql`
+      SELECT json_build_array(
+        id, action, service,
+        to_char(date_trunc('milliseconds', created_at) AT TIME ZONE 'UTC',
+                'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+      )::text AS row
+      FROM events WHERE request_id = ${requestId} ORDER BY id
+    `);
+    const fromSql = rows.map((r) => JSON.parse(r.row) as Json);
+    expect(fromSql.map((r) => (r as Json[])[3])).toEqual([
+      "2026-10-20T10:00:00.123Z",
+      "2026-10-20T10:00:00.999Z",
+      "2026-10-20T10:00:01.000Z",
+    ]);
+    expect(sha256Hex(canonicalJson(fromSql))).toBe(auditDigest(await requestEvents(requestId)));
   });
 });

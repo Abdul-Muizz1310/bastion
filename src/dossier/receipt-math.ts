@@ -6,10 +6,28 @@ import { sha256Hex } from "@/platform/sha256";
  * The receipts' pure math (spec 21 §6.1, §6.5). No I/O: the measure, envelope and record stages
  * compute these when they write a receipt, and the verify step recomputes them from what is stored.
  *
+ * `canonicalJson` is RFC 8785 (JCS) for these values, so any JCS library recomputes both digests;
+ * Python's `json.dumps(sort_keys=True)` does not (see `@/platform/canonical-json`).
+ *
  * - **Perf receipt hash** = `sha256Hex(canonicalJson(receipt))` over exactly the fields declared
- *   below (`perfReceiptJson`), whatever else a value carries at run time.
+ *   below (`perfReceiptJson`), whatever else a value carries at run time. The stored receipt
+ *   payload *is* that value, so a third party hashes the payload as stored.
  * - **Audit digest** = `sha256Hex(canonicalJson(rows))` where `rows` is `[id, action, service,
- *   created_at as ISO 8601 UTC with milliseconds]` per event, ordered by id ascending.
+ *   created_at]` per event, ordered by id ascending.
+ *
+ * The audit digest recipe a third party needs, from the `events` table alone:
+ *
+ * 1. take the rows with `request_id` = the dossier's request id and `id` ≤ the bound: the audit
+ *    receipt's `payload.up_to_event_id`, or the envelope's signed `metadata.audit_up_to`;
+ * 2. order them by `id` ascending; each becomes the array `[id, action, service, created_at]`:
+ *    `id` a JSON number, `action` a string, `service` a string or null;
+ * 3. `created_at` is the timestamptz **truncated (not rounded) to milliseconds**, in UTC, written
+ *    `YYYY-MM-DDTHH:MM:SS.mmmZ` with exactly three fraction digits (`Date.prototype.toISOString`).
+ *    Postgres keeps microseconds, so in SQL:
+ *    `to_char(date_trunc('milliseconds', created_at) AT TIME ZONE 'UTC',
+ *    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+ * 4. the digest is the lower-case hex SHA-256 of the UTF-8 bytes of the JCS form of that array of
+ *    arrays (`[[41,"gateway.call","magpie","2026-10-20T10:00:00.123Z"],…]`, no whitespace).
  */
 
 /** An index (or other) suggestion slowquery made; `sql` is null for one it could not write as SQL. */

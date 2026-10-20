@@ -21,8 +21,9 @@ import { callContext, failure } from "./shared";
  * same on every attempt: the audit digest covers the request's events up to measure's `auditUpTo`.
  * inkprint returns the stored envelope for an identical bundle and refuses (409) a different one,
  * so a retry after a lost write recovers instead of conflicting. The receipt is stored once and
- * sets `dossiers.envelope_id`. Skipped when there is no transcript, or nothing was certified
- * (inkprint requires at least one certificate).
+ * sets `dossiers.envelope_id`. Skipped when the debate output has no id (no debate ran), or
+ * nothing was certified (inkprint requires at least one certificate); a debate id without its
+ * transcript receipt is a non-retryable `transcript_receipt_missing` error.
  */
 
 type EnvelopeInput = {
@@ -73,8 +74,10 @@ export function envelopeStage(deps: EnvelopeDeps): StageHandler {
     if (typeof debateId !== "string" || debateId === "") {
       return { kind: "skipped", reason: "no_transcript" };
     }
+    // The debate ran (it has an id), so its transcript receipt must exist: a missing one is a
+    // broken dossier, and a retry would find it missing again.
     const transcript = await deps.receipt(dossierId, "transcript", debateId);
-    if (transcript === null) return { kind: "skipped", reason: "no_transcript" };
+    if (transcript === null) return error(`transcript_receipt_missing (debate ${debateId})`);
     if (transcript.hash === null) return error("the transcript receipt has no hash");
 
     const certificateIds = (await deps.evidence(dossierId)).flatMap((r) =>
