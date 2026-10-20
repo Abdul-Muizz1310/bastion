@@ -12,6 +12,13 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+import {
+  DOCUMENT_KINDS,
+  DOSSIER_STAGES,
+  EVIDENCE_KINDS,
+  RECEIPT_KINDS,
+  STEP_STATUSES,
+} from "./enums";
 
 /*
  * v1 user, session and magic-link tables stay in the database (and therefore here) until a later,
@@ -20,20 +27,7 @@ import {
  * `magic_links` any more; `users` is read-only history that old events and dossiers reference.
  */
 
-export const EVIDENCE_KINDS = ["web", "passage", "table"] as const;
-export const DOSSIER_STAGES = [
-  "wake",
-  "gather",
-  "read",
-  "seal",
-  "debate",
-  "measure",
-  "envelope",
-  "record",
-] as const;
-export const STEP_STATUSES = ["pending", "running", "waiting", "ok", "error", "skipped"] as const;
-export const DOCUMENT_KINDS = ["sample", "upload"] as const;
-export const RECEIPT_KINDS = ["certificate", "transcript", "perf", "envelope", "audit"] as const;
+export { DOCUMENT_KINDS, DOSSIER_STAGES, EVIDENCE_KINDS, RECEIPT_KINDS, STEP_STATUSES };
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),

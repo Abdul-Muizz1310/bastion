@@ -8,6 +8,7 @@ import { verifyEd25519 } from "@/platform/ed25519";
 import type { GatewayResult, RawBody } from "@/platform/gateway/result";
 import { isServiceId, type ServiceId } from "@/platform/registry/products";
 import { sha256Hex } from "@/platform/sha256";
+import { CHECK_NAMES, type Check, type CheckItem, type CheckName, type CheckState } from "./checks";
 import { storedExcerptOf } from "./excerpt";
 import {
   envelopeBundleJson,
@@ -123,28 +124,8 @@ export function stepsCheck(steps: DossierSteps, receipts: readonly StoredReceipt
   return done(PASS(`the runner's ${STAGES.length} step rows are all present`));
 }
 
-export const CHECK_NAMES = [
-  "certificates",
-  "transcript",
-  "envelope",
-  "perf",
-  "audit",
-  "documents",
-  "steps",
-] as const;
-export type CheckName = (typeof CHECK_NAMES)[number];
-export type CheckState = "pass" | "fail" | "unavailable" | "expired";
-
-/** One receipt within a check: a certificate id, a debate id or a document id. */
-export type CheckItem = { ref: string; state: CheckState; detail: string };
-
-export type Check = {
-  name: CheckName;
-  state: CheckState;
-  detail: string;
-  /** Per-receipt states, for the checks that cover several receipts. */
-  items?: CheckItem[];
-};
+export type { Check, CheckItem, CheckName, CheckState };
+export { CHECK_NAMES };
 
 type Verdict = { state: CheckState; detail: string };
 type Failure = Extract<GatewayResult<unknown>, { ok: false }>;

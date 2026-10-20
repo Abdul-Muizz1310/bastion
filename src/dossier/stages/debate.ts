@@ -2,6 +2,7 @@ import { paperTrail } from "@/capabilities/paper-trail";
 import { SITE } from "@/lib/site/config";
 import { callCapability } from "@/platform/gateway/call";
 import { listSealed, type SealedEvidence } from "../evidence";
+import { ROUNDS } from "../limits";
 import { recordTranscript } from "../receipts";
 import { POLL_MS, type StageContext, type StageHandler, type StageOutcome } from "../stages";
 import { callContext, failure } from "./shared";
@@ -17,7 +18,7 @@ import { callContext, failure } from "./shared";
  * and belongs to the stored debate.
  */
 
-export const ROUNDS = { rapid: 1, standard: 2, adversarial: 3 } as const;
+export { ROUNDS };
 
 export type DebateDeps = {
   start: typeof callStart;

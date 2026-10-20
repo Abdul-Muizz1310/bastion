@@ -6,6 +6,7 @@ import { appendEvent } from "@/platform/audit/write";
 import { releaseBudget, reserveBudget, secondsUntilUtcMidnight } from "@/platform/budget";
 import type { VisitorId } from "@/platform/visitor";
 import { knownSamples, knownSources } from "./catalog";
+import { MAX_CLAIM, MAX_DOCUMENTS, MAX_SOURCES, MODES } from "./limits";
 import { initialSteps, type StepRow } from "./stages";
 import { insertDossier, type NewDossier, type NewDossierDocument } from "./store";
 
@@ -18,10 +19,7 @@ import { insertDossier, type NewDossier, type NewDossierDocument } from "./store
  * nothing), the reservation before the transaction, and a failed transaction releases it.
  */
 
-export const MAX_CLAIM = 1024;
-export const MAX_SOURCES = 5;
-export const MAX_DOCUMENTS = 3;
-export const MODES = ["rapid", "standard", "adversarial"] as const;
+export { MAX_CLAIM, MAX_DOCUMENTS, MAX_SOURCES, MODES };
 
 const documentRef = z.strictObject({
   document_id: z.uuid(),
