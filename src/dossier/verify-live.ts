@@ -26,7 +26,7 @@ import {
  * documents, ask each issuer what it says now, and hand both to the pure checks in `./verify`.
  *
  * Every downstream call is a free capability and goes through the one gateway under the caller's
- * context (the visitor, a fresh request id), in parallel: one `inkprint.verifyBatch` with every
+ * context (Ruling W: the system actor and the verify run's own request id), in parallel: one `inkprint.verifyBatch` with every
  * sendable certificate, one `paper-trail.transcript` per transcript receipt, the two issuers' public
  * keys (fetched live, never taken from the dossier), and one `inkthread.graph` per document that was
  * read. The audit digests are recomputed from bastion's append-only log over the bounds the

@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * `POST /api/dossiers/[id]/verify` (spec 21 §6.5, "verify everything"): public, rate-limited to 10 a
- * minute per visitor, no budget (every capability it calls is free). It re-checks every receipt
- * live as the visitor, answers the checks, stores none of them and appends one `dossier.verified`
- * audit event with each check's state.
+ * `POST /api/dossiers/[id]/verify` (spec 21 §6.5, "verify everything"): public, rate-limited to 5 a
+ * minute per visitor, no budget (every capability it calls is free). Ruling W: it re-checks every
+ * receipt live as the system actor (outside the per-visitor gateway limit) under a fresh request id
+ * of its own, answers the checks, stores none of them and appends one `dossier.verified` audit
+ * event — as the visitor — with each check's state.
  */
 
 const m = vi.hoisted(() => {
@@ -58,10 +59,10 @@ afterEach(() => {
 });
 
 describe("POST /api/dossiers/[id]/verify", () => {
-  it("is dynamic, allowed 120 s, and rate-limited to 10 a minute per visitor", async () => {
+  it("is dynamic, allowed 120 s, and rate-limited to 5 a minute per visitor", async () => {
     expect(route.dynamic).toBe("force-dynamic");
     expect(route.maxDuration).toBe(120);
-    expect(m.createRateLimiter).toHaveBeenCalledWith({ max: 10, windowMs: 60_000 });
+    expect(m.createRateLimiter).toHaveBeenCalledWith({ max: 5, windowMs: 60_000 });
     await post();
     expect(m.check).toHaveBeenCalledWith(expect.stringMatching(/^verify:v_[a-z2-7]{10}$/));
   });
@@ -75,11 +76,12 @@ describe("POST /api/dossiers/[id]/verify", () => {
     expect(await res.json()).toEqual({ dossierId: ID, checks: CHECKS });
   });
 
-  it("verifies as the visitor, under a fresh request id (not the dossier's), from their address", async () => {
+  it("verifies as the system actor (Ruling W), under a fresh request id (not the dossier's)", async () => {
     const res = await post();
     const [dossier, ctx] = m.verifyDossier.mock.calls[0] ?? [];
     expect(dossier).toEqual({ id: ID, requestId: "req-dossier-1" });
-    expect(isVisitorId(ctx.actor)).toBe(true);
+    expect(ctx.actor).toBe("bastion");
+    expect(isVisitorId(ctx.actor)).toBe(false);
     expect(ctx.requestId).toBe(res.headers.get("x-request-id"));
     expect(ctx.requestId).not.toBe("req-dossier-1");
     expect(ctx.clientIp).toBe("203.0.113.9");
@@ -101,7 +103,7 @@ describe("POST /api/dossiers/[id]/verify", () => {
   });
 
   it("answers 429 over the limit without reading the dossier or calling anyone", async () => {
-    m.check.mockResolvedValue({ success: false, limit: 10, remaining: 0, retryAfter: 42 });
+    m.check.mockResolvedValue({ success: false, limit: 5, remaining: 0, retryAfter: 42 });
     const res = await post();
     expect(res.status).toBe(429);
     expect(res.headers.get("retry-after")).toBe("42");

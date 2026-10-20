@@ -1,19 +1,26 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * `GET /api/dossiers/[id]/receipts` (spec 21 §6.3, §6.5): the receipts bundle, public, downloaded
  * as `dossier-<id>.receipts.json` — the canonical JSON of the dossier's public fields, evidence,
  * documents and receipts, so a stranger can re-check everything without bastion. 404 for a dossier
- * that does not exist.
+ * that does not exist. Ruling W: limited to 30 a minute per visitor (each download reads every
+ * receipt with its payload).
  */
 
-const m = vi.hoisted(() => ({
-  findDossier: vi.fn(),
-  listEvidence: vi.fn(),
-  listDocuments: vi.fn(),
-  listReceipts: vi.fn(),
-}));
+const m = vi.hoisted(() => {
+  const check = vi.fn();
+  return {
+    check,
+    createRateLimiter: vi.fn(() => ({ check })),
+    findDossier: vi.fn(),
+    listEvidence: vi.fn(),
+    listDocuments: vi.fn(),
+    listReceipts: vi.fn(),
+  };
+});
 
+vi.mock("@/platform/ratelimit", () => ({ createRateLimiter: m.createRateLimiter }));
 vi.mock("@/dossier/store", () => ({ findDossier: m.findDossier }));
 vi.mock("@/dossier/evidence", () => ({ listEvidence: m.listEvidence }));
 vi.mock("@/dossier/documents", () => ({ listDocuments: m.listDocuments }));
@@ -29,21 +36,44 @@ const ID = DOSSIER.id;
 const row = dossier({ id: ID, requestId: DOSSIER.requestId, status: "succeeded" });
 
 function get(id = ID): Promise<Response> {
-  return route.GET(new Request(`https://bastion.test/api/dossiers/${id}/receipts`), {
-    params: Promise.resolve({ id }),
+  const req = new Request(`https://bastion.test/api/dossiers/${id}/receipts`, {
+    headers: { "x-forwarded-for": "203.0.113.9" },
   });
+  return route.GET(req, { params: Promise.resolve({ id }) });
 }
 
 beforeEach(() => {
+  vi.stubEnv("IRON_SESSION_PASSWORD", "x".repeat(32));
+  m.check.mockReset().mockResolvedValue({ success: true, limit: 30, remaining: 29 });
   m.findDossier.mockReset().mockResolvedValue(row);
   m.listEvidence.mockReset().mockResolvedValue([]);
   m.listDocuments.mockReset().mockResolvedValue(documents());
   m.listReceipts.mockReset().mockResolvedValue(allReceipts());
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("GET /api/dossiers/[id]/receipts", () => {
-  it("is dynamic", () => {
+  it("is dynamic and rate-limited to 30 a minute per visitor", async () => {
     expect(route.dynamic).toBe("force-dynamic");
+    expect(m.createRateLimiter).toHaveBeenCalledWith({ max: 30, windowMs: 60_000 });
+    await get();
+    expect(m.check).toHaveBeenCalledWith(expect.stringMatching(/^receipts:v_[a-z2-7]{10}$/));
+  });
+
+  it("answers 429 over the limit, with retry-after, without reading the dossier", async () => {
+    m.check.mockResolvedValue({ success: false, limit: 30, remaining: 0, retryAfter: 17 });
+    const res = await get();
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("17");
+    expect(await res.json()).toMatchObject({
+      error: "rate_limited",
+      retryAfterS: 17,
+      requestId: expect.any(String),
+    });
+    expect(m.findDossier).not.toHaveBeenCalled();
   });
 
   it("downloads the bundle as dossier-<id>.receipts.json", async () => {

@@ -6,21 +6,34 @@ import { listReceipts } from "@/dossier/receipts";
 import { findDossier } from "@/dossier/store";
 import { canonicalJson } from "@/platform/canonical-json";
 import { errorResponse } from "@/platform/gateway/http";
+import { createRateLimiter } from "@/platform/ratelimit";
+import { visitorFromRequest } from "@/platform/visitor";
 
 /**
  * `GET /api/dossiers/[id]/receipts` (spec 21 §6.3, §6.5): the receipts bundle, a download named
  * `dossier-<id>.receipts.json`. Public: it holds the dossier's public fields, its evidence, its
  * documents and every receipt with its payload — what a stranger needs to re-check the dossier
- * without bastion — as canonical JSON. Never cached: a running dossier gains receipts.
+ * without bastion — as canonical JSON. Never cached: a running dossier gains receipts. Ruling W:
+ * limited to 30 a minute per visitor, since each download reads every receipt with its payload.
  */
 
 export const dynamic = "force-dynamic";
 
+const receiptsLimiter = createRateLimiter({ max: 30, windowMs: 60_000 });
+
 type Context = { params: Promise<{ id: string }> };
 
-export async function GET(_req: Request, ctx: Context): Promise<Response> {
+export async function GET(req: Request, ctx: Context): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
+  const limit = await receiptsLimiter.check(`receipts:${visitorFromRequest(req)}`);
+  if (!limit.success) {
+    return errorResponse(429, {
+      error: "rate_limited",
+      retryAfterS: limit.retryAfter ?? 60,
+      requestId,
+    });
+  }
   try {
     const dossier = await findDossier(id);
     if (dossier === null) return errorResponse(404, { error: "unknown_dossier", requestId });

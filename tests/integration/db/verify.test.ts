@@ -311,7 +311,7 @@ describe.skipIf(!LOCAL)("verify everything, composed, against Postgres", () => {
     expect(states(checks)).toEqual(ALL_PASS);
   });
 
-  it("asked each issuer as the visitor, under the verify request's own id", async () => {
+  it("asked each issuer as the system actor (Ruling W), under the verify run's own id", async () => {
     const before = m.callCapability.mock.calls.length;
     const { res } = await verify();
     const calls = m.callCapability.mock.calls.slice(before);
@@ -329,7 +329,8 @@ describe.skipIf(!LOCAL)("verify everything, composed, against Postgres", () => {
         requestId: res.headers.get("x-request-id"),
         clientIp: "198.51.100.23",
       });
-      expect(ctx.actor).toMatch(/^v_[a-z2-7]{10}$/);
+      expect(ctx.actor).toBe("bastion");
+      expect(ctx.requestId).not.toBe(requestId);
     }
   });
 

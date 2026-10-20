@@ -164,10 +164,11 @@ their pages; the perf receipt per service with any index suggestion; the envelop
 
 Each check is ✓ / ✗ / unavailable with the reason. The bundle downloads as `dossier-<id>.receipts.json`.
 
-**Verification (Task 9).** `POST /api/dossiers/[id]/verify` is public, limited to 10 a minute per visitor,
+**Verification (Task 9).** `POST /api/dossiers/[id]/verify` is public, limited to 5 a minute per visitor,
 spends no budget (every capability it calls is free) and runs for at most 120 s. Its calls go through the
-gateway as the visitor under the verify request's own id, never the dossier's. It stores no result; it
-appends one `dossier.verified` audit event with each check's state. It answers `{dossierId, checks}`,
+gateway as the system actor `bastion`, outside the per-visitor gateway limit (Ruling W). Each run uses its
+own request id, never the dossier's, because verification is not part of the dossier's trace. It stores
+no result; it appends one `dossier.verified` audit event, as the visitor, with each check's state. It answers `{dossierId, checks}`,
 where each check is `{name, state, detail, items?}` and `state` is one of:
 
 - `pass`: recomputed, re-fetched, signature verified, and everything agrees;
@@ -203,7 +204,8 @@ prove the rebuild (`tests/fixtures/receipts/`).
   perf_receipt_hash, metadata, issued_at}`. `issued_at` is the manifest's `isoformat()` string
   (`+00:00`), not `created_at` (`Z`).
 
-**Bundle.** `GET /api/dossiers/[id]/receipts` is public. It answers 404 for an unknown dossier. Otherwise
+**Bundle.** `GET /api/dossiers/[id]/receipts` is public and limited to 30 a minute per visitor (429 with
+`retry-after`). It answers 404 for an unknown dossier. Otherwise
 it serves the canonical JSON of `{dossier, evidence, documents, receipts}` with
 `content-disposition: attachment`.
 
