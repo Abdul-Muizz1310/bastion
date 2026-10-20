@@ -27,6 +27,12 @@ vi.mock("@/features/audit/server/query", () => ({
   requestTrace: (...args: unknown[]) => requestTrace(...args),
 }));
 
+const allowRead = vi.fn();
+vi.mock("@/features/audit/read-limit", () => ({
+  allowRead: (...args: unknown[]) => allowRead(...args),
+  READS_PER_MINUTE: 60,
+}));
+
 import TracePage, { generateMetadata } from "@/app/audit/[requestId]/page";
 
 /** `/audit/[requestId]` (spec 21 §3.2): one request's waterfall across services. */
@@ -57,6 +63,8 @@ async function render(requestId: string) {
 beforeEach(() => {
   requestTrace.mockReset();
   connection.mockClear();
+  allowRead.mockReset();
+  allowRead.mockResolvedValue({ ok: true });
 });
 
 describe("/audit/[requestId]: the waterfall", () => {
@@ -145,6 +153,7 @@ describe("/audit/[requestId]: not found", () => {
     async (id) => {
       await expect(render(id)).rejects.toThrow("NOT_FOUND");
       expect(requestTrace).not.toHaveBeenCalled();
+      expect(allowRead).not.toHaveBeenCalled();
     },
   );
 
@@ -153,5 +162,24 @@ describe("/audit/[requestId]: not found", () => {
       generateMetadata({ params: Promise.resolve({ requestId: "0f8a1c2e-4b6d-4e8f-9a0b-1c2d3e4f5a6b" }) }),
     ).resolves.toEqual({ title: "request 0f8a1c2e" });
     expect(requestTrace).not.toHaveBeenCalled();
+  });
+});
+
+describe("/audit/[requestId]: the read limit (Ruling AL)", () => {
+  it("spends one audit read", async () => {
+    requestTrace.mockResolvedValueOnce({ events: [at(1, 0)], truncated: false });
+    await render("req-dossier-1");
+    expect(allowRead).toHaveBeenCalledWith("audit");
+  });
+
+  it("past 60 reads a minute: reads nothing and says when to try again", async () => {
+    allowRead.mockResolvedValueOnce({ ok: false, retryAfterS: 7, limit: 60 });
+    const html = await render("req-dossier-1");
+    expect(requestTrace).not.toHaveBeenCalled();
+    const text = textOf(html);
+    expect(text).toMatch(/too many reads/);
+    expect(text).toMatch(/try again in 7 s/);
+    expect(text).toMatch(/60 reads a minute/);
+    expect(links(html).map((l) => l.href)).toContain("/audit");
   });
 });

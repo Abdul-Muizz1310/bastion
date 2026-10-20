@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
+import type { ReactNode } from "react";
 import { PageFrame } from "@/components/terminal/PageFrame";
+import { ReadLimited } from "@/features/audit/components/ReadLimited";
+import { allowRead } from "@/features/audit/read-limit";
 import { TimeTravelSlider } from "@/features/time-travel/components/TimeTravelSlider";
 import { toTimeTravelView } from "@/features/time-travel/to-view";
 import { getTimeTravelState } from "@/lib/audit/replay";
@@ -15,8 +18,17 @@ export const metadata: Metadata = { title: "time travel" };
  */
 export default async function TimeTravelPage() {
   await connection();
-  const asOf = new Date();
-  const initial = toTimeTravelView(await getTimeTravelState({ asOf }), asOf);
+  // Ruling AL: the first replay spends one of the visitor's 60 a minute, like every slider move.
+  const allowance = await allowRead("replay");
+  let body: ReactNode;
+  if (allowance.ok) {
+    const asOf = new Date();
+    body = (
+      <TimeTravelSlider initial={toTimeTravelView(await getTimeTravelState({ asOf }), asOf)} />
+    );
+  } else {
+    body = <ReadLimited retryAfterS={allowance.retryAfterS} limit={allowance.limit} />;
+  }
 
   return (
     <PageFrame active="time-travel" statusRight="replayed from the audit log">
@@ -42,7 +54,7 @@ export default async function TimeTravelPage() {
           </p>
         </header>
 
-        <TimeTravelSlider initial={initial} />
+        {body}
       </div>
     </PageFrame>
   );

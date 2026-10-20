@@ -184,6 +184,12 @@ describe("visitorFromRequest", () => {
     expect(visitorFromRequest(req, NOW)).toBe(expected("203.0.113.7"));
   });
 
+  it("reads the headers alone, so a page's headers() serves as well as a Request", () => {
+    vi.stubEnv("IRON_SESSION_PASSWORD", SECRET);
+    const headers = new Headers({ "x-forwarded-for": "203.0.113.7" });
+    expect(visitorFromRequest({ headers }, NOW)).toBe(expected("203.0.113.7"));
+  });
+
   it("falls back to 0.0.0.0 without either header", () => {
     vi.stubEnv("IRON_SESSION_PASSWORD", SECRET);
     expect(visitorFromRequest(request({}), NOW)).toBe(expected("0.0.0.0"));

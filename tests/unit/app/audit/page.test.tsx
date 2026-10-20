@@ -21,6 +21,12 @@ vi.mock("@/features/audit/server/query", () => ({
   listAudit: (...args: unknown[]) => listAudit(...args),
 }));
 
+const allowRead = vi.fn();
+vi.mock("@/features/audit/read-limit", () => ({
+  allowRead: (...args: unknown[]) => allowRead(...args),
+  READS_PER_MINUTE: 60,
+}));
+
 import AuditPage, { metadata } from "@/app/audit/page";
 
 /** `/audit` (spec 21 §3.2): the open, append-only log — everyone reads every event. */
@@ -51,6 +57,8 @@ beforeEach(() => {
   listAudit.mockReset();
   listAudit.mockResolvedValue({ events: [], older: null });
   connection.mockClear();
+  allowRead.mockReset();
+  allowRead.mockResolvedValue({ ok: true });
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -235,5 +243,18 @@ describe("/audit: empty, refused and unavailable", () => {
     const text = textOf(html);
     expect(text).toMatch(/unavailable/);
     expect(text).not.toContain("ECONNREFUSED");
+  });
+});
+
+describe("/audit: the read limit (Ruling AL)", () => {
+  it("past 60 reads a minute: reads nothing and says when to try again, naming the limit", async () => {
+    allowRead.mockResolvedValueOnce({ ok: false, retryAfterS: 12, limit: 60 });
+    const html = await render({ service: "magpie" });
+    expect(listAudit).not.toHaveBeenCalled();
+    const text = textOf(html);
+    expect(text).toMatch(/too many reads/);
+    expect(text).toMatch(/try again in 12 s/);
+    expect(text).toMatch(/60 reads a minute/);
+    expect(html).toMatch(/<select[^>]*name="service"/);
   });
 });

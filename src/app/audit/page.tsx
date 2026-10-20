@@ -6,6 +6,7 @@ import { PageFrame } from "@/components/terminal/PageFrame";
 import { AppendOnly } from "@/features/audit/components/AppendOnly";
 import { AuditFilterForm } from "@/features/audit/components/AuditFilterForm";
 import { AuditRoll } from "@/features/audit/components/AuditRoll";
+import { ReadLimited } from "@/features/audit/components/ReadLimited";
 import {
   AUDIT_PAGE_SIZE,
   AUDIT_SERVICES,
@@ -119,6 +120,8 @@ function Roll({ state }: { state: AuditState }) {
   switch (state.kind) {
     case "refused":
       return <Refused problems={state.problems} />;
+    case "limited":
+      return <ReadLimited retryAfterS={state.retryAfterS} limit={state.limit} />;
     case "unavailable":
       return (
         <Notice tone="error" title="the log is unavailable right now">

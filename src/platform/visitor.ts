@@ -72,7 +72,7 @@ export function visitorId(ip: string, day: string, key: Uint8Array): VisitorId {
  * `undefined` when neither is an IP. It is what the gateway forwards in `X-Forwarded-For`, and the
  * address a visitor id is derived from (with 0.0.0.0 standing in for `undefined`).
  */
-export function clientAddress(req: Request): string | undefined {
+export function clientAddress(req: Pick<Request, "headers">): string | undefined {
   const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   if (forwarded && isIP(forwarded) !== 0) return forwarded;
   const real = req.headers.get("x-real-ip")?.trim();
@@ -87,6 +87,10 @@ function utcDay(now: Date): string {
   return now.toISOString().slice(0, 10);
 }
 
-export function visitorFromRequest(req: Request, now: Date = new Date()): VisitorId {
+/** A Request, or anything carrying its headers (a page's `headers()`, Ruling AL). */
+export function visitorFromRequest(
+  req: Pick<Request, "headers">,
+  now: Date = new Date(),
+): VisitorId {
   return visitorId(clientAddress(req) ?? FALLBACK_IP, utcDay(now), deriveKey(VISITOR_KEY_INFO));
 }

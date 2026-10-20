@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 const ROOT = resolve(__dirname, "../../..");
 const SERVER_ONLY = [
   "src/features/audit/load.ts",
+  "src/features/audit/read-limit.ts",
   "src/features/audit/server/query.ts",
   "src/features/dossier/load.ts",
   "src/features/platform/load.ts",

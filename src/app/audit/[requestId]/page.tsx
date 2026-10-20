@@ -4,9 +4,11 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import type { ReactNode } from "react";
 import { PageFrame } from "@/components/terminal/PageFrame";
+import { ReadLimited } from "@/features/audit/components/ReadLimited";
 import { WaterfallChart } from "@/features/audit/components/WaterfallChart";
 import { auditHref, REQUEST_ID, TRACE_LIMIT } from "@/features/audit/filters";
 import { shortRequest, utcDay, utcTime } from "@/features/audit/format";
+import { allowRead } from "@/features/audit/read-limit";
 import { requestTrace } from "@/features/audit/server/query";
 import { formatDuration, waterfall } from "@/features/audit/waterfall";
 
@@ -28,6 +30,8 @@ export default async function TracePage({ params }: { params: Params }) {
   const { requestId } = await params;
   if (!REQUEST_ID.test(requestId)) notFound();
   await connection();
+  const allowance = await allowRead("audit");
+  if (!allowance.ok) return <Limited requestId={requestId} {...allowance} />;
   const trace = await requestTrace(requestId);
   if (trace.events.length === 0) notFound();
 
@@ -140,6 +144,44 @@ export default async function TracePage({ params }: { params: Params }) {
             </Link>
           </p>
         </section>
+      </div>
+    </PageFrame>
+  );
+}
+
+/** Ruling AL: the visitor's reads are spent — say so, read nothing, keep the way back. */
+function Limited({
+  requestId,
+  retryAfterS,
+  limit,
+}: {
+  requestId: string;
+  retryAfterS: number;
+  limit: number;
+}) {
+  return (
+    <PageFrame active="audit" statusLeft={`trace · ${shortRequest(requestId)}`}>
+      <div className="space-y-8">
+        <header>
+          <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-fg-muted">
+            one request, across services
+          </p>
+          <h1 className="mt-2 font-display text-[1.9rem] leading-[1.1] font-bold tracking-[-0.01em] sm:text-[2.5rem]">
+            request{" "}
+            <span translate="no" className="text-accent-violet">
+              {shortRequest(requestId)}
+            </span>
+          </h1>
+        </header>
+        <ReadLimited retryAfterS={retryAfterS} limit={limit} />
+        <p className="font-mono text-xs">
+          <Link
+            href="/audit"
+            className="text-fg-muted underline decoration-dotted underline-offset-4 hover:text-foreground"
+          >
+            the whole log
+          </Link>
+        </p>
       </div>
     </PageFrame>
   );

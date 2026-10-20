@@ -43,7 +43,9 @@ export type TimeTravelView = {
  */
 export type TimeTravelQueryResult =
   | { ok: true; view: TimeTravelView }
-  | { ok: false; error: "invalid_timestamp" | "invalid_service" };
+  | { ok: false; error: "invalid_timestamp" | "invalid_service" }
+  /** Ruling AL: the visitor's 60 replays a minute are spent; nothing was read. */
+  | { ok: false; error: "rate_limited"; retryAfterS: number; limit: number };
 
 export type TypeCount = { type: string; count: number };
 

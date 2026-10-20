@@ -153,6 +153,15 @@ a link to spec 22. The page shows no secret: no private key, salt, token or conn
 **Redirects.** `/dashboard` → `/platform` and `/services/<product id>` → `/tools/<product id>`, both
 permanent (308), so v1 links keep working; any other `/services/<x>` is a 404.
 
+**Read limit (Ruling AL).** The open log's reads are limited per visitor, keyed on the daily
+pseudonym, through the shared limiter (fail-open without Upstash, like the other read limits):
+`/audit` and `/audit/[requestId]` share an `audit` bucket of 60 a minute, and the time-travel page's
+first replay and every Server Action call share a `replay` bucket of 60 a minute. A malformed
+request (a refused filter, a malformed request id or timestamp) is turned away before it spends a
+read. A spent bucket reads nothing: the pages say "too many reads — try again in N s" and name the
+limit; the Server Action answers `{ok: false, error: "rate_limited", retryAfterS, limit}`, which the
+slider shows. Every read stays bounded by its own page limit (51, 501, 1001 rows).
+
 Invariants and cases:
 1. No query on these pages is scoped by actor; every visitor reads the same rows.
 2. Actor display: visitor ⇒ its id; `bastion` ⇒ bastion; v1 ⇒ "v1 user"; neither ⇒ "no actor";
@@ -165,6 +174,8 @@ Invariants and cases:
 6. No page here renders or sends to the browser an event's raw metadata, `before` or `after`.
 7. `/platform` renders when the status poll fails (every service "unknown") and when the budget
    store fails; it never contains a secret's value.
+8. Past 60 reads a minute a visitor's audit or replay read touches no table, and is said as a
+   limit with its wait, never as the log failing.
 
 ## 4. The capability layer (bastion)
 

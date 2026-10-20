@@ -26,6 +26,12 @@ vi.mock("@/features/time-travel/server/query", () => ({
   loadTimeTravelState: vi.fn(),
 }));
 
+const allowRead = vi.fn();
+vi.mock("@/features/audit/read-limit", () => ({
+  allowRead: (...args: unknown[]) => allowRead(...args),
+  READS_PER_MINUTE: 60,
+}));
+
 import TimeTravelPage, { metadata } from "@/app/time-travel/page";
 
 /** `/time-travel` (spec 07, spec 21 §3.2): public, seeded with the state at this moment. */
@@ -60,6 +66,7 @@ const render = async () => renderToStaticMarkup(await TimeTravelPage());
 beforeEach(() => {
   vi.clearAllMocks();
   prime();
+  allowRead.mockResolvedValue({ ok: true });
 });
 
 describe("/time-travel", () => {
@@ -109,5 +116,22 @@ describe("/time-travel", () => {
 
   it("claims nothing about sign-in or roles", async () => {
     expect(textOf(await render())).not.toMatch(/admin only|sign in/i);
+  });
+});
+
+describe("/time-travel: the read limit (Ruling AL)", () => {
+  it("its first replay spends one replay read", async () => {
+    await render();
+    expect(allowRead).toHaveBeenCalledWith("replay");
+  });
+
+  it("past 60 replays a minute: replays nothing and says when to try again", async () => {
+    allowRead.mockResolvedValueOnce({ ok: false, retryAfterS: 30, limit: 60 });
+    const html = await render();
+    expect(getTimeTravelState).not.toHaveBeenCalled();
+    const text = textOf(html);
+    expect(text).toMatch(/too many reads/);
+    expect(text).toMatch(/try again in 30 s/);
+    expect(text).toMatch(/60 reads a minute/);
   });
 });

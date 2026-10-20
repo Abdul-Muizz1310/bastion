@@ -11,6 +11,11 @@ vi.mock("@/lib/audit/replay", () => ({
   getTimeTravelState: (...args: unknown[]) => mockGetTimeTravelState(...args),
 }));
 
+const allowRead = vi.fn();
+vi.mock("@/features/audit/read-limit", () => ({
+  allowRead: (...args: unknown[]) => allowRead(...args),
+}));
+
 const MIN = new Date("2026-01-01T00:00:00.000Z");
 const MAX = new Date("2026-01-11T00:00:00.000Z");
 
@@ -39,6 +44,7 @@ describe("07-replay server action: loadTimeTravelState", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     primeState();
+    allowRead.mockResolvedValue({ ok: true });
   });
 
   it("needs no session: an anonymous visitor's call reaches the replay query", async () => {
@@ -101,6 +107,26 @@ describe("07-replay server action: loadTimeTravelState", () => {
     if (!res.ok) throw new Error("expected ok");
     expect(res.view.entities).toHaveLength(0);
     expect(res.view.message).toBe("No events before this time");
+  });
+
+  it("spends one replay read per accepted call (Ruling AL)", async () => {
+    const { loadTimeTravelState } = await import("@/features/time-travel/server/query");
+    await loadTimeTravelState("2026-01-06T00:00:00.000Z");
+    expect(allowRead).toHaveBeenCalledWith("replay");
+  });
+
+  it("past 60 a minute: a typed refusal with the wait and the limit, and no query (Ruling AL)", async () => {
+    allowRead.mockResolvedValueOnce({ ok: false, retryAfterS: 9, limit: 60 });
+    const { loadTimeTravelState } = await import("@/features/time-travel/server/query");
+    const res = await loadTimeTravelState("2026-01-06T00:00:00.000Z");
+    expect(res).toEqual({ ok: false, error: "rate_limited", retryAfterS: 9, limit: 60 });
+    expect(mockGetTimeTravelState).not.toHaveBeenCalled();
+  });
+
+  it("a malformed call is refused without spending a read", async () => {
+    const { loadTimeTravelState } = await import("@/features/time-travel/server/query");
+    await loadTimeTravelState("last tuesday");
+    expect(allowRead).not.toHaveBeenCalled();
   });
 
   it("rejects a non-ISO timestamp without querying the database", async () => {

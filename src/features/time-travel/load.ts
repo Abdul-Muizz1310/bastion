@@ -20,6 +20,11 @@ export function createLoader(
   return async (asOfIso: string) => {
     const result = await action(asOfIso);
     if (!result.ok) {
+      if (result.error === "rate_limited") {
+        throw new Error(
+          `Too many reads — try again in ${result.retryAfterS} s. Each visitor may replay the log ${result.limit} times a minute.`,
+        );
+      }
       throw new Error(ERROR_MESSAGES[result.error] ?? "Time-travel query failed");
     }
     return result.view;

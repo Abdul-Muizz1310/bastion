@@ -2,6 +2,7 @@
 
 import "server-only";
 import { z } from "zod/v4";
+import { allowRead } from "@/features/audit/read-limit";
 import { toTimeTravelView } from "@/features/time-travel/to-view";
 import type { TimeTravelQueryResult } from "@/features/time-travel/view";
 import { getTimeTravelState } from "@/lib/audit/replay";
@@ -34,6 +35,18 @@ export async function loadTimeTravelState(
       return { ok: false, error: "invalid_service" };
     }
     parsedService = result.data;
+  }
+
+  // Ruling AL: each accepted call spends one of the visitor's 60 replays a minute; a malformed one
+  // was refused above without spending any.
+  const allowance = await allowRead("replay");
+  if (!allowance.ok) {
+    return {
+      ok: false,
+      error: "rate_limited",
+      retryAfterS: allowance.retryAfterS,
+      limit: allowance.limit,
+    };
   }
 
   const asOf = new Date(parsedAsOf.data);
