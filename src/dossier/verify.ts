@@ -2,13 +2,18 @@ import { z } from "zod";
 import type { VerifyBatchResult } from "@/capabilities/inkprint";
 import type { Graph } from "@/capabilities/inkthread";
 import { paperTrail, type ReceiptKey, type Transcript } from "@/capabilities/paper-trail";
-import type { DossierDocument } from "@/lib/db/schema";
+import type { Dossier, DossierDocument, EvidenceItem } from "@/lib/db/schema";
 import { canonicalJson, type Json } from "@/platform/canonical-json";
 import { verifyEd25519 } from "@/platform/ed25519";
 import type { GatewayResult, RawBody } from "@/platform/gateway/result";
 import { isServiceId, type ServiceId } from "@/platform/registry/products";
 import { sha256Hex } from "@/platform/sha256";
-import { envelopeBundleJson, transcriptRenderJson, transcriptSignedJson } from "./issuer-forms";
+import {
+  envelopeBundleJson,
+  inkprintCanonicalText,
+  transcriptRenderJson,
+  transcriptSignedJson,
+} from "./issuer-forms";
 import {
   type AuditEventForDigest,
   auditDigest,
@@ -30,9 +35,19 @@ import type { StoredReceipt } from "./receipts";
  * - `expired` — an inkthread upload whose graph is gone by design (DR-0029: kept for an hour).
  *
  * Signatures are verified against the key the issuer publishes now (fetched live by the shell),
- * never a key the dossier carries. A check whose receipts the dossier does not have is not a check
- * (null): a dossier that never reached the envelope stage has no envelope to verify.
+ * never a key the dossier carries. What the page shows is bound to what is verified: the dossier's
+ * claim, verdict and confidence to the signed transcript, each evidence row's certificate and
+ * excerpt to its certified text. A receipt the dossier row implies but does not hold fails (an
+ * envelope id with no envelope, a succeeded dossier with no perf or audit receipt, a verdict with
+ * no transcript, a certificate with no receipt); a check with nothing to verify and nothing
+ * implied is not a check (null).
  */
+
+/** The dossier row's fields the checks bind: what the page shows, and what it implies. */
+export type DossierFacts = Pick<
+  Dossier,
+  "id" | "requestId" | "claim" | "verdict" | "confidence" | "status" | "envelopeId"
+>;
 
 export const CHECK_NAMES = [
   "certificates",
@@ -130,61 +145,6 @@ function field(payload: Json | null, key: string): Json | undefined {
   return parsed.success ? parsed.data[key] : undefined;
 }
 
-// ---- certificates -----------------------------------------------------------------------------
-
-function storedText(r: StoredReceipt): string | null {
-  const text = field(r.payload, "text");
-  return typeof text === "string" ? text : null;
-}
-
-/** What `inkprint.verifyBatch` is asked: each certificate with its full certified text. */
-export function sendableCertificates(
-  receipts: readonly StoredReceipt[],
-): { certificate_id: string; text: string }[] {
-  return receipts.flatMap((r) => {
-    const text = storedText(r);
-    return r.ref === null || text === null ? [] : [{ certificate_id: r.ref, text }];
-  });
-}
-
-function certificateItem(
-  r: StoredReceipt,
-  answer: GatewayResult<VerifyBatchResult> | null,
-): CheckItem {
-  const ref = r.ref ?? `receipt ${r.id}`;
-  const item = (v: Verdict): CheckItem => ({ ref, ...v });
-  if (r.ref === null) return item(FAIL("the receipt names no certificate"));
-  if (storedText(r) === null) return item(FAIL("the receipt holds no certified text to verify"));
-  if (answer === null) return item({ state: "unavailable", detail: "inkprint was not asked" });
-  if (!answer.ok) return item(unreachable("inkprint", answer));
-  const id = r.ref.toLowerCase();
-  const result = answer.data.results.find((x) => x.certificate_id.toLowerCase() === id);
-  if (result === undefined) return item(FAIL("inkprint returned no result for it"));
-  const failed = Object.entries(result.checks).flatMap(([k, v]) => (v ? [] : [k]));
-  const complete = result.checks.signature === true && result.checks.hash === true;
-  if (result.valid && failed.length === 0 && complete) {
-    return item(PASS("inkprint verifies its signature, its hash and the stored text"));
-  }
-  const why =
-    result.reason ?? (failed.length > 0 ? `${failed.join(", ")} failed` : "checks missing");
-  return item(FAIL(`inkprint does not verify it: ${why}`));
-}
-
-export function certificatesCheck(
-  receipts: readonly StoredReceipt[],
-  answer: GatewayResult<VerifyBatchResult> | null,
-): Check | null {
-  if (receipts.length === 0) return null;
-  const items = receipts.map((r) => certificateItem(r, answer));
-  return fromItems(
-    "certificates",
-    items,
-    `${items.length} of ${items.length} certificates verify with inkprint against their stored text`,
-  );
-}
-
-// ---- transcript -------------------------------------------------------------------------------
-
 /**
  * An issuer's signed form, or null for a value Python could not have serialised (a lone surrogate,
  * an int beyond 2^53): nothing was ever signed over it, so it can only fail to verify.
@@ -198,6 +158,133 @@ function form<T>(build: () => T): T | null {
   }
 }
 
+// ---- certificates -----------------------------------------------------------------------------
+
+type CertifiedRow = Pick<EvidenceItem, "stableId" | "certificateId" | "excerpt">;
+
+export type CertificateInputs = {
+  /** The evidence rows the page shows; the certified ones drive the check. */
+  evidence: readonly CertifiedRow[];
+  receipts: readonly StoredReceipt[];
+  /** `inkprint.verifyBatch` asked by id only: does inkprint still hold each certificate intact? */
+  answer: GatewayResult<VerifyBatchResult> | null;
+  /** inkprint's `/public-key.pem`, fetched now. */
+  key: GatewayResult<RawBody> | null;
+};
+
+function storedText(r: StoredReceipt): string | null {
+  const text = field(r.payload, "text");
+  return typeof text === "string" ? text : null;
+}
+
+/**
+ * What `inkprint.verifyBatch` is asked: the certificate ids only. With no text, inkprint re-checks
+ * its own stored copy (signature and hash) and embeds nothing; the text is bound here, exactly.
+ */
+export function certificateIds(
+  evidence: readonly CertifiedRow[],
+  receipts: readonly StoredReceipt[],
+): string[] {
+  const ids = [
+    ...evidence.flatMap((e) => (e.certificateId === null ? [] : [e.certificateId])),
+    ...receipts.flatMap((r) => (r.ref === null ? [] : [r.ref])),
+  ];
+  return [...new Set(ids)];
+}
+
+/** inkprint's own answer for one certificate: still held, signature and hash intact. */
+function heldIntact(id: string, answer: GatewayResult<VerifyBatchResult> | null): Verdict {
+  if (answer === null) return { state: "unavailable", detail: "inkprint was not asked" };
+  if (!answer.ok) return unreachable("inkprint", answer);
+  const result = answer.data.results.find(
+    (x) => x.certificate_id.toLowerCase() === id.toLowerCase(),
+  );
+  if (result === undefined) return FAIL("inkprint returned no result for it");
+  const failed = Object.entries(result.checks).flatMap(([k, v]) => (v ? [] : [k]));
+  const complete = result.checks.signature === true && result.checks.hash === true;
+  if (result.valid && failed.length === 0 && complete) return PASS("held intact");
+  const why =
+    result.reason ?? (failed.length > 0 ? `${failed.join(", ")} failed` : "checks missing");
+  return FAIL(`inkprint no longer holds it intact: ${why}`);
+}
+
+function certificateItem(
+  id: string,
+  row: CertifiedRow | undefined,
+  r: StoredReceipt | undefined,
+  i: CertificateInputs,
+): CheckItem {
+  const item = (v: Verdict): CheckItem => ({ ref: id, ...v });
+  if (r === undefined) {
+    return item(
+      FAIL(`evidence ${row?.stableId ?? "?"} names it, but no certificate receipt is stored`),
+    );
+  }
+  if (row === undefined) return item(FAIL("a certificate receipt that no evidence row shows"));
+  const text = storedText(r);
+  if (text === null) return item(FAIL("the receipt holds no certified text"));
+  // The page shows the excerpt: it must be the start of the certified text, as stored.
+  if (row.excerpt !== null && !text.startsWith(row.excerpt)) {
+    return item(FAIL("the excerpt the page shows is not the certified text"));
+  }
+  const canonical = form(() => inkprintCanonicalText(text));
+  if (canonical === null) return item(FAIL("the stored text has no form inkprint could certify"));
+  if (r.hash !== sha256Hex(canonical)) {
+    return item(FAIL("the stored text does not hash to the certificate's fingerprint"));
+  }
+  if (r.signature === null) return item(FAIL("the certificate receipt is unsigned"));
+
+  const later: string[] = [];
+  if (i.key === null || !i.key.ok) {
+    const v: Verdict =
+      i.key === null
+        ? { state: "unavailable", detail: "inkprint's key was not fetched" }
+        : unreachable("inkprint (public key)", i.key);
+    if (v.state === "fail") return item(v);
+    later.push(v.detail);
+  } else {
+    const publicKeyPem = new TextDecoder().decode(i.key.data.bytes);
+    if (!verifyEd25519({ publicKeyPem, message: canonical, signature: r.signature })) {
+      return item(FAIL("the signature does not verify against inkprint's published key"));
+    }
+  }
+  const held = heldIntact(id, i.answer);
+  if (held.state === "fail") return item(held);
+  if (held.state !== "pass") later.push(held.detail);
+  if (later.length > 0) return item({ state: "unavailable", detail: later.join("; ") });
+  return item(
+    PASS(
+      "the stored text canonicalises to inkprint's fingerprint, inkprint's Ed25519 signature " +
+        "over it verifies with its published key, and inkprint still holds it intact",
+    ),
+  );
+}
+
+export function certificatesCheck(i: CertificateInputs): Check | null {
+  const rows = i.evidence.filter((e) => e.certificateId !== null);
+  const ids = certificateIds(rows, i.receipts);
+  if (ids.length === 0) return null;
+  const items = ids.map((id) =>
+    certificateItem(
+      id,
+      rows.find((e) => e.certificateId === id),
+      i.receipts.find((r) => r.ref === id),
+      i,
+    ),
+  );
+  const unnamed = i.receipts.filter((r) => r.ref === null);
+  for (const r of unnamed)
+    items.push({ ref: `receipt ${r.id}`, ...FAIL("the receipt names no certificate") });
+  return fromItems(
+    "certificates",
+    items,
+    `${items.length} of ${items.length} certificates: each stored text canonicalises to inkprint's ` +
+      "fingerprint and its signature verifies with inkprint's published key",
+  );
+}
+
+// ---- transcript -------------------------------------------------------------------------------
+
 type TranscriptForms = { signed: string; hashes: string[] };
 
 /** The bytes paper-trail signs, and the hashes it may have stored: render node's or route's. */
@@ -208,10 +295,29 @@ function transcriptForms(t: Transcript): TranscriptForms | null {
   });
 }
 
+/** Whether the page's claim, verdict and confidence are the signed transcript's. */
+function bindsPage(d: DossierFacts, t: Transcript): Verdict | null {
+  if (d.claim !== t.claim)
+    return FAIL("the dossier shows another claim than the signed transcript");
+  if (d.verdict !== t.verdict) {
+    return FAIL(
+      `the dossier shows verdict ${d.verdict ?? "none"}; the signed transcript says ${t.verdict}`,
+    );
+  }
+  // recordTranscript stores the confidence as numeric(3,2) from `toFixed(2)`.
+  if (d.confidence !== t.confidence.toFixed(2)) {
+    return FAIL(
+      `the dossier shows confidence ${d.confidence ?? "none"}; the signed transcript says ${t.confidence}`,
+    );
+  }
+  return null;
+}
+
 function transcriptItem(
   r: StoredReceipt,
   live: GatewayResult<Transcript> | null,
   key: GatewayResult<ReceiptKey> | null,
+  page: DossierFacts | null,
 ): CheckItem {
   const ref = r.ref ?? `receipt ${r.id}`;
   const item = (v: Verdict): CheckItem => ({ ref, ...v });
@@ -229,6 +335,8 @@ function transcriptItem(
   if (r.signature === null) {
     return item(FAIL("the transcript is unsigned, so its origin cannot be proven"));
   }
+  const unbound = page === null ? null : bindsPage(page, stored);
+  if (unbound !== null) return item(unbound);
 
   const later: string[] = [];
   if (key === null || !key.ok) {
@@ -269,23 +377,50 @@ function transcriptItem(
   }
 
   if (later.length > 0) return item({ state: "unavailable", detail: later.join("; ") });
+  const shown = page === null ? "" : "; the claim, verdict and confidence the page shows are its";
   return item(
     PASS(
       `re-fetched from paper-trail, hash ${short(r.hash)} recomputed, Ed25519 signature ` +
-        "verified with paper-trail's published key",
+        `verified with paper-trail's published key${shown}`,
     ),
   );
 }
 
-export function transcriptCheck(
-  items: readonly { receipt: StoredReceipt; live: GatewayResult<Transcript> | null }[],
-  key: GatewayResult<ReceiptKey> | null,
-): Check | null {
-  if (items.length === 0) return null;
-  const checked = items.map((i) => transcriptItem(i.receipt, i.live, key));
+export type TranscriptInputs = {
+  dossier: DossierFacts;
+  /** The envelope names the debate whose transcript the page shows, when there are several. */
+  envelope: StoredReceipt | null;
+  items: readonly { receipt: StoredReceipt; live: GatewayResult<Transcript> | null }[];
+  key: GatewayResult<ReceiptKey> | null;
+};
+
+/** The transcript the page shows: the one the envelope names, else the latest stored. */
+function shownDebate(i: TranscriptInputs): string | null {
+  const named = field(
+    field(field(i.envelope?.payload ?? null, "request") ?? null, "metadata") ?? null,
+    "debate_id",
+  );
+  if (typeof named === "string" && i.items.some((x) => x.receipt.ref === named)) return named;
+  return i.items[i.items.length - 1]?.receipt.ref ?? null;
+}
+
+export function transcriptCheck(i: TranscriptInputs): Check | null {
+  if (i.items.length === 0) {
+    return i.dossier.verdict === null
+      ? null
+      : {
+          name: "transcript",
+          ...FAIL("the dossier shows a verdict but holds no transcript receipt"),
+        };
+  }
+  const shown = shownDebate(i);
+  const checked = i.items.map((x) =>
+    transcriptItem(x.receipt, x.live, i.key, x.receipt.ref === shown ? i.dossier : null),
+  );
   const only = checked.length === 1 ? checked[0] : undefined;
-  if (only !== undefined)
+  if (only !== undefined) {
     return { name: "transcript", state: only.state, detail: only.detail, items: checked };
+  }
   return fromItems("transcript", checked, `${checked.length} transcripts verify`);
 }
 
@@ -314,10 +449,8 @@ const envelopePayload = z.object({
 });
 type EnvelopePayload = z.infer<typeof envelopePayload>;
 
-export type DossierRef = { id: string; requestId: string };
-
 export type EnvelopeInputs = {
-  dossier: DossierRef;
+  dossier: DossierFacts;
   envelope: StoredReceipt | null;
   certificates: readonly StoredReceipt[];
   transcripts: readonly StoredReceipt[];
@@ -371,6 +504,9 @@ function envelopeBinds(i: EnvelopeInputs, p: EnvelopePayload): Verdict | null {
   if (p.envelope_id !== i.dossier.id || request.dossier_id !== i.dossier.id) {
     return FAIL("the envelope is another dossier's");
   }
+  if (i.dossier.envelopeId !== p.envelope_id) {
+    return FAIL(`the dossier names envelope ${i.dossier.envelopeId ?? "none"}, not the stored one`);
+  }
   if (meta.request_id !== i.dossier.requestId) return FAIL("the envelope names another request");
   const certIds = i.certificates.flatMap((c) => (c.ref === null ? [] : [c.ref]));
   if (!sameSet(request.evidence_cert_ids, certIds)) {
@@ -398,8 +534,14 @@ function envelopeBinds(i: EnvelopeInputs, p: EnvelopePayload): Verdict | null {
 
 export function envelopeCheck(i: EnvelopeInputs): Check | null {
   const r = i.envelope;
-  if (r === null) return null;
   const done = (v: Verdict): Check => ({ name: "envelope", ...v });
+  if (r === null) {
+    return i.dossier.envelopeId === null
+      ? null
+      : done(
+          FAIL(`the dossier names envelope ${i.dossier.envelopeId} but holds no envelope receipt`),
+        );
+  }
   const parsed = envelopePayload.safeParse(r.payload);
   if (!parsed.success) return done(FAIL("the stored envelope is not an inkprint envelope"));
   const p = parsed.data;
@@ -450,9 +592,13 @@ const perfPayload = z.strictObject({
   ),
 });
 
-export function perfCheck(dossier: DossierRef, r: StoredReceipt | null): Check | null {
-  if (r === null) return null;
+export function perfCheck(dossier: DossierFacts, r: StoredReceipt | null): Check | null {
   const done = (v: Verdict): Check => ({ name: "perf", ...v });
+  if (r === null) {
+    return dossier.status === "succeeded"
+      ? done(FAIL("the dossier succeeded but holds no perf receipt"))
+      : null;
+  }
   const parsed = perfPayload.safeParse(r.payload);
   if (!parsed.success)
     return done(FAIL("the stored perf receipt is not one (undeclared or missing fields)"));
@@ -508,11 +654,14 @@ export function envelopeAuditBound(r: StoredReceipt): number | null {
 type Covered = { receipt: StoredReceipt; events: readonly AuditEventForDigest[] };
 
 export type AuditInputs = {
-  requestId: string;
+  dossier: DossierFacts;
   /** The record stage's receipt, with the request's events up to its bound. */
   audit: Covered | null;
-  /** The envelope receipt, with the request's events up to its signed bound. */
-  envelope: Covered | null;
+  /**
+   * The envelope receipt, with the request's events up to its signed bound, and the envelope
+   * check's state: the digest counts as signed only once the envelope's signature verified.
+   */
+  envelope: (Covered & { signature: CheckState }) | null;
 };
 
 function recordDigest(requestId: string, { receipt, events }: Covered): Verdict {
@@ -521,6 +670,10 @@ function recordDigest(requestId: string, { receipt, events }: Covered): Verdict 
   const p = parsed.data;
   if (p.request_id !== requestId || receipt.ref !== requestId) {
     return FAIL("the audit receipt names another request");
+  }
+  // A dossier logs events from its first stage on: a digest over nothing proves nothing.
+  if (p.event_count < 1 || p.up_to_event_id < 1) {
+    return FAIL("the audit receipt covers no events");
   }
   if (events.length !== p.event_count || lastEventId(events) !== p.up_to_event_id) {
     return FAIL(
@@ -537,7 +690,10 @@ function recordDigest(requestId: string, { receipt, events }: Covered): Verdict 
   return PASS(`${events.length} events up to #${p.up_to_event_id} recompute to the record receipt`);
 }
 
-function envelopeDigest(requestId: string, { receipt, events }: Covered): Verdict {
+function envelopeDigest(
+  requestId: string,
+  { receipt, events, signature }: Covered & { signature: CheckState },
+): Verdict {
   const parsed = envelopeAudit.safeParse(receipt.payload);
   if (!parsed.success) return FAIL("the envelope carries no signed audit digest");
   const meta = parsed.data.request.metadata;
@@ -545,18 +701,37 @@ function envelopeDigest(requestId: string, { receipt, events }: Covered): Verdic
   if (auditDigest(events) !== meta.audit_digest_at_envelope) {
     return FAIL(`the events up to #${meta.audit_up_to} do not recompute to the envelope's digest`);
   }
-  return PASS(`the envelope's signed digest over events up to #${meta.audit_up_to} recomputes`);
+  switch (signature) {
+    case "pass":
+      return PASS(`the envelope's signed digest over events up to #${meta.audit_up_to} recomputes`);
+    case "fail":
+      return FAIL("the envelope's digest is not proven signed: the envelope check failed");
+    case "unavailable":
+    case "expired":
+      return {
+        state: "unavailable",
+        detail: "the envelope's digest recomputes, but its signature could not be checked now",
+      };
+  }
 }
 
 export function auditCheck(i: AuditInputs): Check | null {
-  const verdicts = [
-    ...(i.audit === null ? [] : [recordDigest(i.requestId, i.audit)]),
-    ...(i.envelope === null ? [] : [envelopeDigest(i.requestId, i.envelope)]),
-  ];
+  const { requestId, status } = i.dossier;
+  const verdicts: Verdict[] = [];
+  if (i.audit !== null) verdicts.push(recordDigest(requestId, i.audit));
+  else if (status === "succeeded")
+    verdicts.push(FAIL("the dossier succeeded but holds no audit receipt"));
+  if (i.envelope !== null) verdicts.push(envelopeDigest(requestId, i.envelope));
   if (verdicts.length === 0) return null;
-  const failed = verdicts.find((v) => v.state === "fail");
-  if (failed !== undefined) return { name: "audit", ...failed };
-  return { name: "audit", state: "pass", detail: verdicts.map((v) => v.detail).join("; ") };
+  const state = worst(verdicts.map((v) => v.state));
+  const detail =
+    state === "pass"
+      ? verdicts.map((v) => v.detail).join("; ")
+      : verdicts
+          .filter((v) => v.state === state)
+          .map((v) => v.detail)
+          .join("; ");
+  return { name: "audit", state, detail };
 }
 
 // ---- documents --------------------------------------------------------------------------------

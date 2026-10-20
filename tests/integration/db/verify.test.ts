@@ -9,9 +9,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
  * written by the real adapters and the real envelope and record stages; then the real
  * `POST /api/dossiers/[id]/verify` route re-checks them through the real shell, adapters and audit
  * log, and the real `GET /api/dossiers/[id]/receipts` route serves the bundle. Only the downstream
- * HTTP answers are faked, at `callCapability`: inkprint verifies what it is sent, paper-trail serves
- * a transcript its own code signed (fixture), inkthread serves the graph, and the envelope is signed
- * by a stand-in for inkprint with a test key. Commits audit events (append-only), so it runs only
+ * HTTP answers are faked, at `callCapability`: inkprint answers that it still holds every
+ * certificate, paper-trail serves a transcript its own code signed (fixture), inkthread serves the
+ * graph, and the certificates and the envelope are signed by a stand-in for inkprint with a test key
+ * (inkprint's own bytes are proven against its code in tests/unit/dossier/issuer-forms.test.ts). Commits audit events (append-only), so it runs only
  * against a local, disposable server.
  */
 
@@ -26,7 +27,7 @@ import { inkthread } from "@/capabilities/inkthread";
 import { paperTrail } from "@/capabilities/paper-trail";
 import { listDocuments } from "@/dossier/documents";
 import { listEvidence, saveSealed } from "@/dossier/evidence";
-import { envelopeBundleJson } from "@/dossier/issuer-forms";
+import { envelopeBundleJson, inkprintCanonicalText } from "@/dossier/issuer-forms";
 import { type PerfReceipt, perfReceiptHash } from "@/dossier/receipt-math";
 import {
   findReceipt,
@@ -115,6 +116,17 @@ function inkprintEnvelope(input: EnvelopeInput) {
   };
 }
 
+/** A certificate as inkprint issues one: sha256 and Ed25519 over the canonical text. */
+function inkprintCertificate(text: string) {
+  const canonical = inkprintCanonicalText(text);
+  return {
+    inkprintHash: sha256Hex(canonical),
+    signature: sign(null, Buffer.from(canonical, "utf8"), inkprintKey.privateKey).toString(
+      "base64",
+    ),
+  };
+}
+
 /** What each issuer answers now. */
 function downstream(cap: { id: string }, input: unknown) {
   const ok = (data: unknown) => ({ ok: true, data, status: 200, requestId: "r", ms: 1 });
@@ -125,7 +137,7 @@ function downstream(cap: { id: string }, input: unknown) {
         results: items.map((i) => ({
           certificate_id: i.certificate_id,
           valid: true,
-          checks: { signature: true, hash: true, simhash: true, embedding: true },
+          checks: { signature: true, hash: true },
           reason: null,
         })),
       });
@@ -198,8 +210,7 @@ async function seed(): Promise<void> {
       },
       certificateId,
       contentHash: `m${i}`,
-      inkprintHash: sha256Hex(`small entity fees are reduced ${i}`),
-      signature: "csig",
+      ...inkprintCertificate(`small entity fees are reduced ${i}`),
       text: `small entity fees are reduced ${i}`,
     })),
   );
@@ -268,6 +279,8 @@ async function seed(): Promise<void> {
     save: saveReceiptOnce,
   })(ctx);
   if (recorded.kind !== "ok") throw new Error(JSON.stringify(recorded));
+  // The runner marks the dossier succeeded once record is ok.
+  await db.update(dossiers).set({ status: "succeeded" }).where(eq(dossiers.id, id));
 }
 
 async function verify(): Promise<{ res: Response; checks: Check[] }> {
@@ -395,6 +408,33 @@ describe.skipIf(!LOCAL)("verify everything, composed, against Postgres", () => {
     ]);
     const perf = bundle.receipts.find((r) => r.kind === "perf");
     expect(perf?.hash).toBe(perfReceiptHash(perf?.payload as unknown as PerfReceipt));
+  });
+
+  it("a one-word edit of a certified text fails, though inkprint answers valid:true", async () => {
+    const [first] = await getDb()
+      .select()
+      .from(receipts)
+      .where(
+        and(
+          eq(receipts.dossierId, id),
+          eq(receipts.kind, "certificate"),
+          eq(receipts.ref, CERTS[0] ?? ""),
+        ),
+      );
+    if (!first) throw new Error("no certificate receipt");
+    await getDb().execute(sql`
+      UPDATE receipts SET payload = jsonb_set(payload, '{text}', '"small entity fees are not reduced 0"')
+      WHERE id = ${first.id}
+    `);
+    expect(states((await verify()).checks)).toEqual({ ...ALL_PASS, certificates: "fail" });
+    await getDb().update(receipts).set({ payload: first.payload }).where(eq(receipts.id, first.id));
+    expect(states((await verify()).checks)).toEqual(ALL_PASS);
+  });
+
+  it("a verdict edited on the dossier row fails the transcript check", async () => {
+    await getDb().update(dossiers).set({ verdict: "FALSE" }).where(eq(dossiers.id, id));
+    expect(states((await verify()).checks)).toEqual({ ...ALL_PASS, transcript: "fail" });
+    await getDb().update(dossiers).set({ verdict: TRANSCRIPT.verdict }).where(eq(dossiers.id, id));
   });
 
   it("a transcript tampered in bastion's database fails, and the rest still pass", async () => {

@@ -53,10 +53,12 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
 
   let checks: Check[];
   try {
-    checks = await verifyDossier(
-      { id: dossier.id, requestId: dossier.requestId },
-      { actor: SYSTEM_ACTOR, requestId, clientIp: clientAddress(req) },
-    );
+    // The whole row: the checks bind what the page shows to what they verify.
+    checks = await verifyDossier(dossier, {
+      actor: SYSTEM_ACTOR,
+      requestId,
+      clientIp: clientAddress(req),
+    });
   } catch (err) {
     console.error("verify failed", { dossierId: dossier.id, requestId, err });
     return errorResponse(500, { error: "verify_failed", requestId });

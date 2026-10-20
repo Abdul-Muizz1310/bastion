@@ -30,6 +30,16 @@ import type { Check } from "@/dossier/verify";
 import { isVisitorId } from "@/platform/visitor";
 
 const ID = "550e8400-e29b-41d4-a716-446655440000";
+const ROW = {
+  id: ID,
+  requestId: "req-dossier-1",
+  visitor: "v_aaaaaaaaaa",
+  claim: "c",
+  verdict: "TRUE",
+  confidence: "0.82",
+  status: "succeeded",
+  envelopeId: ID,
+};
 const CHECKS: Check[] = [
   { name: "certificates", state: "pass", detail: "2 of 2", items: [] },
   { name: "transcript", state: "unavailable", detail: "paper-trail is asleep" },
@@ -47,9 +57,7 @@ function post(id = ID): Promise<Response> {
 beforeEach(() => {
   vi.stubEnv("IRON_SESSION_PASSWORD", "x".repeat(32));
   m.check.mockReset().mockResolvedValue({ success: true, limit: 10, remaining: 9 });
-  m.findDossier
-    .mockReset()
-    .mockResolvedValue({ id: ID, requestId: "req-dossier-1", visitor: "v_aaaaaaaaaa" });
+  m.findDossier.mockReset().mockResolvedValue(ROW);
   m.verifyDossier.mockReset().mockResolvedValue(CHECKS);
   m.appendEvent.mockReset().mockResolvedValue(1);
 });
@@ -79,7 +87,8 @@ describe("POST /api/dossiers/[id]/verify", () => {
   it("verifies as the system actor (Ruling W), under a fresh request id (not the dossier's)", async () => {
     const res = await post();
     const [dossier, ctx] = m.verifyDossier.mock.calls[0] ?? [];
-    expect(dossier).toEqual({ id: ID, requestId: "req-dossier-1" });
+    // The whole row: the checks bind what the page shows (claim, verdict, confidence, envelope).
+    expect(dossier).toEqual(ROW);
     expect(ctx.actor).toBe("bastion");
     expect(isVisitorId(ctx.actor)).toBe(false);
     expect(ctx.requestId).toBe(res.headers.get("x-request-id"));

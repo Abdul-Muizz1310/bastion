@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const m = vi.hoisted(() => ({
   callCapability: vi.fn(),
   listReceipts: vi.fn(),
+  listEvidence: vi.fn(),
   listDocuments: vi.fn(),
   requestEvents: vi.fn(),
 }));
@@ -17,6 +18,7 @@ const m = vi.hoisted(() => ({
 vi.mock("@/platform/gateway/call", () => ({ callCapability: m.callCapability }));
 vi.mock("@/dossier/receipts", () => ({ listReceipts: m.listReceipts }));
 vi.mock("@/dossier/documents", () => ({ listDocuments: m.listDocuments }));
+vi.mock("@/dossier/evidence", () => ({ listEvidence: m.listEvidence }));
 vi.mock("@/platform/audit/request-events", () => ({ requestEvents: m.requestEvents }));
 
 import { inkprint } from "@/capabilities/inkprint";
@@ -24,7 +26,7 @@ import { inkthread } from "@/capabilities/inkthread";
 import { paperTrail } from "@/capabilities/paper-trail";
 import { verifyDossier } from "@/dossier/verify-live";
 import type { CallContext } from "@/platform/gateway/call";
-import { allReceipts, DOSSIER, documents, GOLDEN, TRANSCRIPT } from "./verify-golden";
+import { allReceipts, DOSSIER, documents, evidenceRows, GOLDEN, TRANSCRIPT } from "./verify-golden";
 
 const CTX = { actor: "bastion", requestId: "req-verify-2" } as CallContext;
 
@@ -33,6 +35,7 @@ beforeEach(() => {
     .mockReset()
     .mockResolvedValue({ ok: false, error: "asleep", status: 504, requestId: "r" });
   m.listReceipts.mockReset().mockResolvedValue(allReceipts());
+  m.listEvidence.mockReset().mockResolvedValue(evidenceRows());
   m.listDocuments.mockReset().mockResolvedValue(documents());
   m.requestEvents.mockReset().mockResolvedValue([]);
 });
@@ -41,6 +44,7 @@ describe("verifyDossier (wired)", () => {
   it("reads the dossier's receipts, documents and events through the adapters", async () => {
     await verifyDossier(DOSSIER, CTX);
     expect(m.listReceipts).toHaveBeenCalledWith(DOSSIER.id);
+    expect(m.listEvidence).toHaveBeenCalledWith(DOSSIER.id);
     expect(m.listDocuments).toHaveBeenCalledWith(DOSSIER.id);
     expect(m.requestEvents).toHaveBeenCalledWith(DOSSIER.requestId, GOLDEN.recordUpTo);
   });
@@ -52,7 +56,7 @@ describe("verifyDossier (wired)", () => {
       expect.arrayContaining([
         [
           inkprint.verifyBatch.id,
-          { items: GOLDEN.certificates.map((c) => ({ certificate_id: c.id, text: c.text })) },
+          { items: GOLDEN.certificates.map((c) => ({ certificate_id: c.id })) },
           CTX,
         ],
         [paperTrail.transcript.id, { id: TRANSCRIPT.debate_id }, CTX],

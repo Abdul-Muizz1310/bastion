@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { StoredReceipt } from "@/dossier/receipts";
 import { CHECK_NAMES } from "@/dossier/verify";
 import { dossierVerifier, type VerifyDeps } from "@/dossier/verify-live";
-import type { DossierDocument } from "@/lib/db/schema";
+import type { DossierDocument, EvidenceItem } from "@/lib/db/schema";
 import type { CallContext } from "@/platform/gateway/call";
 import type { GatewayResult } from "@/platform/gateway/result";
 import {
@@ -10,6 +10,7 @@ import {
   DOSSIER,
   documents,
   edit,
+  evidenceRows,
   eventsUpTo,
   failed,
   GOLDEN,
@@ -34,12 +35,26 @@ const CTX: CallContext = {
   clientIp: "203.0.113.9",
 };
 
+/** A dossier still running: it implies no envelope, perf or audit receipt, and shows no verdict. */
+const UNFINISHED = {
+  ...DOSSIER,
+  status: "running" as const,
+  verdict: null,
+  confidence: null,
+  envelopeId: null,
+};
+
 function fakes(
-  over: Partial<VerifyDeps> & { stored?: StoredReceipt[]; docs?: DossierDocument[] } = {},
+  over: Partial<VerifyDeps> & {
+    stored?: StoredReceipt[];
+    rows?: EvidenceItem[];
+    docs?: DossierDocument[];
+  } = {},
 ) {
-  const { stored, docs, ...deps } = over;
+  const { stored, rows, docs, ...deps } = over;
   const all = {
     receipts: vi.fn(async (_id: string) => stored ?? allReceipts()),
+    evidence: vi.fn(async (_id: string) => rows ?? evidenceRows()),
     documents: vi.fn(async (_id: string) => docs ?? documents()),
     events: vi.fn(async (_requestId: string, upTo: number) => eventsUpTo(upTo)),
     verifyBatch: vi.fn(async () => ok(verifyAllValid())),
@@ -63,9 +78,11 @@ describe("verifyDossier", () => {
     const { verify, deps } = fakes();
     await verify(DOSSIER, CTX);
     expect(deps.receipts).toHaveBeenCalledWith(DOSSIER.id);
+    // By id only: no text, so inkprint re-embeds nothing; the text is bound exactly here.
     expect(deps.verifyBatch).toHaveBeenCalledExactlyOnceWith(CTX, {
-      items: GOLDEN.certificates.map((c) => ({ certificate_id: c.id, text: c.text })),
+      items: GOLDEN.certificates.map((c) => ({ certificate_id: c.id })),
     });
+    expect(deps.evidence).toHaveBeenCalledWith(DOSSIER.id);
     expect(deps.transcript).toHaveBeenCalledExactlyOnceWith(CTX, TRANSCRIPT.debate_id);
     expect(deps.receiptKey).toHaveBeenCalledExactlyOnceWith(CTX);
     expect(deps.publicKey).toHaveBeenCalledExactlyOnceWith(CTX);
@@ -89,8 +106,8 @@ describe("verifyDossier", () => {
   });
 
   it("asks nobody for a dossier with no receipts and no documents", async () => {
-    const { verify, deps } = fakes({ stored: [], docs: [] });
-    expect(await verify(DOSSIER, CTX)).toEqual([]);
+    const { verify, deps } = fakes({ stored: [], rows: [], docs: [] });
+    expect(await verify(UNFINISHED, CTX)).toEqual([]);
     for (const call of [
       deps.verifyBatch,
       deps.transcript,
@@ -106,10 +123,14 @@ describe("verifyDossier", () => {
   it("reports only the checks the dossier has receipts for, in a fixed order", async () => {
     const stored = allReceipts().filter((r) => r.kind === "certificate" || r.kind === "perf");
     const { verify, deps } = fakes({ stored, docs: [] });
-    const checks = await verify(DOSSIER, CTX);
-    expect(checks.map((c) => c.name)).toEqual(["certificates", "perf"]);
+    const checks = await verify(UNFINISHED, CTX);
+    expect(checks.map((c) => [c.name, c.state])).toEqual([
+      ["certificates", "pass"],
+      ["perf", "pass"],
+    ]);
     expect(deps.receiptKey).not.toHaveBeenCalled();
-    expect(deps.publicKey).not.toHaveBeenCalled();
+    // inkprint's key is fetched for the certificates even without an envelope.
+    expect(deps.publicKey).toHaveBeenCalledExactlyOnceWith(CTX);
   });
 
   it("an issuer that is out makes its checks unavailable, never pass, and leaves the rest alone", async () => {
@@ -155,14 +176,36 @@ describe("verifyDossier", () => {
     expect(checks.find((c) => c.name === "transcript")?.state).toBe("fail");
   });
 
-  it("does not ask inkprint when no certificate can be sent (they fail)", async () => {
-    const stored = allReceipts().map((r) =>
-      r.kind === "certificate" ? { ...r, payload: null } : r,
+  it("a one-word edit of a certified text fails though inkprint answers valid:true", async () => {
+    const edited = (GOLDEN.certificates[0]?.text ?? "").replace("pay", "do not pay");
+    const stored = allReceipts().map((r, i) =>
+      r.kind === "certificate" && i === 0 ? edit(r, ["payload", "text"], edited) : r,
     );
-    const { verify, deps } = fakes({ stored });
+    const rows = edit(evidenceRows(), [0, "excerpt"], null);
+    const { verify } = fakes({ stored, rows });
+    const checks = await verify(DOSSIER, CTX);
+    expect(checks.find((c) => c.name === "certificates")?.state).toBe("fail");
+  });
+
+  it("a verdict edited on the dossier row fails the transcript check", async () => {
+    const { verify } = fakes();
+    const checks = await verify({ ...DOSSIER, verdict: "FALSE" }, CTX);
+    expect(checks.find((c) => c.name === "transcript")?.state).toBe("fail");
+  });
+
+  it("the envelope's audit digest counts only once the envelope verified", async () => {
+    const { verify } = fakes({ publicKey: vi.fn(async () => failed("asleep", 504)) });
+    const states = Object.fromEntries((await verify(DOSSIER, CTX)).map((c) => [c.name, c.state]));
+    expect(states).toMatchObject({ envelope: "unavailable", audit: "unavailable" });
+  });
+
+  it("does not ask inkprint when the dossier certified nothing", async () => {
+    const stored = allReceipts().filter((r) => r.kind !== "certificate");
+    const rows = evidenceRows().map((e) => ({ ...e, certificateId: null }));
+    const { verify, deps } = fakes({ stored, rows });
     const checks = await verify(DOSSIER, CTX);
     expect(deps.verifyBatch).not.toHaveBeenCalled();
-    expect(checks.find((c) => c.name === "certificates")?.state).toBe("fail");
+    expect(checks.find((c) => c.name === "certificates")).toBeUndefined();
   });
 
   it("reads no events for a receipt whose bound is unreadable (the audit check fails)", async () => {

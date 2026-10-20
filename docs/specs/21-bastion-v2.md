@@ -177,16 +177,20 @@ where each check is `{name, state, detail, items?}` and `state` is one of:
   body). Never a pass. A proven failure elsewhere in the same check still wins;
 - `expired`: an inkthread upload whose graph is gone by design (DR-0029).
 
-A check whose receipts the dossier lacks is omitted. Signatures are always checked against the key the
-issuer publishes now, never one carried by the dossier.
+Signatures are always checked against the key the issuer publishes now, never one carried by the
+dossier. What the page shows is bound to what is verified: the dossier's claim, verdict and confidence,
+and each evidence row's certificate and excerpt. A receipt the dossier row implies but does not hold is a
+`fail` (Ruling Y): an `envelope_id` with no envelope receipt, a succeeded dossier with no perf or audit
+receipt, a verdict with no transcript, a certified evidence row with no certificate receipt. A check with
+nothing to verify and nothing implied is omitted.
 
 | Check | What it does |
 |---|---|
-| certificates | `inkprint.verifyBatch` with each certificate id and the full certified text kept in its receipt. |
-| transcript | Re-fetch `transcript.json`. The stored copy must hash to the receipt and equal the live copy. The receipt's Ed25519 signature must verify against `paper-trail.receiptKey`. |
-| envelope | The manifest must hash to the receipt. The bundle must hash to the manifest's `c2pa.hash.data`. The signed bundle must name exactly the stored certificates, transcript (hash and signature), perf hash, request id and graph hashes. The signature must verify against `inkprint.publicKey`. |
-| perf | The stored payload must parse strictly and recompute to its hash. |
-| audit | The record receipt's digest over events ≤ `up_to_event_id` (with its count), and the envelope's signed digest over events ≤ `metadata.audit_up_to`, must both recompute. Later events never count. |
+| certificates | Driven by the evidence rows. Each certified row needs its receipt, and the excerpt the page shows must be the start of the certified text as stored. The text, canonicalised exactly as inkprint does (`canonicalize`), must hash to the receipt's fingerprint, and inkprint's Ed25519 signature over it must verify against `inkprint.publicKey`. `inkprint.verifyBatch` is asked **by id only**: no text, so nothing is re-embedded. It only confirms inkprint still holds the certificate intact. Its own text comparison is fuzzy (simhash, embedding) and is never relied on. |
+| transcript | Re-fetch `transcript.json`. The stored copy must hash to the receipt and equal the live copy. The receipt's Ed25519 signature must verify against `paper-trail.receiptKey`. The transcript the page shows must carry the dossier's claim, verdict and confidence (`toFixed(2)`): the one the envelope names, else the latest. |
+| envelope | The manifest must hash to the receipt. The bundle must hash to the manifest's `c2pa.hash.data`. The signed bundle must name exactly the stored certificates, transcript (hash and signature), perf hash, request id and graph hashes. `dossiers.envelope_id` must name it. The signature must verify against `inkprint.publicKey`. |
+| perf | The stored payload must parse strictly and recompute to its hash. A succeeded dossier must hold one. |
+| audit | The record receipt's digest over events ≤ `up_to_event_id` (at least one event; with its count) must recompute, and a succeeded dossier must hold one. The envelope's digest over events ≤ `metadata.audit_up_to` must recompute too, but it counts as signed only once the envelope check passed: if that check failed, this part fails; if it was unavailable, this part is unavailable. Later events never count. |
 | documents | Re-fetch each read document's graph; `graph_hash` and `sha256` must be unchanged. An upload answering 404/410 is `expired`. A sample answering 404 fails. |
 
 **What the issuers sign.** Both issuers sign the UTF-8 bytes of Python
@@ -200,9 +204,13 @@ prove the rebuild (`tests/fixtures/receipts/`).
   `transcript_hash` it serves is its render node's SHA-256 of the same object with each round's
   `confidence` key absent. A debate from before that node stored a hash gets the route's hash of the
   signed form instead.
-- **inkprint:** it signs `{dossier_id, evidence_cert_ids (in order), debate_transcript_hash,
+- **inkprint (envelope):** it signs `{dossier_id, evidence_cert_ids (in order), debate_transcript_hash,
   perf_receipt_hash, metadata, issued_at}`. `issued_at` is the manifest's `isoformat()` string
   (`+00:00`), not `created_at` (`Z`).
+- **inkprint (certificates):** the fingerprint (SHA-256) and the Ed25519 signature are over
+  `canonicalize(text)`, as UTF-8. That is NFC first. Then every run of Python `\s` becomes one space;
+  that set is `str.isspace`, which adds U+001C–U+001F and U+0085 and lacks JavaScript's U+FEFF. Then
+  `strip()`.
 
 **Bundle.** `GET /api/dossiers/[id]/receipts` is public and limited to 30 a minute per visitor (429 with
 `retry-after`). It answers 404 for an unknown dossier. Otherwise

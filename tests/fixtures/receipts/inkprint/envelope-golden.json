@@ -31,7 +31,7 @@
           "version": "0.1.0"
         }
       ],
-      "issued_at": "2026-10-20T08:27:42.241472+00:00",
+      "issued_at": "2026-10-20T08:59:45.441876+00:00",
       "assertions": [
         {
           "label": "c2pa.ingredient.v2",
@@ -67,7 +67,7 @@
           "label": "c2pa.hash.data",
           "data": {
             "alg": "sha256",
-            "hash": "960e33072095fa6abe6d32a652654b6399af52d1fa7d2219e5b2a9802aaf61a9",
+            "hash": "48cccd1d6a0a84cd761f40e5c92b0a1a9adb9de36b4ba35242be74687cd1e862",
             "pad": ""
           }
         }
@@ -75,7 +75,7 @@
       "signature": {
         "alg": "Ed25519",
         "key_id": "inkprint-ed25519-fixture",
-        "value": "1B4AtueWn0+VXZ6p76jLfrt1/MHv1K63uE+bEHs9NYANzSBd0Gj/RRO/WyYi/jTOTgmYa6uEdUx39pTEf6X9CQ==",
+        "value": "7pBwgjkO+lOBq97PllXksYRfYE2gPqcd2k60vblKLa0DrlsnwVb7fDF55YmX6Ga48EZL2XUMr8i0BsKfz4G8Cw==",
         "signed_assertions": [
           "c2pa.ingredient.v2",
           "bastion.debate_transcript_hash",
@@ -84,7 +84,7 @@
         ]
       }
     },
-    "envelope_signature": "1B4AtueWn0+VXZ6p76jLfrt1/MHv1K63uE+bEHs9NYANzSBd0Gj/RRO/WyYi/jTOTgmYa6uEdUx39pTEf6X9CQ==",
-    "created_at": "2026-10-20T08:27:42.241472Z"
+    "envelope_signature": "7pBwgjkO+lOBq97PllXksYRfYE2gPqcd2k60vblKLa0DrlsnwVb7fDF55YmX6Ga48EZL2XUMr8i0BsKfz4G8Cw==",
+    "created_at": "2026-10-20T08:59:45.441876Z"
   }
 }

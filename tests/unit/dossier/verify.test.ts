@@ -1,6 +1,8 @@
 import { generateKeyPairSync } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { Graph } from "@/capabilities/inkthread";
+import { inkprintCanonicalText } from "@/dossier/issuer-forms";
+import { auditDigest } from "@/dossier/receipt-math";
 import type { StoredReceipt } from "@/dossier/receipts";
 import {
   auditBound,
@@ -10,8 +12,8 @@ import {
   documentsCheck,
   envelopeAuditBound,
   envelopeCheck,
+  certificateIds,
   perfCheck,
-  sendableCertificates,
   transcriptCheck,
 } from "@/dossier/verify";
 import { canonicalJson, type Json } from "@/platform/canonical-json";
@@ -25,6 +27,7 @@ import {
   EVENTS,
   edit,
   envelopeReceipt,
+  evidenceRows,
   eventsUpTo,
   failed,
   GOLDEN,
@@ -55,96 +58,166 @@ const expectState = (check: Check | null, state: Check["state"]) => {
 };
 
 describe("certificates", () => {
-  const sent = () => sendableCertificates(certificateReceipts());
+  const inputs = (over: Partial<Parameters<typeof certificatesCheck>[0]> = {}) => ({
+    evidence: evidenceRows(),
+    receipts: certificateReceipts(),
+    answer: ok(verifyAllValid()),
+    key: ok(publicKeyBody()),
+    ...over,
+  });
+  const check = (over: Partial<Parameters<typeof certificatesCheck>[0]> = {}) =>
+    certificatesCheck(inputs(over));
+  const withText = (i: number, text: string) =>
+    edit(certificateReceipts(), [i, "payload", "text"], text);
 
-  it("sends each certificate id with its full stored text", () => {
-    expect(sent()).toEqual(
-      GOLDEN.certificates.map((c) => ({ certificate_id: c.id, text: c.text })),
+  it("asks inkprint by certificate id only — no text, so nothing is re-embedded", () => {
+    expect(certificateIds(evidenceRows(), certificateReceipts())).toEqual(
+      GOLDEN.certificates.map((c) => c.id),
     );
   });
 
-  it("passes when inkprint verifies every certificate against its text", () => {
-    const check = certificatesCheck(certificateReceipts(), ok(verifyAllValid()));
-    expect(check).toMatchObject({ name: "certificates", state: "pass" });
-    expect(check?.detail).toContain("2 of 2");
-    expect(check?.items?.map((i) => [i.ref, i.state])).toEqual(
-      GOLDEN.certificates.map((c) => [c.id, "pass"]),
+  it("passes inkprint's real signatures over the canonical stored texts", () => {
+    const c = check();
+    expect(c).toMatchObject({ name: "certificates", state: "pass" });
+    expect(c?.detail).toContain("2 of 2");
+    expect(c?.items?.map((i) => [i.ref, i.state])).toEqual(
+      GOLDEN.certificates.map((x) => [x.id, "pass"]),
     );
   });
 
-  it("fails a certificate whose text no longer matches, naming the failed checks", () => {
-    const answer = edit(verifyAllValid(), ["results", 1], {
-      certificate_id: GOLDEN.certificates[1]?.id,
-      valid: false,
-      checks: { signature: true, hash: true, simhash: false, embedding: false },
-      reason: null,
-    });
-    const check = certificatesCheck(certificateReceipts(), ok(answer));
-    expectState(check, "fail");
-    expect(check?.items?.[1]).toMatchObject({ state: "fail" });
-    expect(check?.items?.[1]?.detail).toContain("simhash, embedding");
-    expect(check?.items?.[0]?.state).toBe("pass");
+  it.each([
+    ['inserting "not"', (t: string) => t.replace("pay 40", "do not pay 40")],
+    ["one word changed", (t: string) => t.replace("large", "small")],
+    ["a number changed", (t: string) => t.replace("40", "14")],
+  ])(
+    "fails a certified text with %s, even when inkprint answers valid:true (fuzzy match)",
+    (_what, change) => {
+      const original = GOLDEN.certificates[0]?.text ?? "";
+      const tampered = withText(0, change(original));
+      const c = check({ receipts: tampered, evidence: edit(evidenceRows(), [0, "excerpt"], null) });
+      expectState(c, "fail");
+      expect(c?.items?.[0]?.detail).toContain("does not hash");
+      expect(c?.items?.[1]?.state).toBe("pass");
+    },
+  );
+
+  it("passes a text that differs only in what inkprint's canonicalisation removes", () => {
+    const original = GOLDEN.certificates[1]?.text ?? "";
+    const respaced = withText(1, `\u00a0${original.replace(" ", "\u2003\n")}  `);
+    const evidence = edit(evidenceRows(), [1, "excerpt"], null);
+    expectState(check({ receipts: respaced, evidence }), "pass");
   });
 
-  it("fails a certificate inkprint does not know", () => {
-    const answer = edit(verifyAllValid(), ["results", 0], {
-      certificate_id: GOLDEN.certificates[0]?.id,
-      valid: false,
-      checks: {},
-      reason: "unknown_certificate",
-    });
-    const check = certificatesCheck(certificateReceipts(), ok(answer));
-    expectState(check, "fail");
-    expect(check?.items?.[0]?.detail).toContain("unknown_certificate");
+  it("fails a stored hash rewritten to match a tampered text: the signature does not verify", () => {
+    const text = (GOLDEN.certificates[0]?.text ?? "").replace("40", "14");
+    const receipts = edit(withText(0, text), [0, "hash"], sha256Hex(inkprintCanonicalText(text)));
+    const c = check({ receipts, evidence: edit(evidenceRows(), [0, "excerpt"], null) });
+    expectState(c, "fail");
+    expect(c?.items?.[0]?.detail).toContain("signature");
   });
 
-  it("fails a certificate inkprint returned no result for", () => {
-    const answer = { results: verifyAllValid().results.slice(0, 1) };
-    expectState(certificatesCheck(certificateReceipts(), ok(answer)), "fail");
+  it("fails against any key but inkprint's", () => {
+    const key = ok(publicKeyBody(new TextEncoder().encode(otherKeyPem())));
+    expectState(check({ key }), "fail");
   });
 
-  it("fails a receipt with no stored text, and still checks the others", () => {
-    const receipts = certificateReceipts();
-    const broken = edit(receipts, [0, "payload"], { key: "w-x" });
-    expect(sendableCertificates(broken)).toHaveLength(1);
-    const check = certificatesCheck(broken, ok(verifyAllValid()));
-    expectState(check, "fail");
-    expect(check?.items?.map((i) => i.state)).toEqual(["fail", "pass"]);
+  it("fails an unsigned certificate receipt", () => {
+    expectState(check({ receipts: edit(certificateReceipts(), [0, "signature"], null) }), "fail");
   });
 
-  it("fails a receipt with no certificate id", () => {
-    const broken = edit(certificateReceipts(), [1, "ref"], null);
-    const check = certificatesCheck(broken, ok(verifyAllValid()));
-    expectState(check, "fail");
+  it("fails an excerpt the page shows that is not the certified text", () => {
+    const evidence = edit(evidenceRows(), [1, "excerpt"], "The basic filing fee is $35.");
+    const c = check({ evidence });
+    expectState(c, "fail");
+    expect(c?.items?.[1]?.detail).toContain("excerpt");
+  });
+
+  it("fails an evidence row whose certificate has no stored receipt", () => {
+    const c = check({ receipts: certificateReceipts().slice(1) });
+    expectState(c, "fail");
+    expect(c?.items?.[0]?.detail).toContain("no certificate receipt");
+  });
+
+  it("fails a certificate receipt no evidence row shows", () => {
+    expectState(check({ evidence: evidenceRows().slice(1) }), "fail");
+  });
+
+  it("fails a receipt with no stored text", () => {
+    expectState(
+      check({ receipts: edit(certificateReceipts(), [0, "payload"], { key: "w" }) }),
+      "fail",
+    );
+  });
+
+  it("fails a text with no form inkprint could have certified (never throws)", () => {
+    const receipts = withText(0, `a${String.fromCharCode(0xd800)}`);
+    expect(() => check({ receipts })).not.toThrow();
+    expectState(check({ receipts }), "fail");
+  });
+
+  it("fails a certificate inkprint no longer holds intact", () => {
+    const answer = ok(
+      edit(verifyAllValid(), ["results", 1], {
+        certificate_id: GOLDEN.certificates[1]?.id,
+        valid: false,
+        checks: { signature: true, hash: false },
+        reason: null,
+      }),
+    );
+    const c = check({ answer });
+    expectState(c, "fail");
+    expect(c?.items?.[1]?.detail).toContain("hash");
+  });
+
+  it("fails a certificate inkprint does not know, or returns no result for", () => {
+    const unknown = ok(
+      edit(verifyAllValid(), ["results", 0], {
+        certificate_id: GOLDEN.certificates[0]?.id,
+        valid: false,
+        checks: {},
+        reason: "unknown_certificate",
+      }),
+    );
+    expect(check({ answer: unknown })?.items?.[0]?.detail).toContain("unknown_certificate");
+    expectState(check({ answer: ok({ results: verifyAllValid().results.slice(1) }) }), "fail");
+    // valid:true with no checks at all proves nothing.
+    const empty = ok(edit(verifyAllValid(), ["results", 0, "checks"], {}));
+    expectState(check({ answer: empty }), "fail");
   });
 
   it.each(OUTAGES)("is unavailable, never a pass, when inkprint is out: %s", (_why, outage) => {
-    expectState(certificatesCheck(certificateReceipts(), outage), "unavailable");
+    expectState(check({ answer: outage }), "unavailable");
+    expectState(check({ key: outage }), "unavailable");
   });
 
   it("says when to retry after the gateway's rate limit", () => {
-    const check = certificatesCheck(
-      certificateReceipts(),
-      failed("rate_limited", 429, { retryAfterS: 12 }),
+    expect(check({ answer: failed("rate_limited", 429, { retryAfterS: 12 }) })?.detail).toContain(
+      "12 s",
     );
-    expect(check?.detail).toContain("12 s");
   });
 
-  it("fails when the stored receipt cannot even be sent (invalid input)", () => {
-    const check = certificatesCheck(
-      certificateReceipts(),
-      failed("invalid_input", 422, { detail: "items.0.certificate_id: Invalid UUID" }),
-    );
-    expectState(check, "fail");
+  it("is unavailable when inkprint or its key was not asked", () => {
+    expectState(check({ answer: null }), "unavailable");
+    expectState(check({ key: null }), "unavailable");
   });
 
-  it("an unsent receipt fails even while inkprint is out (a proven fail beats unavailable)", () => {
-    const broken = edit(certificateReceipts(), [0, "payload"], null);
-    expectState(certificatesCheck(broken, failed("asleep", 504)), "fail");
+  it("fails when inkprint publishes no key (404), or the ids cannot be sent", () => {
+    expectState(check({ key: failed("downstream_error", 404) }), "fail");
+    expectState(check({ answer: failed("invalid_input", 422, { detail: "items.0" }) }), "fail");
   });
 
-  it("is not a check at all for a dossier with no certificates", () => {
-    expect(certificatesCheck([], null)).toBeNull();
+  it("a tampered text fails even while inkprint is out (a proven fail beats unavailable)", () => {
+    const receipts = withText(0, "tampered");
+    const c = check({ receipts, answer: failed("asleep", 504), key: failed("asleep", 504) });
+    expectState(c, "fail");
+  });
+
+  it("is not a check at all for a dossier with no certified evidence", () => {
+    expect(certificatesCheck({ evidence: [], receipts: [], answer: null, key: null })).toBeNull();
+    const uncertified = evidenceRows().map((e) => ({ ...e, certificateId: null }));
+    expect(
+      certificatesCheck({ evidence: uncertified, receipts: [], answer: null, key: null }),
+    ).toBeNull();
   });
 });
 
@@ -155,7 +228,24 @@ describe("transcript", () => {
     receipt: StoredReceipt = transcriptReceipt(),
     answer: GatewayResult<typeof TRANSCRIPT> = live(),
     k: GatewayResult<typeof RECEIPT_KEY> | null = key(),
-  ) => transcriptCheck([{ receipt, live: answer }], k);
+  ) =>
+    transcriptCheck({
+      dossier: DOSSIER,
+      envelope: envelopeReceipt(),
+      items: [{ receipt, live: answer }],
+      key: k,
+    });
+  const many = (
+    items: { receipt: StoredReceipt; live: GatewayResult<typeof TRANSCRIPT> | null }[],
+    k: GatewayResult<typeof RECEIPT_KEY> | null = key(),
+    over: { dossier?: typeof DOSSIER; envelope?: StoredReceipt | null } = {},
+  ) =>
+    transcriptCheck({
+      dossier: over.dossier ?? DOSSIER,
+      envelope: over.envelope === undefined ? envelopeReceipt() : over.envelope,
+      items,
+      key: k,
+    });
 
   it("passes a real paper-trail signature over the re-fetched transcript", () => {
     const c = check();
@@ -258,34 +348,22 @@ describe("transcript", () => {
   });
 
   it("is unavailable, not a pass, when the transcript or the key was not fetched", () => {
-    expectState(
-      transcriptCheck([{ receipt: transcriptReceipt(), live: null }], key()),
-      "unavailable",
-    );
-    expectState(
-      transcriptCheck([{ receipt: transcriptReceipt(), live: live() }], null),
-      "unavailable",
-    );
+    expectState(many([{ receipt: transcriptReceipt(), live: null }]), "unavailable");
+    expectState(many([{ receipt: transcriptReceipt(), live: live() }], null), "unavailable");
   });
 
   it("checks each transcript receipt and reports the worst", () => {
     const other = edit(transcriptReceipt(), ["payload", "verdict"], "FALSE");
-    const c = transcriptCheck(
-      [
-        { receipt: transcriptReceipt(), live: live() },
-        { receipt: other, live: live() },
-      ],
-      key(),
-    );
+    const c = many([
+      { receipt: transcriptReceipt(), live: live() },
+      { receipt: other, live: live() },
+    ]);
     expectState(c, "fail");
     expect(c?.items?.map((i) => i.state)).toEqual(["pass", "fail"]);
-    const both = transcriptCheck(
-      [
-        { receipt: transcriptReceipt(), live: live() },
-        { receipt: transcriptReceipt(), live: live() },
-      ],
-      key(),
-    );
+    const both = many([
+      { receipt: transcriptReceipt(), live: live() },
+      { receipt: transcriptReceipt(), live: live() },
+    ]);
     expectState(both, "pass");
   });
 
@@ -299,8 +377,59 @@ describe("transcript", () => {
     expectState(check(transcriptReceipt(), huge), "fail");
   });
 
-  it("is not a check at all for a dossier with no transcript", () => {
-    expect(transcriptCheck([], null)).toBeNull();
+  describe("binds what the page shows to the verified transcript", () => {
+    it.each([
+      ["the verdict", { verdict: "FALSE" as const }],
+      ["the confidence", { confidence: "0.83" }],
+      ["the claim", { claim: "The USPTO basic filing fee is $350." }],
+      ["no verdict at all", { verdict: null }],
+    ])("fails when the dossier shows another %s than the signed transcript", (_what, change) => {
+      const c = many([{ receipt: transcriptReceipt(), live: live() }], key(), {
+        dossier: { ...DOSSIER, ...change },
+      });
+      expectState(c, "fail");
+      expect(c?.detail).toContain("the dossier shows");
+    });
+
+    it("binds the transcript the envelope names when there are several", () => {
+      const otherId = "11111111-2222-4333-8444-555555555555";
+      const other = edit(
+        edit(transcriptReceipt(), ["ref"], otherId),
+        ["payload", "debate_id"],
+        otherId,
+      );
+      // The other debate's transcript does not verify either way, but only the named one is bound.
+      const c = many([
+        { receipt: other, live: ok(edit(TRANSCRIPT, ["debate_id"], otherId)) },
+        { receipt: transcriptReceipt(), live: live() },
+      ]);
+      expect(c?.items?.[1]?.state).toBe("pass");
+      const page = many(
+        [
+          { receipt: other, live: ok(edit(TRANSCRIPT, ["debate_id"], otherId)) },
+          { receipt: transcriptReceipt(), live: live() },
+        ],
+        key(),
+        { dossier: { ...DOSSIER, verdict: "FALSE" } },
+      );
+      expect(page?.items?.[1]?.state).toBe("fail");
+    });
+
+    it("binds the latest transcript when there is no envelope", () => {
+      const c = many([{ receipt: transcriptReceipt(), live: live() }], key(), {
+        envelope: null,
+        dossier: { ...DOSSIER, verdict: "INCONCLUSIVE" },
+      });
+      expectState(c, "fail");
+    });
+  });
+
+  it("fails when the dossier shows a verdict but holds no transcript receipt", () => {
+    expectState(many([]), "fail");
+  });
+
+  it("is not a check at all for a dossier with no transcript and no verdict", () => {
+    expect(many([], null, { dossier: { ...DOSSIER, verdict: null, confidence: null } })).toBeNull();
   });
 });
 
@@ -461,8 +590,21 @@ describe("envelope", () => {
     expectState(envelopeCheck(inputs({ envelope: tampered })), "fail");
   });
 
-  it("is not a check at all for a dossier with no envelope", () => {
-    expect(envelopeCheck(inputs({ envelope: null }))).toBeNull();
+  it("fails when the dossier names an envelope but holds no envelope receipt (Ruling Y)", () => {
+    const c = envelopeCheck(inputs({ envelope: null }));
+    expectState(c, "fail");
+    expect(c?.detail).toContain("no envelope receipt");
+  });
+
+  it("fails when the dossier names another envelope than the stored one, or none", () => {
+    const other = "11111111-2222-4333-8444-555555555555";
+    expectState(envelopeCheck(inputs({ dossier: { ...DOSSIER, envelopeId: other } })), "fail");
+    expectState(envelopeCheck(inputs({ dossier: { ...DOSSIER, envelopeId: null } })), "fail");
+  });
+
+  it("is not a check at all for a dossier with no envelope and none named", () => {
+    const dossier = { ...DOSSIER, envelopeId: null };
+    expect(envelopeCheck(inputs({ envelope: null, dossier }))).toBeNull();
   });
 });
 
@@ -486,20 +628,32 @@ describe("perf", () => {
     expectState(perfCheck(DOSSIER, edit(perfReceipt(), [...path], value)), "fail");
   });
 
-  it("is not a check at all without a perf receipt", () => {
-    expect(perfCheck(DOSSIER, null)).toBeNull();
+  it("fails a succeeded dossier that holds no perf receipt (Ruling Y)", () => {
+    const c = perfCheck(DOSSIER, null);
+    expectState(c, "fail");
+    expect(c?.detail).toContain("no perf receipt");
+  });
+
+  it("is not a check at all for an unfinished dossier without a perf receipt", () => {
+    for (const status of ["pending", "running", "failed"] as const) {
+      expect(perfCheck({ ...DOSSIER, status }, null)).toBeNull();
+    }
   });
 });
 
 describe("audit", () => {
+  type Run = Parameters<typeof auditCheck>[0];
   const audit = (receipt = auditReceipt(), events = eventsUpTo(GOLDEN.recordUpTo)) => ({
     receipt,
     events,
   });
-  const envelope = (receipt = envelopeReceipt(), events = eventsUpTo(GOLDEN.envelopeUpTo)) => ({
-    receipt,
-    events,
-  });
+  const envelope = (
+    receipt = envelopeReceipt(),
+    events = eventsUpTo(GOLDEN.envelopeUpTo),
+    signature: Check["state"] = "pass",
+  ) => ({ receipt, events, signature });
+  const run = (over: Partial<Run> = {}) =>
+    auditCheck({ dossier: DOSSIER, audit: audit(), envelope: envelope(), ...over });
 
   it("reads the bounds the digests are recomputed over", () => {
     expect(auditBound(auditReceipt())).toBe(GOLDEN.recordUpTo);
@@ -513,60 +667,51 @@ describe("audit", () => {
   });
 
   it("passes when both the record receipt and the envelope's signed digest recompute", () => {
-    const check = auditCheck({
-      requestId: DOSSIER.requestId,
-      audit: audit(),
-      envelope: envelope(),
-    });
+    const check = run();
     expect(check).toMatchObject({ name: "audit", state: "pass" });
     expect(check?.detail).toContain(`#${GOLDEN.recordUpTo}`);
   });
 
-  it("passes on the record receipt alone, and on the envelope's digest alone", () => {
-    expectState(
-      auditCheck({ requestId: DOSSIER.requestId, audit: audit(), envelope: null }),
-      "pass",
-    );
-    expectState(
-      auditCheck({ requestId: DOSSIER.requestId, audit: null, envelope: envelope() }),
-      "pass",
-    );
+  it("passes on the record receipt alone, and on a verified envelope's digest alone", () => {
+    expectState(run({ envelope: null }), "pass");
+    expectState(run({ audit: null, dossier: { ...DOSSIER, status: "running" } }), "pass");
+  });
+
+  describe("the envelope's digest counts only once the envelope's signature verified (Ruling Y)", () => {
+    it("fails when the envelope check failed: the digest is not proven signed", () => {
+      const c = run({
+        envelope: envelope(envelopeReceipt(), eventsUpTo(GOLDEN.envelopeUpTo), "fail"),
+      });
+      expectState(c, "fail");
+      expect(c?.detail).toContain("not proven signed");
+    });
+
+    it("is unavailable while the envelope's signature could not be checked", () => {
+      const c = run({
+        envelope: envelope(envelopeReceipt(), eventsUpTo(GOLDEN.envelopeUpTo), "unavailable"),
+      });
+      expectState(c, "unavailable");
+    });
+
+    it("a digest that does not recompute fails whatever the envelope check said", () => {
+      const events = edit(eventsUpTo(GOLDEN.envelopeUpTo), [0, "service"], "inkprint");
+      expectState(run({ envelope: envelope(envelopeReceipt(), events, "unavailable") }), "fail");
+    });
   });
 
   it("fails when an event within the bound is gone", () => {
     const events = eventsUpTo(GOLDEN.recordUpTo).filter((e) => e.id !== 5);
-    expectState(
-      auditCheck({
-        requestId: DOSSIER.requestId,
-        audit: audit(auditReceipt(), events),
-        envelope: null,
-      }),
-      "fail",
-    );
+    expectState(run({ audit: audit(auditReceipt(), events), envelope: null }), "fail");
   });
 
   it("fails when an event was rewritten", () => {
     const events = edit(eventsUpTo(GOLDEN.recordUpTo), [1, "action"], "dossier.stage.error");
-    expectState(
-      auditCheck({
-        requestId: DOSSIER.requestId,
-        audit: audit(auditReceipt(), events),
-        envelope: null,
-      }),
-      "fail",
-    );
+    expectState(run({ audit: audit(auditReceipt(), events), envelope: null }), "fail");
   });
 
   it("fails when the envelope's signed digest does not recompute", () => {
     const events = edit(eventsUpTo(GOLDEN.envelopeUpTo), [0, "service"], "inkprint");
-    expectState(
-      auditCheck({
-        requestId: DOSSIER.requestId,
-        audit: audit(),
-        envelope: envelope(envelopeReceipt(), events),
-      }),
-      "fail",
-    );
+    expectState(run({ envelope: envelope(envelopeReceipt(), events) }), "fail");
   });
 
   it.each([
@@ -578,13 +723,26 @@ describe("audit", () => {
     ["a payload that is not an audit receipt", ["payload"], { request_id: DOSSIER.requestId }],
   ] as const)("fails a tampered audit receipt: %s", (_what, path, value) => {
     expectState(
-      auditCheck({
-        requestId: DOSSIER.requestId,
-        audit: audit(edit(auditReceipt(), [...path], value)),
-        envelope: null,
-      }),
+      run({ audit: audit(edit(auditReceipt(), [...path], value)), envelope: null }),
       "fail",
     );
+  });
+
+  it("fails a record receipt over no events at all (Ruling Y)", () => {
+    const empty = edit(
+      edit(edit(auditReceipt(), ["payload", "up_to_event_id"], 0), ["payload", "event_count"], 0),
+      ["hash"],
+      auditDigest([]),
+    );
+    const c = run({ audit: audit(empty, []), envelope: null });
+    expectState(c, "fail");
+    expect(c?.detail).toContain("no events");
+  });
+
+  it("fails a succeeded dossier that holds no audit receipt (Ruling Y)", () => {
+    const c = run({ audit: null });
+    expectState(c, "fail");
+    expect(c?.detail).toContain("no audit receipt");
   });
 
   it("fails an envelope whose signed request id is another's", () => {
@@ -594,13 +752,15 @@ describe("audit", () => {
       "req-other",
     );
     expectState(
-      auditCheck({ requestId: DOSSIER.requestId, audit: null, envelope: envelope(other) }),
+      run({ audit: null, envelope: envelope(other), dossier: { ...DOSSIER, status: "running" } }),
       "fail",
     );
   });
 
-  it("is not a check at all with neither an audit receipt nor an envelope", () => {
-    expect(auditCheck({ requestId: DOSSIER.requestId, audit: null, envelope: null })).toBeNull();
+  it("is not a check at all for an unfinished dossier with neither receipt", () => {
+    expect(
+      run({ audit: null, envelope: null, dossier: { ...DOSSIER, status: "running" } }),
+    ).toBeNull();
   });
 
   it("the golden events are what the digests cover", () => {

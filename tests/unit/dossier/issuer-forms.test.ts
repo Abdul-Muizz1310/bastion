@@ -5,6 +5,7 @@ import { inkprint } from "@/capabilities/inkprint";
 import { paperTrail } from "@/capabilities/paper-trail";
 import {
   envelopeBundleJson,
+  inkprintCanonicalText,
   transcriptRenderJson,
   transcriptSignedJson,
 } from "@/dossier/issuer-forms";
@@ -201,4 +202,71 @@ describe("inkprint's envelope bundle", () => {
       ).toBe(false);
     }
   });
+});
+
+type CanonicalCorpus = {
+  python: string;
+  unidata: string;
+  whitespace: number[];
+  cases: { text: string; canonical: string; sha256: string }[];
+};
+const canonicalCorpus = JSON.parse(read("inkprint/canonicalize.json")) as CanonicalCorpus;
+type CertificateFixture = {
+  items: {
+    text: string;
+    certificate: { manifest: { signature: { value: string } }; fingerprints: { sha256: string } };
+  }[];
+};
+const certificates = JSON.parse(read("inkprint/certificates-golden.json")) as CertificateFixture;
+
+describe("inkprint's certificate canonical text (provenance/canonicalize.py)", () => {
+  it(`matches inkprint's canonicalize() on ${canonicalCorpus.cases.length} texts (CPython ${canonicalCorpus.python}, Unicode ${canonicalCorpus.unidata})`, () => {
+    const wrong = canonicalCorpus.cases.filter(
+      (c) =>
+        inkprintCanonicalText(c.text) !== c.canonical ||
+        sha256Hex(inkprintCanonicalText(c.text)) !== c.sha256,
+    );
+    expect(wrong).toEqual([]);
+  });
+
+  it("collapses exactly the characters Python's \\s matches (not JavaScript's)", () => {
+    const python = new Set(canonicalCorpus.whitespace);
+    const wrong: number[] = [];
+    for (let cp = 0; cp <= 0x10ffff; cp++) {
+      if (cp >= 0xd800 && cp <= 0xdfff) continue;
+      const collapsed = inkprintCanonicalText(`a${String.fromCodePoint(cp)}b`) === "a b";
+      if (collapsed !== python.has(cp)) wrong.push(cp);
+    }
+    expect(wrong).toEqual([]);
+    // The two sets differ: U+001C–U+001F and U+0085 are Python whitespace, U+FEFF is JavaScript's.
+    expect(python.has(0x85) && python.has(0x1c) && !python.has(0xfeff)).toBe(true);
+  });
+
+  it("refuses a lone surrogate: Python could not have encoded it, so nothing was certified", () => {
+    expect(() => inkprintCanonicalText(`a${String.fromCharCode(0xd800)}`)).toThrow(TypeError);
+  });
+
+  it.each(certificates.items.map((item, i) => [i, item] as const))(
+    "certificate %i: inkprint's signature verifies over the canonical text, which hashes to its fingerprint",
+    (_i, item) => {
+      const canonical = inkprintCanonicalText(item.text);
+      expect(canonical).not.toBe(item.text);
+      expect(sha256Hex(canonical)).toBe(item.certificate.fingerprints.sha256);
+      expect(
+        verifyEd25519({
+          publicKeyPem: INK_PEM,
+          message: canonical,
+          signature: item.certificate.manifest.signature.value,
+        }),
+      ).toBe(true);
+      // The raw text is not what was signed.
+      expect(
+        verifyEd25519({
+          publicKeyPem: INK_PEM,
+          message: item.text,
+          signature: item.certificate.manifest.signature.value,
+        }),
+      ).toBe(false);
+    },
+  );
 });

@@ -5,7 +5,7 @@ import { inkthread } from "@/capabilities/inkthread";
 import { paperTrail } from "@/capabilities/paper-trail";
 import { auditDigest, type PerfReceipt, perfReceiptHash } from "@/dossier/receipt-math";
 import type { StoredReceipt } from "@/dossier/receipts";
-import type { DossierDocument } from "@/lib/db/schema";
+import type { Dossier, DossierDocument, EvidenceItem } from "@/lib/db/schema";
 import type { RequestEvent } from "@/platform/audit/request-events";
 import { canonicalJson, type Json } from "@/platform/canonical-json";
 import type { GatewayResult, RawBody } from "@/platform/gateway/result";
@@ -14,8 +14,9 @@ import { sha256Hex } from "@/platform/sha256";
 /**
  * A fully consistent, really signed dossier for the verify tests (spec 21 §6.5): the stored
  * receipts bastion's stages would have written for `tests/fixtures/receipts/golden-dossier.json`,
- * with transcript-a signed by paper-trail's own code and the envelope signed by inkprint's own
- * code (`tests/fixtures/receipts/generate/`), and the live answers each issuer would give now.
+ * with transcript-a signed by paper-trail's own code and the certificates and the envelope signed
+ * by inkprint's own code (`tests/fixtures/receipts/generate/`), the dossier and evidence rows the
+ * page shows, and the live answers each issuer would give now.
  */
 
 const dir = resolve(__dirname, "../../fixtures");
@@ -33,7 +34,6 @@ type Golden = {
 };
 
 export const GOLDEN = json("receipts/golden-dossier.json") as Golden;
-export const DOSSIER = GOLDEN.dossier;
 const AT = new Date("2026-10-20T09:10:00Z");
 
 export const EVENTS: RequestEvent[] = GOLDEN.events.map((e) => ({
@@ -55,6 +55,53 @@ export const ENVELOPE_REQUEST = envelopeFixture.request as { [key: string]: Json
 export const INKPRINT_PEM = readFileSync(resolve(dir, "receipts/inkprint/public-key.pem"));
 export const GRAPH = inkthread.graph.output.parse(json("downstream/inkthread/graph.json"));
 
+type CertificateFixture = {
+  items: {
+    text: string;
+    certificate: { manifest: { signature: { value: string } }; fingerprints: { sha256: string } };
+  }[];
+};
+/** inkprint's own certificates over the golden texts: fingerprint and signature per text. */
+const CERTIFIED = (json("receipts/inkprint/certificates-golden.json") as CertificateFixture).items;
+
+/** The dossier row as the page shows it: the verdict and confidence of transcript-a. */
+export const DOSSIER: Dossier = {
+  id: GOLDEN.dossier.id,
+  userId: null,
+  visitor: "v_kk6eooepno",
+  claim: TRANSCRIPT.claim,
+  sources: ["uspto"],
+  mode: "rapid",
+  status: "succeeded",
+  verdict: TRANSCRIPT.verdict,
+  confidence: TRANSCRIPT.confidence.toFixed(2),
+  requestId: GOLDEN.dossier.requestId,
+  envelopeId: GOLDEN.dossier.id,
+  error: null,
+  createdAt: AT,
+  updatedAt: AT,
+};
+
+/** The evidence rows the page shows: one per certificate, its excerpt the text's first 400 chars. */
+export function evidenceRows(): EvidenceItem[] {
+  return GOLDEN.certificates.map((c, i) => ({
+    id: `e0000000-0000-4000-8000-00000000000${i + 1}`,
+    dossierId: DOSSIER.id,
+    source: "magpie",
+    stableId: c.key,
+    url: `https://example.org/${c.key}`,
+    title: c.key,
+    certificateId: c.id,
+    contentHash: `m${i}`,
+    kind: "web",
+    product: "magpie",
+    locator: { kind: "url", url: `https://example.org/${c.key}` },
+    excerpt: c.text.slice(0, 400),
+    inkprintHash: CERTIFIED[i]?.certificate.fingerprints.sha256 ?? null,
+    createdAt: AT,
+  }));
+}
+
 /** A receipt row; `n` makes its id, so the same receipt always has the same id. */
 function receipt(
   n: number,
@@ -72,12 +119,13 @@ function receipt(
 }
 
 export function certificateReceipts(): StoredReceipt[] {
+  // What seal stores: inkprint's sha256 fingerprint and the manifest's signature value.
   return GOLDEN.certificates.map((c, i) =>
     receipt(1 + i, {
       kind: "certificate",
       ref: c.id,
-      hash: sha256Hex(c.text),
-      signature: "csig",
+      hash: CERTIFIED[i]?.certificate.fingerprints.sha256 ?? null,
+      signature: CERTIFIED[i]?.certificate.manifest.signature.value ?? null,
       payload: { text: c.text, key: c.key },
     }),
   );
@@ -183,12 +231,13 @@ export function publicKeyBody(pem: Uint8Array = INKPRINT_PEM): RawBody {
   return { contentType: "text/plain; charset=utf-8", bytes: new Uint8Array(pem) };
 }
 
+/** inkprint's /verify/batch answer when asked by id only (no text): its stored copy is intact. */
 export function verifyAllValid() {
   return {
     results: GOLDEN.certificates.map((c) => ({
       certificate_id: c.id,
       valid: true,
-      checks: { signature: true, hash: true, simhash: true, embedding: true },
+      checks: { signature: true, hash: true },
       reason: null,
     })),
   };

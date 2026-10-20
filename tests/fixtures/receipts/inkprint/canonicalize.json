@@ -1,0 +1,118 @@
+{
+ "python": "3.12.14",
+ "unidata": "15.0.0",
+ "pattern": "\\s+",
+ "whitespace": [
+  9,
+  10,
+  11,
+  12,
+  13,
+  28,
+  29,
+  30,
+  31,
+  32,
+  133,
+  160,
+  5760,
+  8192,
+  8193,
+  8194,
+  8195,
+  8196,
+  8197,
+  8198,
+  8199,
+  8200,
+  8201,
+  8202,
+  8232,
+  8233,
+  8239,
+  8287,
+  12288
+ ],
+ "cases": [
+  {
+   "text": "",
+   "canonical": "",
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "text": "plain",
+   "canonical": "plain",
+   "sha256": "a116c9ed46d6207734a43317d30fd88f52ac8634c37d904bbf4e41d865f90475"
+  },
+  {
+   "text": "  leading and trailing  ",
+   "canonical": "leading and trailing",
+   "sha256": "2f5342d289b88dceed4f7407da698a273299607167eb5cab5d0fdecbcceb988f"
+  },
+  {
+   "text": "a\r\nb\tc\u000bd\fe",
+   "canonical": "a b c d e",
+   "sha256": "52cf9f06f83e0a0a90dc25dcf548c18421244f9520c577672cd27b6618f12134"
+  },
+  {
+   "text": "file\u001cgroup\u001drecord\u001eunit\u001fsep",
+   "canonical": "file group record unit sep",
+   "sha256": "691359ae0af20e0b7ea7482050d9f6c6ec4bb65f460cef312eef2662dc103c0d"
+  },
+  {
+   "text": "next\u0085line",
+   "canonical": "next line",
+   "sha256": "05d73f57af50719467c386925c37cb746341157e95805eb476672defa84d04be"
+  },
+  {
+   "text": "nbsp\u00a0and\u202fnarrow\u3000ideographic",
+   "canonical": "nbsp and narrow ideographic",
+   "sha256": "58b2fa8737ba14269b5b0ff4d92df582438b05fc04522e6f6b68463bd10c7c27"
+  },
+  {
+   "text": "zero\u200bwidth and \ufeffbom are not whitespace",
+   "canonical": "zero\u200bwidth and \ufeffbom are not whitespace",
+   "sha256": "2e931e4ba4583b2146169b87d632eb345970de9f0c9a8d880f04afb05195128e"
+  },
+  {
+   "text": "line\u2028para\u2029end",
+   "canonical": "line para end",
+   "sha256": "1533ed3fa09c0100f0ed73d93fe8ccff375fa76069a0db1bb7832f2ab041c406"
+  },
+  {
+   "text": "Cafe\u0301 vs Caf\u00e9",
+   "canonical": "Caf\u00e9 vs Caf\u00e9",
+   "sha256": "b55326b48a831652e25c5f7a7e22ded725699fb552d250f9ce568119a7b1326a"
+  },
+  {
+   "text": "\u212b angstrom, \u2126 ohm, \u1100\u1161 jamo",
+   "canonical": "\u00c5 angstrom, \u03a9 ohm, \uac00 jamo",
+   "sha256": "95abf0e53a3e7a3db72310adebef867da8ddd29b5600822377d445a496e17ab6"
+  },
+  {
+   "text": "e\u0301\u0323 order",
+   "canonical": "\u1eb9\u0301 order",
+   "sha256": "99bc7f70ea4c34504569c41a56982ffb1b99b63faadfd993a5affa13505ced55"
+  },
+  {
+   "text": "emoji \ud83d\ude80 and \ud83d\ude00",
+   "canonical": "emoji \ud83d\ude80 and \ud83d\ude00",
+   "sha256": "04b767cea863b20069bab74525bc2cd4e5128365aec762ae016dab9867c0e83b"
+  },
+  {
+   "text": "\u00a0\u00a0",
+   "canonical": "",
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "text": "  Small entities pay 40\u00a0percent of the large\u2011entity fee.\n\n",
+   "canonical": "Small entities pay 40 percent of the large\u2011entity fee.",
+   "sha256": "91b1a5258ddd307657f1eb2f71020d9e69c33f7481dd983741e1898ab2b38b28"
+  },
+  {
+   "text": "The basic filing fee\tfor a utility patent is $350 \u2014 Cafe\u0301 rules.",
+   "canonical": "The basic filing fee for a utility patent is $350 \u2014 Caf\u00e9 rules.",
+   "sha256": "24caed2fe792c2478e0e0bf3f804ae958f84e1e9cd979eaba13c84eb4036c007"
+  }
+ ]
+}

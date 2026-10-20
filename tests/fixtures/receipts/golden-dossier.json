@@ -7,12 +7,12 @@
     {
       "id": "3c0a7b2f-5d4e-4f60-8b8c-9d7e6f5a4b3c",
       "key": "p-d0c0-n7",
-      "text": "Small entities pay 40 percent of the large-entity fee."
+      "text": "  Small entities pay 40\u00a0percent of the large\u2011entity fee.\n\n"
     },
     {
       "id": "2b9f6a1e-4c3d-4e5f-9a7b-8c6d5e4f3a2b",
       "key": "w-uspto-0",
-      "text": "The basic filing fee for a utility patent is $350."
+      "text": "The basic filing fee\tfor a utility patent is $350 \u2014 Cafe\u0301 rules."
     }
   ],
   "transcript": "paper-trail/transcript-a.json",
@@ -38,15 +38,44 @@
           }
         ]
       },
-      { "service": "magpie", "queries": [], "error": "404" }
+      {
+        "service": "magpie",
+        "queries": [],
+        "error": "404"
+      }
     ]
   },
   "events": [
-    { "id": 3, "action": "gateway.call", "service": "magpie", "createdAt": "2026-10-20T09:00:00.123Z" },
-    { "id": 5, "action": "dossier.stage.ok", "service": "bastion", "createdAt": "2026-10-20T09:00:01.000Z" },
-    { "id": 8, "action": "gateway.call", "service": "slowquery", "createdAt": "2026-10-20T09:00:02.500Z" },
-    { "id": 11, "action": "gateway.call", "service": "inkprint", "createdAt": "2026-10-20T09:00:03.250Z" },
-    { "id": 12, "action": "dossier.stage.ok", "service": null, "createdAt": "2026-10-20T09:00:04.999Z" }
+    {
+      "id": 3,
+      "action": "gateway.call",
+      "service": "magpie",
+      "createdAt": "2026-10-20T09:00:00.123Z"
+    },
+    {
+      "id": 5,
+      "action": "dossier.stage.ok",
+      "service": "bastion",
+      "createdAt": "2026-10-20T09:00:01.000Z"
+    },
+    {
+      "id": 8,
+      "action": "gateway.call",
+      "service": "slowquery",
+      "createdAt": "2026-10-20T09:00:02.500Z"
+    },
+    {
+      "id": 11,
+      "action": "gateway.call",
+      "service": "inkprint",
+      "createdAt": "2026-10-20T09:00:03.250Z"
+    },
+    {
+      "id": 12,
+      "action": "dossier.stage.ok",
+      "service": null,
+      "createdAt": "2026-10-20T09:00:04.999Z"
+    }
   ],
   "envelopeUpTo": 8,
   "recordUpTo": 12,

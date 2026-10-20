@@ -25,6 +25,11 @@ import { PyFloat, type PyJson, pythonJsonDumps } from "@/platform/python-json";
  * `datetime.isoformat()` as written into the manifest (`+00:00`, microseconds only when non-zero).
  * The response's `created_at` is the same instant as pydantic writes it (`Z`), which is not it.
  * The manifest's `c2pa.hash.data` is the SHA-256 of these bytes.
+ *
+ * inkprint's certificates (contract-v2, `provenance/canonicalize.py`): a certificate's `content_hash`
+ * is the SHA-256, and its signature the Ed25519 signature, of `canonicalize(text)`: NFC, then every
+ * run of Python `\s` (`str.isspace`, which is not JavaScript's `\s`: it adds U+001C–U+001F and
+ * U+0085 and lacks U+FEFF) collapsed to one space, then `strip()`, as UTF-8.
  */
 
 export type TranscriptContent = Pick<Transcript, "claim" | "verdict" | "confidence" | "rounds">;
@@ -93,4 +98,20 @@ export function envelopeBundleJson(b: EnvelopeBundle): string {
     metadata: { ...(b.metadata ?? {}) },
     issued_at: b.issued_at,
   });
+}
+
+/** Python's `\s` in a `str` pattern (`str.isspace`), as CPython 3.12 matches it. */
+const PYTHON_WHITESPACE_RUN =
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: Python's \s includes U+001C–U+001F.
+  /[\t\n\v\f\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/g;
+
+/**
+ * The text inkprint hashes and signs for a certificate (`canonicalize(text)`, decoded). A lone
+ * surrogate is refused (TypeError): Python could not have encoded it, so nothing was certified.
+ */
+export function inkprintCanonicalText(text: string): string {
+  if (!text.isWellFormed()) throw new TypeError("inkprintCanonicalText: a lone surrogate");
+  const collapsed = text.normalize("NFC").replace(PYTHON_WHITESPACE_RUN, " ");
+  // After the collapse the only whitespace left is single spaces, so strip() trims at most one.
+  return collapsed.replace(/^ /, "").replace(/ $/, "");
 }
