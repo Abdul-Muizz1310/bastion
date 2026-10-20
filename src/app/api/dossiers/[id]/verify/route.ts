@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { findDossier, loadSteps } from "@/dossier/store";
 import type { Check } from "@/dossier/verify";
-import { verifyDossier } from "@/dossier/verify-live";
+import { type Verification, verifyDossier } from "@/dossier/verify-live";
 import { SYSTEM_ACTOR } from "@/platform/audit/event";
 import { appendEvent } from "@/platform/audit/write";
 import type { CallContext } from "@/platform/gateway/call";
@@ -23,8 +23,9 @@ import { clientAddress, visitorFromRequest } from "@/platform/visitor";
  * address is still forwarded. The result is not stored: one `dossier.verified` audit event, as the
  * visitor, records who verified and each check's state.
  *
- * Ruling Z: a dossier with no `dossier_steps` rows predates the v2 runner and its receipts, so no
- * implied-receipt rule applies to it: it answers `legacy: true` with no checks and says so.
+ * Amended Ruling Z: a dossier with no step rows, no receipts and no visitor predates the v2
+ * runner and its receipts, so no rule applies to it: it answers `legacy: true` with no checks and
+ * says so. Deleting a v2 dossier's step rows does not make it legacy (the `steps` check fails).
  */
 
 export const dynamic = "force-dynamic";
@@ -57,15 +58,13 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
   const dossier = await findDossier(id);
   if (dossier === null) return errorResponse(404, { error: "unknown_dossier", requestId });
 
-  let legacy: boolean;
-  let checks: Check[];
+  let answer: Verification;
   try {
-    const steps = await loadSteps(dossier.id);
-    legacy = steps.length === 0;
     // The whole row (the checks bind what the page shows to what they verify) and the step rows
-    // (a failed dossier is judged by its envelope step, Ruling AB).
+    // (a failed dossier is judged by its envelope step, Ruling AB; legacy needs none, Ruling Z).
+    const steps = await loadSteps(dossier.id);
     const call: CallContext = { actor: SYSTEM_ACTOR, requestId, clientIp: clientAddress(req) };
-    checks = legacy ? [] : await verifyDossier(dossier, call, steps);
+    answer = await verifyDossier(dossier, call, steps);
   } catch (err) {
     console.error("verify failed", { dossierId: dossier.id, requestId, err });
     return errorResponse(500, { error: "verify_failed", requestId });
@@ -78,12 +77,12 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
     entityId: dossier.id,
     service: "bastion",
     requestId,
-    metadata: legacy ? { legacy: true, checks: {} } : { checks: states(checks) },
+    metadata: answer.legacy ? { legacy: true, checks: {} } : { checks: states(answer.checks) },
   });
   return Response.json(
-    legacy
+    answer.legacy
       ? { dossierId: dossier.id, legacy: true, note: LEGACY_NOTE, checks: [] }
-      : { dossierId: dossier.id, legacy: false, checks },
+      : { dossierId: dossier.id, legacy: false, checks: answer.checks },
     { headers: { "cache-control": "no-store", "x-request-id": requestId } },
   );
 }

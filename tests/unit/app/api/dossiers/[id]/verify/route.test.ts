@@ -64,7 +64,7 @@ beforeEach(() => {
   m.check.mockReset().mockResolvedValue({ success: true, limit: 10, remaining: 9 });
   m.findDossier.mockReset().mockResolvedValue(ROW);
   m.loadSteps.mockReset().mockResolvedValue(STEPS);
-  m.verifyDossier.mockReset().mockResolvedValue(CHECKS);
+  m.verifyDossier.mockReset().mockResolvedValue({ legacy: false, checks: CHECKS });
   m.appendEvent.mockReset().mockResolvedValue(1);
 });
 
@@ -129,9 +129,11 @@ describe("POST /api/dossiers/[id]/verify", () => {
     expect(m.verifyDossier).not.toHaveBeenCalled();
   });
 
-  describe("a dossier from before verifiable receipts (no dossier_steps rows; Ruling Z)", () => {
-    it("answers legacy with no checks and an honest note, without running any rule", async () => {
+  describe("a dossier from before verifiable receipts (amended Ruling Z)", () => {
+    // The verifier decides (no step rows, no receipts, no visitor); the route answers honestly.
+    it("answers legacy with no checks and an honest note", async () => {
       m.loadSteps.mockResolvedValue([]);
+      m.verifyDossier.mockResolvedValue({ legacy: true });
       const res = await post();
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({
@@ -141,11 +143,18 @@ describe("POST /api/dossiers/[id]/verify", () => {
         checks: [],
       });
       expect(m.loadSteps).toHaveBeenCalledWith(ID);
-      expect(m.verifyDossier).not.toHaveBeenCalled();
+      expect(m.verifyDossier.mock.calls[0]?.[2]).toEqual([]);
+    });
+
+    it("no step rows alone is not legacy: the verifier's checks are answered", async () => {
+      m.loadSteps.mockResolvedValue([]);
+      const res = await post();
+      expect(await res.json()).toEqual({ dossierId: ID, legacy: false, checks: CHECKS });
     });
 
     it("still records the verification, as legacy", async () => {
       m.loadSteps.mockResolvedValue([]);
+      m.verifyDossier.mockResolvedValue({ legacy: true });
       await post();
       expect(m.appendEvent).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({

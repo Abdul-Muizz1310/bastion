@@ -192,9 +192,15 @@ and each evidence row's certificate and excerpt. A receipt the dossier row impli
 
 A check with nothing to verify and nothing implied is omitted.
 
-A dossier with no `dossier_steps` rows predates the v2 runner and its receipts (Ruling Z). It answers
+The row's `status` is parsed at the boundary, because the column is plain text. A status outside
+`pending · running · succeeded · failed` is `unknown`. With an unknown status, every rule that asks
+whether a receipt is owed fails with "unknown dossier status".
+
+A dossier predates the v2 runner and its receipts only if it has no `dossier_steps` rows, no receipts
+**and** no visitor (amended Ruling Z). That is a v1 row, which belongs to a user. It answers
 `200 {dossierId, legacy: true, note: "this dossier predates verifiable receipts", checks: []}` and runs
-no rule; every other dossier answers `legacy: false`.
+no rule. Every other dossier answers `legacy: false` with every check, including `steps`. So deleting a v2
+dossier's step rows cannot pass it off as legacy: `steps` fails with "receipts but no step rows".
 
 | Check | What it does |
 |---|---|
@@ -204,6 +210,7 @@ no rule; every other dossier answers `legacy: false`.
 | perf | The stored payload must parse strictly and recompute to its hash. A succeeded dossier must hold one. |
 | audit | The record receipt's digest over events ≤ `up_to_event_id` (at least one event; with its count) must recompute, and a succeeded dossier must hold one. The envelope's digest over events ≤ `metadata.audit_up_to` must recompute too, but it counts as signed only once the envelope check passed: if that check failed, this part fails; if it was unavailable, this part is unavailable. Later events never count. |
 | documents | Re-fetch each read document's graph; `graph_hash` and `sha256` must be unchanged. An upload answering 404/410 is `expired`. A sample answering 404 fails. |
+| steps | The runner's rows are present: exactly one per stage (8). No rows, a missing stage or a doubled stage fails. |
 
 **What the issuers sign.** Both issuers sign the UTF-8 bytes of Python
 `json.dumps(v, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`. This is not JCS: floats are

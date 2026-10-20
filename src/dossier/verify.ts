@@ -23,7 +23,7 @@ import {
   perfReceiptHash,
 } from "./receipt-math";
 import type { StoredReceipt } from "./receipts";
-import type { StepStatus } from "./stages";
+import { STAGES, type StepRow, type StepStatus } from "./stages";
 
 /**
  * "Verify everything" (spec 21 §6.5), the pure core: each check takes what bastion stored and what
@@ -48,8 +48,80 @@ import type { StepStatus } from "./stages";
 /** The dossier row's fields the checks bind: what the page shows, and what it implies. */
 export type DossierFacts = Pick<
   Dossier,
-  "id" | "requestId" | "claim" | "verdict" | "confidence" | "status" | "envelopeId"
->;
+  "id" | "requestId" | "claim" | "verdict" | "confidence" | "envelopeId"
+> & {
+  /** Parsed at the boundary: a status outside the enum is `unknown` (the column is plain text). */
+  status: FactsStatus;
+};
+
+const DOSSIER_STATUS = z.enum(["pending", "running", "succeeded", "failed"]);
+export type FactsStatus = z.infer<typeof DOSSIER_STATUS> | "unknown";
+
+/** The dossier row as the checks read it, its status parsed rather than trusted. */
+export function dossierFacts(
+  row: Pick<
+    Dossier,
+    "id" | "requestId" | "claim" | "verdict" | "confidence" | "status" | "envelopeId"
+  >,
+): DossierFacts {
+  const status = DOSSIER_STATUS.safeParse(row.status);
+  return {
+    id: row.id,
+    requestId: row.requestId,
+    claim: row.claim,
+    verdict: row.verdict,
+    confidence: row.confidence,
+    envelopeId: row.envelopeId,
+    status: status.success ? status.data : "unknown",
+  };
+}
+
+/**
+ * Whether the dossier's status means it must hold a receipt it lacks (Rulings Y and AA): a
+ * succeeded dossier ran every stage; an unknown status cannot vouch for anything, so it fails.
+ */
+function owed(status: FactsStatus, what: string): Verdict | null {
+  switch (status) {
+    case "succeeded":
+      return FAIL(`the dossier succeeded but holds no ${what}`);
+    case "unknown":
+      return FAIL(`unknown dossier status: cannot tell whether a ${what} is owed`);
+    case "pending":
+    case "running":
+    case "failed":
+      return null;
+  }
+}
+
+/** The dossier's step rows as the route read them. */
+export type DossierSteps = readonly Pick<StepRow, "stage" | "status">[];
+
+/**
+ * Amended Ruling Z: a dossier predates verifiable receipts only if it has no step rows, no
+ * receipts and no visitor (v1 rows belong to a user). Deleting a v2 dossier's steps cannot make
+ * it legacy: it still has receipts or a visitor, and the steps check fails it.
+ */
+export function isLegacy(i: {
+  steps: DossierSteps;
+  receipts: readonly StoredReceipt[];
+  visitor: string | null;
+}): boolean {
+  return i.steps.length === 0 && i.receipts.length === 0 && i.visitor === null;
+}
+
+/** The runner's rows: a v2 dossier has exactly one per stage. */
+export function stepsCheck(steps: DossierSteps, receipts: readonly StoredReceipt[]): Check {
+  const done = (v: Verdict): Check => ({ name: "steps", ...v });
+  if (steps.length === 0) {
+    return done(
+      FAIL(receipts.length > 0 ? "receipts but no step rows" : "a v2 dossier with no step rows"),
+    );
+  }
+  const missing = STAGES.filter((stage) => !steps.some((s) => s.stage === stage));
+  if (missing.length > 0) return done(FAIL(`step rows missing for ${missing.join(", ")}`));
+  if (steps.length !== STAGES.length) return done(FAIL("a stage has more than one step row"));
+  return done(PASS(`the runner's ${STAGES.length} step rows are all present`));
+}
 
 export const CHECK_NAMES = [
   "certificates",
@@ -58,6 +130,7 @@ export const CHECK_NAMES = [
   "perf",
   "audit",
   "documents",
+  "steps",
 ] as const;
 export type CheckName = (typeof CHECK_NAMES)[number];
 export type CheckState = "pass" | "fail" | "unavailable" | "expired";
@@ -418,9 +491,8 @@ export function transcriptCheck(i: TranscriptInputs): Check | null {
       };
     }
     // Ruling AA: a succeeded dossier debated, so it must hold the debate's transcript.
-    return i.dossier.status === "succeeded"
-      ? { name: "transcript", ...FAIL("the dossier succeeded but holds no transcript receipt") }
-      : null;
+    const missing = owed(i.dossier.status, "transcript receipt");
+    return missing === null ? null : { name: "transcript", ...missing };
   }
   const shown = shownDebate(i);
   const checked = i.items.map((x) =>
@@ -497,6 +569,8 @@ function missingEnvelope(i: EnvelopeInputs): Verdict | null {
         : { state: "unavailable", detail: "the dossier failed before sealing" };
     case "succeeded":
       return missing;
+    case "unknown":
+      return FAIL("unknown dossier status: certified evidence, but no envelope receipt binds it");
   }
 }
 
@@ -632,9 +706,8 @@ const perfPayload = z.strictObject({
 export function perfCheck(dossier: DossierFacts, r: StoredReceipt | null): Check | null {
   const done = (v: Verdict): Check => ({ name: "perf", ...v });
   if (r === null) {
-    return dossier.status === "succeeded"
-      ? done(FAIL("the dossier succeeded but holds no perf receipt"))
-      : null;
+    const missing = owed(dossier.status, "perf receipt");
+    return missing === null ? null : done(missing);
   }
   const parsed = perfPayload.safeParse(r.payload);
   if (!parsed.success)
@@ -755,9 +828,9 @@ function envelopeDigest(
 export function auditCheck(i: AuditInputs): Check | null {
   const { requestId, status } = i.dossier;
   const verdicts: Verdict[] = [];
+  const missing = owed(status, "audit receipt");
   if (i.audit !== null) verdicts.push(recordDigest(requestId, i.audit));
-  else if (status === "succeeded")
-    verdicts.push(FAIL("the dossier succeeded but holds no audit receipt"));
+  else if (missing !== null) verdicts.push(missing);
   if (i.envelope !== null) verdicts.push(envelopeDigest(requestId, i.envelope));
   if (verdicts.length === 0) return null;
   const state = worst(verdicts.map((v) => v.state));

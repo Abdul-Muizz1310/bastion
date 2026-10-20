@@ -24,11 +24,13 @@ vi.mock("@/platform/audit/request-events", () => ({ requestEvents: m.requestEven
 import { inkprint } from "@/capabilities/inkprint";
 import { inkthread } from "@/capabilities/inkthread";
 import { paperTrail } from "@/capabilities/paper-trail";
+import { STAGES } from "@/dossier/stages";
 import { verifyDossier } from "@/dossier/verify-live";
 import type { CallContext } from "@/platform/gateway/call";
 import { allReceipts, DOSSIER, documents, evidenceRows, GOLDEN, TRANSCRIPT } from "./verify-golden";
 
 const CTX = { actor: "bastion", requestId: "req-verify-2" } as CallContext;
+const STEPS = STAGES.map((stage) => ({ stage, status: "ok" as const }));
 
 beforeEach(() => {
   m.callCapability
@@ -42,7 +44,7 @@ beforeEach(() => {
 
 describe("verifyDossier (wired)", () => {
   it("reads the dossier's receipts, documents and events through the adapters", async () => {
-    await verifyDossier(DOSSIER, CTX, []);
+    await verifyDossier(DOSSIER, CTX, STEPS);
     expect(m.listReceipts).toHaveBeenCalledWith(DOSSIER.id);
     expect(m.listEvidence).toHaveBeenCalledWith(DOSSIER.id);
     expect(m.listDocuments).toHaveBeenCalledWith(DOSSIER.id);
@@ -50,7 +52,7 @@ describe("verifyDossier (wired)", () => {
   });
 
   it("asks each issuer through the gateway with its free capability and the caller's context", async () => {
-    await verifyDossier(DOSSIER, CTX, []);
+    await verifyDossier(DOSSIER, CTX, STEPS);
     const calls = m.callCapability.mock.calls.map(([cap, input, ctx]) => [cap.id, input, ctx]);
     expect(calls).toEqual(
       expect.arrayContaining([
@@ -70,7 +72,9 @@ describe("verifyDossier (wired)", () => {
   });
 
   it("with every issuer asleep, nothing that needs one passes", async () => {
-    const checks = await verifyDossier(DOSSIER, CTX, []);
+    const answer = await verifyDossier(DOSSIER, CTX, STEPS);
+    if (answer.legacy) throw new Error("not legacy");
+    const checks = answer.checks;
     const live = checks.filter((c) =>
       ["certificates", "transcript", "envelope", "documents"].includes(c.name),
     );

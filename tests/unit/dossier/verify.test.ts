@@ -14,13 +14,18 @@ import {
   envelopeAuditBound,
   envelopeCheck,
   certificateIds,
+  dossierFacts,
+  isLegacy,
   perfCheck,
+  stepsCheck,
   transcriptCheck,
 } from "@/dossier/verify";
+import { STAGES } from "@/dossier/stages";
 import { canonicalJson, type Json } from "@/platform/canonical-json";
 import type { GatewayResult } from "@/platform/gateway/result";
 import { sha256Hex } from "@/platform/sha256";
 import {
+  allReceipts,
   auditReceipt,
   certificateReceipts,
   DOSSIER,
@@ -920,6 +925,84 @@ describe("audit", () => {
 
   it("the golden events are what the digests cover", () => {
     expect(EVENTS.map((e) => e.id)).toEqual([3, 5, 8, 11, 12]);
+  });
+});
+
+describe("the dossier row at the boundary", () => {
+  it("keeps a known status and reads anything else as unknown", () => {
+    for (const status of ["pending", "running", "succeeded", "failed"] as const) {
+      expect(dossierFacts({ ...DOSSIER, status }).status).toBe(status);
+    }
+    expect(dossierFacts({ ...DOSSIER, status: "archived" as never }).status).toBe("unknown");
+    expect(dossierFacts(DOSSIER)).toMatchObject({ id: DOSSIER.id, requestId: DOSSIER.requestId });
+  });
+
+  describe("an unknown status fails every implied-receipt rule", () => {
+    const unknown = { ...DOSSIER, status: "unknown" as const, verdict: null, confidence: null };
+
+    it("perf, audit and transcript receipts it cannot tell are owed", () => {
+      for (const c of [
+        perfCheck(unknown, null),
+        auditCheck({ dossier: unknown, audit: null, envelope: null }),
+        transcriptCheck({ dossier: unknown, envelope: null, items: [], key: null }),
+      ]) {
+        expectState(c, "fail");
+        expect(c?.detail).toContain("unknown dossier status");
+      }
+    });
+
+    it("an envelope its certified evidence implies", () => {
+      const c = envelopeCheck({
+        dossier: { ...unknown, envelopeId: null },
+        envelope: null,
+        certificates: certificateReceipts(),
+        transcripts: [],
+        perf: null,
+        documents: [],
+        evidence: evidenceRows(),
+        envelopeStep: "ok",
+        key: null,
+      });
+      expectState(c, "fail");
+      expect(c?.detail).toContain("unknown dossier status");
+    });
+  });
+});
+
+describe("steps", () => {
+  const allSteps = () => STAGES.map((stage) => ({ stage, status: "ok" as const }));
+
+  it("passes when the runner's eight step rows are all there", () => {
+    const c = stepsCheck(allSteps(), allReceipts());
+    expect(c).toMatchObject({ name: "steps", state: "pass" });
+  });
+
+  it("fails a dossier with receipts but no step rows (a DELETE cannot pass it off as legacy)", () => {
+    const c = stepsCheck([], allReceipts());
+    expectState(c, "fail");
+    expect(c.detail).toBe("receipts but no step rows");
+  });
+
+  it("fails a v2 dossier (it has a visitor) with no step rows and no receipts", () => {
+    expectState(stepsCheck([], []), "fail");
+  });
+
+  it("fails a missing or doubled stage row", () => {
+    const missing = allSteps().filter((s) => s.stage !== "envelope");
+    const c = stepsCheck(missing, allReceipts());
+    expectState(c, "fail");
+    expect(c.detail).toContain("envelope");
+    expectState(
+      stepsCheck([...allSteps(), { stage: "seal", status: "ok" }], allReceipts()),
+      "fail",
+    );
+  });
+
+  it("is legacy only with no step rows, no receipts and no visitor (amended Ruling Z)", () => {
+    expect(isLegacy({ steps: [], receipts: [], visitor: null })).toBe(true);
+    expect(isLegacy({ steps: [], receipts: allReceipts(), visitor: null })).toBe(false);
+    expect(isLegacy({ steps: [], receipts: [], visitor: "v_kk6eooepno" })).toBe(false);
+    expect(isLegacy({ steps: allSteps(), receipts: [], visitor: null })).toBe(false);
   });
 });
 

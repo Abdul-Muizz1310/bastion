@@ -304,6 +304,7 @@ const ALL_PASS = {
   perf: "pass",
   audit: "pass",
   documents: "pass",
+  steps: "pass",
 };
 
 beforeAll(() => {
@@ -459,7 +460,24 @@ describe.skipIf(!LOCAL)("verify everything, composed, against Postgres", () => {
     expect(states(checks).documents).toBe("unavailable");
   });
 
-  it("a dossier from before verifiable receipts (no step rows) answers legacy (Ruling Z)", async () => {
+  it("deleting a v2 dossier's step rows does not make it legacy: steps fails (amended Ruling Z)", async () => {
+    await getDb().delete(dossierSteps).where(eq(dossierSteps.dossierId, id));
+    try {
+      const { res, checks } = await verify();
+      const body = (await res.json()) as { legacy: boolean };
+      expect(body.legacy).toBe(false);
+      expect(states(checks)).toMatchObject({
+        steps: "fail",
+        certificates: "pass",
+        envelope: "pass",
+      });
+      expect(checks.find((c) => c.name === "steps")?.detail).toBe("receipts but no step rows");
+    } finally {
+      await getDb().insert(dossierSteps).values(initialSteps(id, new Date()));
+    }
+  });
+
+  it("a v1 dossier (no step rows, no receipts, no visitor) answers legacy (amended Ruling Z)", async () => {
     const legacyId = randomUUID();
     await getDb()
       .insert(dossiers)

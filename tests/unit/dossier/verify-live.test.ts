@@ -80,10 +80,19 @@ function fakes(
     ...deps,
   } satisfies VerifyDeps;
   const verifier = dossierVerifier(all);
+  type Row = Parameters<typeof verifier>[0];
+  /** The raw answer: legacy, or the checks. */
+  const run = (dossier: Row, ctx: CallContext, steps: Steps = ALL_OK) =>
+    verifier(dossier, ctx, steps);
   return {
     deps: all,
-    verify: (dossier: Parameters<typeof verifier>[0], ctx: CallContext, steps: Steps = ALL_OK) =>
-      verifier(dossier, ctx, steps),
+    run,
+    /** The checks of a dossier that is not legacy. */
+    verify: async (dossier: Row, ctx: CallContext, steps: Steps = ALL_OK) => {
+      const answer = await run(dossier, ctx, steps);
+      if (answer.legacy) throw new Error("unexpectedly legacy");
+      return answer.checks;
+    },
   };
 }
 
@@ -127,7 +136,10 @@ describe("verifyDossier", () => {
 
   it("asks nobody for a dossier with no receipts and no documents", async () => {
     const { verify, deps } = fakes({ stored: [], rows: [], docs: [] });
-    expect(await verify(UNFINISHED, CTX)).toEqual([]);
+    // Only the runner's own rows are left to check.
+    expect((await verify(UNFINISHED, CTX)).map((c) => [c.name, c.state])).toEqual([
+      ["steps", "pass"],
+    ]);
     for (const call of [
       deps.verifyBatch,
       deps.transcript,
@@ -149,6 +161,7 @@ describe("verifyDossier", () => {
       // Ruling AA: certified evidence implies an envelope; a running dossier has none yet.
       ["envelope", "unavailable"],
       ["perf", "pass"],
+      ["steps", "pass"],
     ]);
     expect(deps.receiptKey).not.toHaveBeenCalled();
     // inkprint's key is fetched for the certificates even without an envelope.
@@ -169,6 +182,7 @@ describe("verifyDossier", () => {
       perf: "pass",
       audit: "pass",
       documents: "unavailable",
+      steps: "pass",
     });
   });
 
@@ -266,6 +280,57 @@ describe("verifyDossier", () => {
     const { verify, deps } = fakes({ docs });
     await verify(DOSSIER, CTX);
     expect(deps.graph).toHaveBeenCalledTimes(1);
+  });
+
+  describe("legacy dossiers (amended Ruling Z)", () => {
+    const v1 = {
+      ...UNFINISHED,
+      status: "succeeded" as const,
+      visitor: null,
+      verdict: "TRUE" as const,
+    };
+
+    it("a row with no step rows, no receipts and no visitor is legacy: no issuer is asked", async () => {
+      const { run, deps } = fakes({ stored: [], rows: [], docs: [] });
+      expect(await run(v1, CTX, [])).toEqual({ legacy: true });
+      for (const call of [
+        deps.verifyBatch,
+        deps.transcript,
+        deps.publicKey,
+        deps.graph,
+        deps.events,
+      ]) {
+        expect(call).not.toHaveBeenCalled();
+      }
+    });
+
+    it("a v2 dossier whose step rows were deleted is not legacy: every check runs, steps fails", async () => {
+      const { run } = fakes();
+      const answer = await run(DOSSIER, CTX, []);
+      if (answer.legacy) throw new Error("must not be legacy");
+      const states = Object.fromEntries(answer.checks.map((c) => [c.name, c.state]));
+      expect(states).toMatchObject({ certificates: "pass", transcript: "pass", steps: "fail" });
+      expect(answer.checks.find((c) => c.name === "steps")?.detail).toBe(
+        "receipts but no step rows",
+      );
+    });
+
+    it("a row with a visitor but no step rows and no receipts is not legacy either", async () => {
+      const { run } = fakes({ stored: [], rows: [], docs: [] });
+      const answer = await run({ ...v1, visitor: "v_kk6eooepno" }, CTX, []);
+      expect(answer.legacy).toBe(false);
+    });
+  });
+
+  it("parses the row's status: an unknown one fails the receipts it cannot tell are owed", async () => {
+    const { verify } = fakes({ stored: [], rows: [], docs: [] });
+    const row = { ...UNFINISHED, status: "archived" as never };
+    const checks = await verify(row, CTX);
+    const failed = checks.filter((c) => c.state === "fail").map((c) => c.name);
+    expect(failed).toEqual(["transcript", "perf", "audit"]);
+    for (const c of checks.filter((x) => x.state === "fail")) {
+      expect(c.detail).toContain("unknown dossier status");
+    }
   });
 
   it("lets bastion's own failures (the database) propagate", async () => {

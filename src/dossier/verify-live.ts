@@ -1,25 +1,27 @@
 import { inkprint, type VerifyBatchResult } from "@/capabilities/inkprint";
 import { type Graph, inkthread } from "@/capabilities/inkthread";
 import { paperTrail, type ReceiptKey, type Transcript } from "@/capabilities/paper-trail";
-import type { DossierDocument, EvidenceItem } from "@/lib/db/schema";
+import type { Dossier, DossierDocument, EvidenceItem } from "@/lib/db/schema";
 import { type RequestEvent, requestEvents } from "@/platform/audit/request-events";
 import { type CallContext, callCapability } from "@/platform/gateway/call";
 import type { GatewayResult, RawBody } from "@/platform/gateway/result";
 import { listDocuments } from "./documents";
 import { listEvidence } from "./evidence";
 import { listReceipts, type StoredReceipt } from "./receipts";
-import type { StepRow } from "./stages";
 import {
   auditBound,
   auditCheck,
   type Check,
   certificateIds,
   certificatesCheck,
-  type DossierFacts,
+  type DossierSteps,
   documentsCheck,
+  dossierFacts,
   envelopeAuditBound,
   envelopeCheck,
+  isLegacy,
   perfCheck,
+  stepsCheck,
   transcriptCheck,
 } from "./verify";
 
@@ -52,16 +54,30 @@ export type VerifyDeps = {
   graph: (ctx: CallContext, documentId: string) => Promise<GatewayResult<Graph>>;
 };
 
-/** The dossier's step rows as the caller read them: a failed dossier is judged by them. */
-export type DossierSteps = readonly Pick<StepRow, "stage" | "status">[];
+export type { DossierSteps };
+
+/** The dossier row as the route read it; its status is parsed here, at the core's boundary. */
+export type VerifiableDossier = Pick<
+  Dossier,
+  "id" | "requestId" | "claim" | "verdict" | "confidence" | "status" | "envelopeId" | "visitor"
+>;
+
+/** A legacy dossier (amended Ruling Z) has nothing to verify; any other gets every check. */
+export type Verification = { legacy: true } | { legacy: false; checks: Check[] };
 
 export function dossierVerifier(deps: VerifyDeps) {
-  return async (dossier: DossierFacts, ctx: CallContext, steps: DossierSteps): Promise<Check[]> => {
+  return async (
+    row: VerifiableDossier,
+    ctx: CallContext,
+    steps: DossierSteps,
+  ): Promise<Verification> => {
+    const dossier = dossierFacts(row);
     const [stored, evidence, docs] = await Promise.all([
       deps.receipts(dossier.id),
       deps.evidence(dossier.id),
       deps.documents(dossier.id),
     ]);
+    if (isLegacy({ steps, receipts: stored, visitor: row.visitor })) return { legacy: true };
     const of = (kind: StoredReceipt["kind"]) => stored.filter((r) => r.kind === kind);
     const certificates = of("certificate");
     const transcripts = of("transcript");
@@ -128,8 +144,9 @@ export function dossierVerifier(deps: VerifyDeps) {
             : { ...envelopeCovered, signature: envelopeChecked?.state ?? "unavailable" },
       }),
       documentsCheck(docs, new Map(graphs)),
+      stepsCheck(steps, stored),
     ];
-    return checks.filter((c): c is Check => c !== null);
+    return { legacy: false, checks: checks.filter((c): c is Check => c !== null) };
   };
 }
 
