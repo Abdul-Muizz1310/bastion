@@ -347,6 +347,27 @@ describe("applyOutcome", () => {
     expect(nextRunnable(steps({ wake: { status: "ok" }, gather: failed }), at(60_000))).toBeNull();
   });
 
+  it("lets an error replace the stored output (Ruling T: a failed debate's id is cleared)", () => {
+    const failed = applyOutcome(
+      running({ output: { debateId: "d1", failedDebateIds: [] } }),
+      { kind: "error", error: "debate_failed: d1", retryable: false, output: { failedDebateIds: ["d1"] } },
+      NOW,
+    );
+    expect(failed).toMatchObject({ status: "error", output: { failedDebateIds: ["d1"] } });
+    const set = steps({ wake: { status: "ok" }, gather: failed });
+    const retried = retryStep(set, "gather", NOW);
+    expect(retried.ok && retried.row.output).toEqual({ failedDebateIds: ["d1"] });
+  });
+
+  it("lets a retryable error replace the stored output too", () => {
+    const retry = applyOutcome(
+      running({ output: { a: 1 } }),
+      { kind: "error", error: "e", retryable: true, output: { b: 2 } },
+      NOW,
+    );
+    expect(retry).toMatchObject({ status: "pending", output: { b: 2 } });
+  });
+
   it("caps a stored error at 1000 characters", () => {
     const failed = applyOutcome(
       running(),

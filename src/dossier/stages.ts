@@ -71,7 +71,11 @@ export type StageOutcome =
   | { kind: "ok"; output: Json }
   | { kind: "skipped"; reason: string }
   | { kind: "waiting"; output: Json; retryInMs: number }
-  | { kind: "error"; error: string; retryable: boolean };
+  /**
+   * An error keeps the stage's stored output (a stored job or debate id survives a retry) unless it
+   * carries its own `output`, which replaces it (Ruling T: a failed debate's id is cleared).
+   */
+  | { kind: "error"; error: string; retryable: boolean; output?: Json };
 
 export type StageContext = {
   dossier: DossierRow;
@@ -239,16 +243,18 @@ export function applyOutcome(row: StepRow, outcome: StageOutcome, now: Date): St
       };
     case "error": {
       const error = outcome.error.slice(0, ERROR_MAX_CHARS);
+      const output = outcome.output === undefined ? row.output : outcome.output;
       if (outcome.retryable && row.attempt < MAX_ATTEMPTS) {
         return {
           ...released,
+          output,
           status: "pending",
           notBefore: new Date(now.getTime() + RETRY_DELAY_MS * row.attempt),
           finishedAt: null,
           error,
         };
       }
-      return { ...released, status: "error", finishedAt: now, error };
+      return { ...released, output, status: "error", finishedAt: now, error };
     }
     default:
       return assertNever(outcome, "stage outcome");

@@ -25,6 +25,7 @@ const record = (key: string): SealedRecord => ({
   candidate: candidate(key),
   certificateId: randomUUID(),
   contentHash: "a".repeat(64),
+  inkprintHash: "c".repeat(64),
   signature: "sig",
   text: candidate(key).text,
 });
@@ -54,8 +55,8 @@ describe.skipIf(!LOCAL)("sealed evidence against Postgres", () => {
     expect(rows.map((r) => r.stableId)).toEqual(["w-a", "w-b", "w-c"]);
     expect(rows[0]).toMatchObject({
       certificateId: a.certificateId,
-      contentHash: a.contentHash,
-      inkprintHash: a.contentHash,
+      contentHash: "a".repeat(64),
+      inkprintHash: "c".repeat(64),
       kind: "web",
       product: "magpie",
       locator: { kind: "url", url: "https://example.org/w-a" },
@@ -65,13 +66,20 @@ describe.skipIf(!LOCAL)("sealed evidence against Postgres", () => {
     const stored = await getDb().select().from(receipts).where(eq(receipts.dossierId, id));
     expect(stored).toHaveLength(3);
     const forA = stored.find((r) => r.ref === a.certificateId);
-    expect(forA).toMatchObject({ kind: "certificate", hash: a.contentHash, signature: "sig" });
+    expect(forA).toMatchObject({ kind: "certificate", hash: "c".repeat(64), signature: "sig" });
     expect((forA?.payload as { text: string }).text).toHaveLength(900);
 
     const sealed = await listSealed(id);
     expect(sealed).toHaveLength(3);
-    expect(sealed[0]).toMatchObject({ certificateId: a.certificateId, title: "title w-a" });
+    expect(sealed[0]).toMatchObject({ certificateId: a.certificateId, title: "title w-a", key: "w-a" });
     expect(sealed[0]?.text).toHaveLength(900);
+  });
+
+  it("refuses records that share a key, before writing anything", async () => {
+    const before = await listEvidence(id);
+    const d = record("w-d");
+    await expect(saveSealed(id, [d, { ...d, certificateId: randomUUID() }])).rejects.toThrow(RangeError);
+    expect(await listEvidence(id)).toEqual(before);
   });
 
   it("falls back to the excerpt when a certificate receipt is missing", async () => {
@@ -90,8 +98,8 @@ describe.skipIf(!LOCAL)("sealed evidence against Postgres", () => {
       verdict: "TRUE" as const,
       confidence: 0.8,
     };
-    await recordTranscript(id, t);
-    await recordTranscript(id, { ...t, verdict: "FALSE", confidence: 0.55 });
+    expect(await recordTranscript(id, t)).toEqual({ ok: true });
+    expect(await recordTranscript(id, { ...t, verdict: "FALSE", confidence: 0.55 })).toEqual({ ok: true });
     const rows = (await getDb().select().from(receipts).where(eq(receipts.dossierId, id))).filter(
       (r) => r.kind === "transcript",
     );
@@ -99,5 +107,24 @@ describe.skipIf(!LOCAL)("sealed evidence against Postgres", () => {
     expect(rows[0]).toMatchObject({ ref: debateId, hash: t.transcriptHash, signature: "tsig" });
     const [d] = await getDb().select().from(dossiers).where(eq(dossiers.id, id));
     expect(d).toMatchObject({ verdict: "FALSE", confidence: "0.55" });
+  });
+
+  it("refuses a transcript that names another debate and writes nothing", async () => {
+    const debateId = randomUUID();
+    const other = randomUUID();
+    const before = await getDb().select().from(receipts).where(eq(receipts.dossierId, id));
+    const [dBefore] = await getDb().select().from(dossiers).where(eq(dossiers.id, id));
+    const saved = await recordTranscript(id, {
+      debateId,
+      transcriptHash: "d".repeat(64),
+      signature: null,
+      payload: { debate_id: other },
+      verdict: "TRUE",
+      confidence: 0.99,
+    });
+    expect(saved).toEqual({ ok: false, error: `transcript_mismatch: expected ${debateId}, got ${other}` });
+    expect(await getDb().select().from(receipts).where(eq(receipts.dossierId, id))).toEqual(before);
+    const [dAfter] = await getDb().select().from(dossiers).where(eq(dossiers.id, id));
+    expect(dAfter?.verdict).toBe(dBefore?.verdict);
   });
 });

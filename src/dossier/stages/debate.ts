@@ -3,15 +3,17 @@ import { SITE } from "@/lib/site/config";
 import { callCapability } from "@/platform/gateway/call";
 import { listSealed, type SealedEvidence } from "../evidence";
 import { recordTranscript } from "../receipts";
-import { POLL_MS, type StageContext, type StageHandler } from "../stages";
+import { POLL_MS, type StageContext, type StageHandler, type StageOutcome } from "../stages";
 import { callContext, failure } from "./shared";
 
 /**
  * Stage `debate` (spec 21 §6.1, §6.3): start one paper-trail debate over the claim and the sealed
  * evidence, poll it, and keep its signed transcript. A debate spends LLM budget, so the id is the
  * stage's output from the first run: every later poll, and every retry after an error (the runner
- * keeps the previous output), continues that debate and never starts another. The verdict and
- * confidence come only from a transcript that parsed.
+ * keeps the previous output), continues that debate and never starts another — except after the
+ * debate itself ended in `error` (Ruling T): that outcome moves the id into `failedDebateIds`, so
+ * "retry from this stage" starts a new debate. The verdict and confidence come only from a
+ * transcript that parsed and belongs to the stored debate.
  */
 
 export const ROUNDS = { rapid: 1, standard: 2, adversarial: 3 } as const;
@@ -34,31 +36,45 @@ function callTranscript(ctx: StageContext, id: string) {
   return callCapability(paperTrail.transcript, { id }, callContext(ctx));
 }
 
-function storedDebateId(ctx: StageContext): string | null {
+/** What the stage stores: the debate it follows (if any) and the debates that failed before it. */
+type Stored = { debateId: string | null; failedDebateIds: string[] };
+
+function stored(ctx: StageContext): Stored {
   const out = ctx.outputs.debate;
-  if (typeof out === "object" && out !== null && !Array.isArray(out)) {
-    const id = out.debateId;
-    if (typeof id === "string" && id !== "") return id;
+  if (typeof out !== "object" || out === null || Array.isArray(out)) {
+    return { debateId: null, failedDebateIds: [] };
   }
-  return null;
+  const id = out.debateId;
+  const failed = out.failedDebateIds;
+  return {
+    debateId: typeof id === "string" && id !== "" ? id : null,
+    failedDebateIds: Array.isArray(failed)
+      ? failed.filter((f): f is string => typeof f === "string")
+      : [],
+  };
 }
 
-/** paper-trail needs a url and a title on every pooled item; fall back to our own page for the item. */
+/**
+ * paper-trail needs a url and a title on every pooled item; fall back to the item's anchor on our
+ * own page (`#e-<key>`, the same anchor read gives document items).
+ */
 function poolItem(siteUrl: string, dossierId: string, e: SealedEvidence) {
   return {
     certificate_id: e.certificateId,
-    url: e.url.trim() === "" ? `${siteUrl}/d/${dossierId}#e-${e.evidenceId}` : e.url,
+    url: e.url.trim() === "" ? `${siteUrl}/d/${dossierId}#e-${e.key}` : e.url,
     title: e.title.trim() === "" ? e.certificateId : e.title,
     text: e.text,
   };
 }
 
 export function debateStage(deps: DebateDeps, siteUrl: string): StageHandler {
-  const waiting = (debateId: string) =>
-    ({ kind: "waiting", output: { debateId }, retryInMs: POLL_MS }) as const;
-
-  return async (ctx) => {
-    const known = storedDebateId(ctx);
+  return async (ctx): Promise<StageOutcome> => {
+    const { debateId: known, failedDebateIds } = stored(ctx);
+    const waiting = (debateId: string): StageOutcome => ({
+      kind: "waiting",
+      output: { debateId, failedDebateIds },
+      retryInMs: POLL_MS,
+    });
     if (known === null) {
       const pool = (await deps.sealed(ctx.dossier.id)).map((e) =>
         poolItem(siteUrl, ctx.dossier.id, e),
@@ -79,7 +95,12 @@ export function debateStage(deps: DebateDeps, siteUrl: string): StageHandler {
       case "running":
         return waiting(known);
       case "error":
-        return { kind: "error", error: `debate_failed: ${known}`, retryable: false };
+        return {
+          kind: "error",
+          error: `debate_failed: ${known}`,
+          retryable: false,
+          output: { failedDebateIds: [...failedDebateIds, known] },
+        };
       case "done":
         break;
     }
@@ -87,7 +108,7 @@ export function debateStage(deps: DebateDeps, siteUrl: string): StageHandler {
     const fetched = await deps.transcript(ctx, known);
     if (!fetched.ok) return failure("paper-trail.transcript", fetched);
     const t = fetched.data;
-    await deps.record(ctx.dossier.id, {
+    const saved = await deps.record(ctx.dossier.id, {
       debateId: known,
       transcriptHash: t.transcript_hash,
       signature: t.signature,
@@ -95,9 +116,10 @@ export function debateStage(deps: DebateDeps, siteUrl: string): StageHandler {
       verdict: t.verdict,
       confidence: t.confidence,
     });
+    if (!saved.ok) return { kind: "error", error: saved.error, retryable: false };
     return {
       kind: "ok",
-      output: { debateId: known, verdict: t.verdict, confidence: t.confidence },
+      output: { debateId: known, verdict: t.verdict, confidence: t.confidence, failedDebateIds },
     };
   };
 }

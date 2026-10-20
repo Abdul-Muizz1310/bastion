@@ -14,11 +14,24 @@ export type TranscriptRecord = {
   confidence: number;
 };
 
+export type TranscriptSaved = { ok: true } | { ok: false; error: string };
+
 /**
  * One transaction: the `transcript` receipt (skipped when this debate's is already stored) and the
  * dossier's verdict and confidence. A replay rewrites the same verdict and adds no second receipt.
+ * A transcript that names another debate than the stored id is refused before any write — a retry
+ * would fetch the same answer, so the caller reports it as a non-retryable error.
  */
-export async function recordTranscript(dossierId: string, t: TranscriptRecord): Promise<void> {
+export async function recordTranscript(
+  dossierId: string,
+  t: TranscriptRecord,
+): Promise<TranscriptSaved> {
+  if (t.payload.debate_id !== t.debateId) {
+    return {
+      ok: false,
+      error: `transcript_mismatch: expected ${t.debateId}, got ${String(t.payload.debate_id)}`,
+    };
+  }
   await getDb().transaction(async (tx) => {
     const [existing] = await tx
       .select({ id: receipts.id })
@@ -46,4 +59,5 @@ export async function recordTranscript(dossierId: string, t: TranscriptRecord): 
       .set({ verdict: t.verdict, confidence: t.confidence.toFixed(2), updatedAt: new Date() })
       .where(eq(dossiers.id, dossierId));
   });
+  return { ok: true };
 }

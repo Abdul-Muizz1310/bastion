@@ -21,8 +21,8 @@ const transcript = () => paperTrail.transcript.output.parse(fixture("paper-trail
 const DEBATE_ID = created().debate_id;
 
 const sealed = [
-  { evidenceId: "e1", certificateId: "00000000-0000-4000-8000-000000000001", url: "https://x.org/a", title: "A", text: "ta" },
-  { evidenceId: "e2", certificateId: "00000000-0000-4000-8000-000000000002", url: "", title: "", text: "tb" },
+  { evidenceId: "e1", key: "w-a", certificateId: "00000000-0000-4000-8000-000000000001", url: "https://x.org/a", title: "A", text: "ta" },
+  { evidenceId: "e2", key: "abc12345-n7", certificateId: "00000000-0000-4000-8000-000000000002", url: "", title: "", text: "tb" },
 ];
 
 function setup(over: {
@@ -30,6 +30,7 @@ function setup(over: {
   get?: ReturnType<typeof vi.fn>;
   transcript?: ReturnType<typeof vi.fn>;
   items?: typeof sealed;
+  saved?: { ok: true } | { ok: false; error: string };
 } = {}) {
   const start = over.start ?? vi.fn(async () => res<Created>(created()));
   const get = over.get ?? vi.fn(async () => res<Got>(done()));
@@ -43,6 +44,7 @@ function setup(over: {
       sealed: async () => over.items ?? sealed,
       record: async (_id, t) => {
         records.push(t);
+        return over.saved ?? { ok: true };
       },
     },
     "https://bastion.test",
@@ -52,8 +54,12 @@ function setup(over: {
 
 const first = (mode: "rapid" | "standard" | "adversarial" = "rapid") =>
   stageCtx({ dossier: dossier({ mode, claim: "the claim" }) });
-const polling = () =>
-  stageCtx({ dossier: dossier({ claim: "the claim" }), outputs: { debate: { debateId: DEBATE_ID } } });
+const polling = (failedDebateIds: string[] = []) =>
+  stageCtx({
+    dossier: dossier({ claim: "the claim" }),
+    outputs: { debate: { debateId: DEBATE_ID, failedDebateIds } },
+  });
+const OLD_ID = "11111111-2222-4333-8444-555555555555";
 
 describe("debate stage", () => {
   it("maps modes to rounds", () => {
@@ -67,14 +73,18 @@ describe("debate stage", () => {
   ] as const)("starts a %s debate with %i rounds and a url for every pooled item", async (mode, rounds) => {
     const { stage, start } = setup();
     const out = await stage(first(mode));
-    expect(out).toEqual({ kind: "waiting", output: { debateId: DEBATE_ID }, retryInMs: POLL_MS });
+    expect(out).toEqual({
+      kind: "waiting",
+      output: { debateId: DEBATE_ID, failedDebateIds: [] },
+      retryInMs: POLL_MS,
+    });
     const input = start.mock.calls[0]?.[1];
     expect(input).toMatchObject({ claim: "the claim", max_rounds: rounds });
     expect(input.evidence_pool).toEqual([
       { certificate_id: sealed[0]?.certificateId, url: "https://x.org/a", title: "A", text: "ta" },
       {
         certificate_id: sealed[1]?.certificateId,
-        url: "https://bastion.test/d/550e8400-e29b-41d4-a716-446655440000#e-e2",
+        url: "https://bastion.test/d/550e8400-e29b-41d4-a716-446655440000#e-abc12345-n7",
         title: sealed[1]?.certificateId,
         text: "tb",
       },
@@ -92,7 +102,11 @@ describe("debate stage", () => {
     const { stage, start } = setup({ get: vi.fn(async () => res<Got>(running())) });
     const out = await stage(polling());
     expect(start).not.toHaveBeenCalled();
-    expect(out).toEqual({ kind: "waiting", output: { debateId: DEBATE_ID }, retryInMs: POLL_MS });
+    expect(out).toEqual({
+      kind: "waiting",
+      output: { debateId: DEBATE_ID, failedDebateIds: [] },
+      retryInMs: POLL_MS,
+    });
   });
 
   it("keeps waiting while the debate is pending", async () => {
@@ -112,12 +126,56 @@ describe("debate stage", () => {
     expect(await stage(first())).toMatchObject({ kind: "error", retryable: true });
   });
 
-  it("a failed debate is a non-retryable error", async () => {
+  it("a failed debate is a non-retryable error that clears its id (Ruling T)", async () => {
     const { stage, tr, records } = setup({ get: vi.fn(async () => res<Got>({ ...running(), status: "error" })) });
     const out = await stage(polling());
-    expect(out).toEqual({ kind: "error", error: `debate_failed: ${DEBATE_ID}`, retryable: false });
+    expect(out).toEqual({
+      kind: "error",
+      error: `debate_failed: ${DEBATE_ID}`,
+      retryable: false,
+      output: { failedDebateIds: [DEBATE_ID] },
+    });
     expect(tr).not.toHaveBeenCalled();
     expect(records).toHaveLength(0);
+  });
+
+  it("keeps every failed debate id across failures", async () => {
+    const { stage } = setup({ get: vi.fn(async () => res<Got>({ ...running(), status: "error" })) });
+    const out = await stage(polling([OLD_ID]));
+    expect(out).toMatchObject({ kind: "error", output: { failedDebateIds: [OLD_ID, DEBATE_ID] } });
+  });
+
+  it("a retry after a failed debate starts a new one and keeps the failed ids", async () => {
+    const { stage, start, get } = setup();
+    const out = await stage(
+      stageCtx({ dossier: dossier({ claim: "the claim" }), outputs: { debate: { failedDebateIds: [OLD_ID] } } }),
+    );
+    expect(start).toHaveBeenCalledOnce();
+    expect(get).not.toHaveBeenCalled();
+    expect(out).toEqual({
+      kind: "waiting",
+      output: { debateId: DEBATE_ID, failedDebateIds: [OLD_ID] },
+      retryInMs: POLL_MS,
+    });
+  });
+
+  it("a failed poll keeps the debate id (the runner keeps the stored output)", async () => {
+    const { stage } = setup({ get: vi.fn(async () => fail("downstream_error", 503)) });
+    const out = await stage(polling());
+    expect(out).toMatchObject({ kind: "error", retryable: true });
+    expect(out.kind === "error" && out.output).toBeUndefined();
+  });
+
+  it("a transcript for another debate is a non-retryable error and stores no verdict", async () => {
+    const { stage } = setup({
+      saved: { ok: false, error: `transcript_mismatch: expected ${DEBATE_ID}, got ${OLD_ID}` },
+    });
+    const out = await stage(polling());
+    expect(out).toEqual({
+      kind: "error",
+      error: `transcript_mismatch: expected ${DEBATE_ID}, got ${OLD_ID}`,
+      retryable: false,
+    });
   });
 
   it("a failed poll maps to a stage error and stores nothing", async () => {
@@ -143,7 +201,7 @@ describe("debate stage", () => {
     ]);
     expect(out).toEqual({
       kind: "ok",
-      output: { debateId: DEBATE_ID, verdict: t.verdict, confidence: t.confidence },
+      output: { debateId: DEBATE_ID, verdict: t.verdict, confidence: t.confidence, failedDebateIds: [] },
     });
   });
 

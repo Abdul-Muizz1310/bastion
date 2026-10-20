@@ -15,7 +15,10 @@ export const EXCERPT_CHARS = 400;
 export type SealedRecord = {
   candidate: Candidate;
   certificateId: string;
+  /** Ruling S: the source's own hash (magpie's content hash; sha256 of a document item's text). */
   contentHash: string;
+  /** inkprint's sha256 of the certified text (the certificate fingerprint). */
+  inkprintHash: string;
   signature: string | null;
   /** The exact text inkprint certified. */
   text: string;
@@ -32,15 +35,19 @@ export async function listEvidence(dossierId: string): Promise<EvidenceItem[]> {
 /**
  * Persists records and their receipts in one transaction. A record whose candidate key is already
  * stored is left alone (no second row, no second receipt), so a replay cannot duplicate anything.
- * Returns how many were new.
+ * Two records with one key are refused before any write: the row would keep one certificate and
+ * the receipt could name the other. Returns how many were new.
  */
 export async function saveSealed(
   dossierId: string,
   records: readonly SealedRecord[],
 ): Promise<number> {
   if (records.length === 0) return 0;
+  const byKey = new Map(records.map((r) => [r.candidate.key, r]));
+  if (byKey.size !== records.length) {
+    throw new RangeError("saveSealed: two records share a candidate key");
+  }
   return getDb().transaction(async (tx) => {
-    const byKey = new Map(records.map((r) => [r.candidate.key, r]));
     const inserted = await tx
       .insert(evidenceItems)
       .values(
@@ -56,7 +63,7 @@ export async function saveSealed(
           product: r.candidate.product,
           locator: r.candidate.locator,
           excerpt: r.candidate.text.slice(0, EXCERPT_CHARS),
-          inkprintHash: r.contentHash,
+          inkprintHash: r.inkprintHash,
         })),
       )
       .onConflictDoNothing({ target: [evidenceItems.dossierId, evidenceItems.stableId] })
@@ -68,7 +75,7 @@ export async function saveSealed(
           dossierId,
           kind: "certificate" as const,
           ref: r.certificateId,
-          hash: r.contentHash,
+          hash: r.inkprintHash,
           signature: r.signature,
           payload: { text: r.text, key: r.candidate.key },
         })),
@@ -80,6 +87,8 @@ export async function saveSealed(
 
 export type SealedEvidence = {
   evidenceId: string;
+  /** The candidate key (`stable_id`): the `#e-<key>` anchor on the dossier page. */
+  key: string;
   certificateId: string;
   url: string;
   title: string;
@@ -91,6 +100,7 @@ export async function listSealed(dossierId: string): Promise<SealedEvidence[]> {
   const rows = await getDb()
     .select({
       evidenceId: evidenceItems.id,
+      key: evidenceItems.stableId,
       certificateId: evidenceItems.certificateId,
       url: evidenceItems.url,
       title: evidenceItems.title,
@@ -116,6 +126,7 @@ export async function listSealed(dossierId: string): Promise<SealedEvidence[]> {
       : [
           {
             evidenceId: row.evidenceId,
+            key: row.key,
             certificateId: row.certificateId,
             url: row.url,
             title: row.title,

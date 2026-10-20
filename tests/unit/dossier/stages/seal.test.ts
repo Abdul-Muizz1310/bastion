@@ -2,9 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { inkprint } from "@/capabilities/inkprint";
 import type { SealedRecord } from "@/dossier/evidence";
 import type { Candidate } from "@/dossier/select-evidence";
-import { MAX_SEALED, sealStage } from "@/dossier/stages/seal";
-import type { GatewayResult } from "@/platform/gateway/result";
+import { MAX_SEALED, MAX_TEXT_CHARS, sealStage } from "@/dossier/stages/seal";
 import type { EvidenceItem } from "@/lib/db/schema";
+import type { GatewayResult } from "@/platform/gateway/result";
+import { sha256Hex } from "@/platform/sha256";
 import { dossier, fixture, stageCtx } from "./helpers";
 
 type Batch = ReturnType<typeof inkprint.certifyBatch.output.parse>;
@@ -31,6 +32,23 @@ const cand = (n: number): Candidate => ({
   url: `https://example.org/${n}`,
   text: `small entity fees are reduced ${n}`,
   locator: { kind: "url", url: `https://example.org/${n}` },
+  magpieHash: `magpie-hash-${n}`,
+});
+const passage = (key: string, text: string): Candidate => ({
+  key,
+  kind: "passage",
+  product: "inkthread",
+  title: `passage ${key}`,
+  url: `https://bastion.test/d/x#e-${key}`,
+  text,
+  locator: {
+    kind: "document",
+    documentId: "doc-1",
+    sha256: "d".repeat(64),
+    page: 1,
+    bbox: [0, 0, 1, 1],
+    nodeId: key,
+  },
 });
 const many = (n: number) => Array.from({ length: n }, (_, i) => cand(i));
 
@@ -100,7 +118,7 @@ describe("seal stage", () => {
     const first = saved[0]?.[0];
     expect(first).toMatchObject({
       certificateId: "00000000-0000-4000-8000-000000000000",
-      contentHash: "0".repeat(64),
+      inkprintHash: "0".repeat(64),
       text: first?.candidate.text,
     });
     expect(first?.signature).toBe(
@@ -146,11 +164,106 @@ describe("seal stage", () => {
     expect(out).toEqual({ kind: "ok", output: { certified: 0, total: 12 } });
   });
 
-  it("ignores stored rows that carry no certificate", async () => {
+  it("counts a stored row without a certificate as taken: never re-certified", async () => {
     const all = many(2);
     const { stage, certify } = setup({ existing: [{ stableId: all[0]?.key, certificateId: null }] });
-    await stage(ctxWith(all));
-    expect(certify.mock.calls[0]?.[1]).toHaveLength(2);
+    const out = await stage(ctxWith(all));
+    expect((certify.mock.calls[0]?.[1] as Items).map((i) => i.metadata?.key)).toEqual(["w-s-01"]);
+    expect(out).toEqual({ kind: "ok", output: { certified: 1, total: 2 } });
+  });
+
+  it("counts stored rows without a certificate against the 12 cap", async () => {
+    const existing = Array.from({ length: 12 }, (_, i) => ({ stableId: `old-${i}`, certificateId: null }));
+    const { stage, certify } = setup({ existing });
+    const out = await stage(ctxWith(many(5)));
+    expect(certify).not.toHaveBeenCalled();
+    expect(out).toEqual({ kind: "ok", output: { certified: 0, total: 12 } });
+  });
+
+  it("certifies one candidate per key, the first one seen (gather before read)", async () => {
+    const web = cand(1);
+    const clash = { ...passage(web.key, "small entity fees are reduced, says the document") };
+    const { stage, certify, saved } = setup();
+    const out = await stage(ctxWith([web], [clash, passage("p-2", "small entity fees are reduced")]));
+    const items = certify.mock.calls[0]?.[1] as Items;
+    expect(items.map((i) => i.metadata?.key).sort()).toEqual(["p-2", "w-s-01"]);
+    expect(items.find((i) => i.metadata?.key === "w-s-01")?.text).toBe(web.text);
+    expect(saved[0]?.map((r) => r.candidate.key).sort()).toEqual(["p-2", "w-s-01"]);
+    expect(out).toEqual({ kind: "ok", output: { certified: 2, total: 2 } });
+  });
+
+  it("skips a candidate longer than inkprint's 1,000,000 characters with a log line", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const long = { ...cand(1), text: `small entity fees are reduced ${"x".repeat(MAX_TEXT_CHARS)}` };
+      const { stage, certify } = setup();
+      const out = await stage(ctxWith([long, cand(2)]));
+      expect(MAX_TEXT_CHARS).toBe(1_000_000);
+      expect((certify.mock.calls[0]?.[1] as Items).map((i) => i.metadata?.key)).toEqual(["w-s-02"]);
+      expect(out).toEqual({ kind: "ok", output: { certified: 1, total: 1 } });
+      expect(warn).toHaveBeenCalledOnce();
+      expect(String(warn.mock.calls[0]?.[0])).toContain("w-s-01");
+      expect(String(warn.mock.calls[0]?.[0])).not.toContain("xxxx");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("still certifies a candidate of exactly 1,000,000 characters", async () => {
+    const edge = { ...cand(1), text: `small entity fees are reduced `.padEnd(MAX_TEXT_CHARS, "y") };
+    const { stage, certify } = setup();
+    await stage(ctxWith([edge]));
+    expect((certify.mock.calls[0]?.[1] as Items)[0]?.text).toHaveLength(MAX_TEXT_CHARS);
+    expect(inkprint.certifyBatch.input.safeParse({ items: certify.mock.calls[0]?.[1] }).success).toBe(true);
+  });
+
+  it("skips a candidate whose text is not well-formed UTF-16 (no UTF-8, no hash) with a log line", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const broken = passage("p-bad", "small entity fees are reduced \ud800");
+      const { stage, certify } = setup();
+      const out = await stage(ctxWith([cand(2)], [broken]));
+      expect((certify.mock.calls[0]?.[1] as Items).map((i) => i.metadata?.key)).toEqual(["w-s-02"]);
+      expect(out).toEqual({ kind: "ok", output: { certified: 1, total: 1 } });
+      expect(String(warn.mock.calls[0]?.[0])).toContain("p-bad");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("is skipped when every candidate is too long to certify", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { stage, certify } = setup();
+      const out = await stage(ctxWith([{ ...cand(1), text: "x".repeat(MAX_TEXT_CHARS + 1) }]));
+      expect(out).toEqual({ kind: "skipped", reason: "no_evidence" });
+      expect(certify).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("Ruling S: a web item keeps magpie's hash as content hash, inkprint's as inkprint hash", async () => {
+    const { stage, saved } = setup();
+    await stage(ctxWith([cand(1)]));
+    expect(saved[0]?.[0]).toMatchObject({
+      contentHash: "magpie-hash-1",
+      inkprintHash: "0".repeat(64),
+    });
+  });
+
+  it("Ruling S: a document passage's content hash is the sha256 of its text", async () => {
+    const text = "small entity fees are reduced by sixty percent";
+    const { stage, saved } = setup();
+    await stage(ctxWith(undefined, [passage("p-1", text)]));
+    expect(saved[0]?.[0]).toMatchObject({ contentHash: sha256Hex(text), inkprintHash: "0".repeat(64) });
+  });
+
+  it("Ruling S: a web item without a magpie hash falls back to the sha256 of its text", async () => {
+    const { magpieHash: _drop, ...bare } = cand(1);
+    const { stage, saved } = setup();
+    await stage(ctxWith([bare]));
+    expect(saved[0]?.[0]?.contentHash).toBe(sha256Hex(bare.text));
   });
 
   it("maps a failed call to a stage error and persists nothing", async () => {
