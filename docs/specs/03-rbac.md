@@ -1,5 +1,7 @@
 # 03 — RBAC (Role-Based Access Control)
 
+> Superseded by 21-bastion-v2 (2026-10-20): bastion has no sign-in.
+
 ## Goal
 
 Enforce the role matrix from §9.6 at two layers: Next.js middleware (coarse route-level gating) and a `withRole()` Server Action wrapper (fine-grained defense in depth). Violations are logged as `security.denied` audit events.

@@ -1,5 +1,7 @@
 # 02 — Authentication (Magic Link + Demo Mode)
 
+> Superseded by 21-bastion-v2 (2026-10-20): bastion has no sign-in.
+
 ## Goal
 
 Implement two authentication flows: (1) magic link via Resend for real email-based auth, and (2) demo-mode bypass buttons that instantly sign in as admin/editor/viewer without email. Demo mode is the primary auth path for portfolio demos; magic links prove the real implementation works.

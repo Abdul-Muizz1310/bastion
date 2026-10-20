@@ -1,5 +1,7 @@
 # 04 — CSRF Protection (Double-Submit)
 
+> Superseded by 21-bastion-v2 (2026-10-20): bastion has no sign-in.
+
 ## Goal
 
 Protect all state-mutating Server Actions and API routes with double-submit CSRF tokens. A CSRF token is minted per session via `/api/csrf`, stored in a cookie, and must be submitted as a header on every mutating request. Server Actions validate the token before executing.

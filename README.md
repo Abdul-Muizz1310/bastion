@@ -1,287 +1,329 @@
 # 🏰 `bastion`
 
-> 🛡️ **Control plane + identity + audit + demo runner for the muizz-lab portfolio.**
-> Not a landing page — a full-stack Next.js control plane that proves 5 microservices work together.
+> 🧾 **Eight products, operated live, chained into one receipt.**
+> Run every muizz-lab product from one place with no sign-in, chain them into a dossier whose every piece of evidence is scraped or read exactly, signed, argued over, measured and sealed — then let anyone re-verify it, live, without trusting bastion.
 
-🌐 [Live Demo](https://bastion-six.vercel.app) · 📖 [Architecture](docs/ARCHITECTURE.md) · 🎬 [Demo Script](docs/DEMO.md) · ❓ [Why](WHY.md)
+🌐 [Live](https://bastion-six.vercel.app) · ❓ [Why](WHY.md) · 🏗️ [Architecture](docs/ARCHITECTURE.md) · 🎬 [Demo](docs/DEMO.md) · 📐 [Spec](docs/specs/21-bastion-v2.md) · 🔐 [Token contract](docs/specs/22-platform-contract-v2.md)
 
 ![next](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=nextdotjs&logoColor=white)
 ![react](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=black)
 ![ts](https://img.shields.io/badge/TypeScript-strict-3178c6?style=flat-square&logo=typescript&logoColor=white)
-![drizzle](https://img.shields.io/badge/Drizzle-ORM-c5f74f?style=flat-square)
 ![neon](https://img.shields.io/badge/Neon-Postgres-00e599?style=flat-square&logo=postgresql&logoColor=white)
-![upstash](https://img.shields.io/badge/Upstash-Redis-dc382d?style=flat-square)
-![tests](https://img.shields.io/badge/tests-594%20vitest-6e9f18?style=flat-square)
-![vercel](https://img.shields.io/badge/Vercel-deployed-000000?style=flat-square&logo=vercel&logoColor=white)
-[![ci](https://github.com/Abdul-Muizz1310/bastion/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdul-Muizz1310/bastion/actions/workflows/ci.yml)
+![tests](https://img.shields.io/badge/tests-2832%20unit%20·%2083%20integration%20·%2020%20e2e-6e9f18?style=flat-square)
+![coverage](https://img.shields.io/badge/coverage-89.5%25%20lines-brightgreen?style=flat-square)
+[![ci](https://img.shields.io/github/actions/workflow/status/Abdul-Muizz1310/bastion/ci.yml?style=flat-square&label=ci)](https://github.com/Abdul-Muizz1310/bastion/actions/workflows/ci.yml)
 ![license](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)
 
 ---
 
-```console
-$ open https://bastion-six.vercel.app
-
-[auth]       magic link sent → inbox → callback → session sealed
-[registry]   5 services discovered · 4 healthy · 1 cold-starting
-[gateway]    Ed25519 JWT minted · TTL 60s · forwarding to paper-trail
-[demo]       step 1/5: scrape → sign → debate → measure → audit
-[audit]      12 events logged · INSERT-only · no UPDATE/DELETE
-[replay]     time-travel to 2026-04-13T09:41:00Z → entity reconstructed
+```text
+claim     "The USPTO basic filing fee for a utility patent is 350 dollars."
+          ──────────────────────────────────────────────────────────────────────────────
+wake      the services this dossier needs, held up to 90 s each           bastion
+gather    web pages, scraped live                                         magpie
+read      a PDF's passages and exact tables, each with its page and box   inkthread · inkgrid
+seal      one Ed25519 certificate per evidence item, at most 12           inkprint
+debate    proponent, skeptic and judge, over the sealed evidence only     paper-trail
+measure   every query the run caused, found by its request id             slowquery
+envelope  one signed envelope over every receipt above                    inkprint
+record    the digest of the run's slice of the append-only audit log      bastion
+          ──────────────────────────────────────────────────────────────────────────────
+verify    certificates · transcript · envelope · perf · audit · documents · steps
+          each re-checked live against the service that issued it: pass, fail, unavailable or expired
 ```
 
 ---
 
-## 🎯 Why this exists
+## 💡 Why this exists
 
-A portfolio of independent microservices needs proof they work **together**, not just individually. Bastion is that proof — a single entry point that authenticates users, routes traffic through an API gateway, runs a cross-service demo workflow, and logs every action to an append-only audit trail.
+Every muizz-lab product shares one brand promise: **tools that hand you a receipt** — a signed certificate, a signed transcript, a verification report, an exact `CREATE INDEX`. Each one proves something on its own. bastion is what they become together: the receipt of receipts.
 
-It is **not** a landing page. It is a real control plane with real auth, real RBAC, real rate limiting, and a real database.
+- **Operate each product live**, from one place, and keep the receipt it hands back. No sign-in: a visitor is a daily pseudonym, never an account.
+- **Chain them into a dossier**: a claim checked against web pages and PDFs, every piece of evidence signed before the debate sees it, the debate signed, the queries it caused measured, and everything sealed into one envelope.
+- **Verify any dossier later**, at a public URL. Every signature and hash is re-checked against the issuer's own published key, and nothing that could not be checked ever reads as a pass.
+
+bastion v1 was a signed-in control plane that proved four services answered. v2 removes sign-in entirely and makes all eight products usable — inkthread and inkgrid included — under budgets that keep a free-tier platform alive ([WHY.md](WHY.md)).
+
+---
+
+## 🧩 The eight products
+
+| Product | Operate it in bastion | The receipt it hands back |
+|---|---|---|
+| 🐦 **magpie** | Pick a source, scrape once; browse items; heal history | Item content hashes; self-heal PR links |
+| 🧮 **inkgrid** | A sample PDF or an upload: exact tables as cell grids, text, findings | The verification report (a second PDF engine agrees) |
+| 🧵 **inkthread** | The same document as a graph coloured by role; the why of any element; its page with the box drawn | `graph_hash`; the rule or model behind each element |
+| 🖋️ **inkprint** | Certify text, verify a certificate, diff against a parent, run a leak scan | An Ed25519 certificate with a C2PA manifest; the verify checks |
+| ⚖️ **paper-trail** | Debate a claim; rounds appear as they finish | The transcript hash and its Ed25519 signature, checked live |
+| 🐢 **slowquery** | The fleet's slowest fingerprints across four services and the demo; the demo's slow/fast branch | The EXPLAIN plan and the exact `CREATE INDEX` |
+| 🪶 **feathers** | The YAML that generated feathers-demo; live CRUD on it, then the soft-delete proof | The generated contract: role-gated endpoints, soft delete honoured (a 404) |
+| 🏰 **bastion** | The token inspector (decoded claims, never a token) and the JWKS | The audit event for the call |
+
+**How they combine** — exactly the edges on the live system map:
+
+- magpie scrapes web pages live, and inkprint signs each item it brings back.
+- inkgrid reads a PDF's tables and text exactly; inkthread maps them into a graph.
+- inkthread hands each quoted passage, with its page and its why, to inkprint to sign.
+- paper-trail's proponent, skeptic and judge argue only over that signed evidence.
+- slowquery measures every query magpie, inkthread, inkprint and paper-trail ran for the dossier's request id.
+- feathers generated feathers-demo, a live FastAPI service, from one YAML schema.
 
 ---
 
 ## ✨ Features
 
-- 🔐 Magic link authentication via Resend + HMAC-sealed session cookies
-- 👥 3-tier RBAC (admin / editor / viewer) enforced in page guards (`requireRole()`) and Server Actions (`withRole()`)
-- 📡 Service registry over 5 services — 4 probed with live health checks, feathers is CLI-only
-- 🌉 API gateway with Ed25519 JWT injection via jose
-- 📝 Append-only audit log — `UPDATE`/`DELETE`/`TRUNCATE` on `events` are rejected by Postgres itself
-- ⏪ Time-travel replay via `DISTINCT ON` — debounced slider reconstructs entity state at any past timestamp
-- 🎬 Integrated 5-step demo runner (scrape → sign → debate → measure → audit)
-- 🛡️ 11-item security posture panel at `/whoami` (RBAC, CSRF double-submit, rate limiting, CSP, httpOnly, no PII in cookies)
-- ⏱️ Rate limiting via Upstash Redis sliding window
-- 🧪 594 unit tests (Vitest), 87.81% line coverage
-- 🚀 Deployed on Vercel
+- 🗺️ **A live system map** — the 8 products as an inline SVG drawn on the server, health in words beside each node (live, asleep, down, checking, unknown), one shared probe round every 30 s for every visitor
+- 🧰 **A workbench per product** — each behind a wake gate that holds a cold Render service for up to 90 s and says asleep, never down, when it does not wake
+- 🧾 **Durable dossiers** — eight stages as Postgres rows advanced one per invocation, leased, retried at most 3 times, chained by the runner itself, followed live over SSE
+- ✅ **Verify everything** — 7 checks recomputed live: certificates, transcript, envelope, perf, audit, documents, steps; the receipts bundle downloads as canonical JSON
+- 🔐 **Platform token contract v2** — Ed25519 tokens bound to an issuer and one audience, 60 s life, enforced by all six backends (spec 22)
+- 💸 **Budgets and limits** — daily budgets per UTC day for everything that spends a paid or rationed call; per-visitor rate limits on each visitor's calls to a service, spends and reads of the log
+- 📝 **An append-only audit log** — Postgres triggers reject `UPDATE`, `DELETE` and `TRUNCATE` for every role; each dossier's envelope signs the digest of its own slice
+- 🔎 **The open log** — `/audit` with filters and a waterfall per request across services; `/time-travel` replays every entity to any moment
+- 📇 **The registry** — `/platform`: the 8 products, 15 repos, 6 services with live health and commit SHAs, the token contract, today's budgets
 
 ---
 
 ## 🏗️ Architecture
 
 ```mermaid
-flowchart TD
-    Browser([Browser]) --> MW[Middleware<br/>route-level auth gating only]
-    MW --> Pages[Pages<br/>login · dashboard · audit · time-travel · run · whoami<br/>requireRole page guards]
-    MW --> Actions[Server Actions + route handlers<br/>withRole · CSRF · rate limit]
-    Actions --> Gateway[API Gateway<br/>Ed25519 JWT injection]
-    Gateway --> S1[inkprint-backend]
-    Gateway --> S2[paper-trail-backend]
-    Gateway --> S3[slowquery-demo-backend]
-    Gateway --> S4[magpie-backend]
-    Gateway --> S5[bastion-api]
-    Actions --> Drizzle[Drizzle ORM]
-    Drizzle --> Neon[(Neon Postgres<br/>7 tables)]
-    Actions --> Upstash[(Upstash Redis<br/>sliding window)]
+flowchart LR
+    V([Visitor<br/>no sign-in]) --> Pages[Pages · RSC<br/>map · tools · dossier · d · audit · time-travel · platform]
+    V --> API[Route handlers<br/>/api/tools · /api/dossiers · /api/uploads · /api/platform]
+    Pages --> API
+    API --> GW[Gateway<br/>capability → rate limit → budget → token v2 → call → parse → audit]
+    API --> RUN[Runner<br/>one stage per invocation<br/>after() chain]
+    RUN --> GW
+    GW --> MG[magpie]
+    GW --> IT[inkthread · inkgrid]
+    GW --> IP[inkprint]
+    GW --> PT[paper-trail]
+    GW --> SQ[slowquery]
+    GW --> FD[feathers-demo]
+    GW --> UP[(Upstash<br/>limits · budgets)]
+    GW --> DB[(Neon Postgres<br/>append-only events)]
+    RUN --> DB
 ```
 
-### 🔐 Auth flow
+Every downstream call — a workbench action, a dossier stage, a verification — goes through **one gateway function** driven by a typed capability table (37 capabilities, `src/capabilities/`). In order: resolve the capability, check the visitor's rate limit, reserve the daily budget, mint a contract-v2 token, call with `X-Request-Id`, parse the answer with the capability's own Zod schema, append an audit event, return a typed result (`ok · asleep · rate_limited · budget_exhausted · downstream_error · invalid_response`).
+
+### A dossier, end to end
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant Bastion as Bastion UI
-    participant Resend as Resend API
-    participant DB as Neon Postgres
+    participant V as Visitor
+    participant B as bastion
+    participant DB as Postgres
+    participant S as Services
 
-    User->>Bastion: enter email
-    Bastion->>DB: INSERT magic_link (token, email, expires)
-    Bastion->>Resend: send magic link email
-    User->>Bastion: click link → /auth/callback?token=xxx
-    Bastion->>DB: SELECT magic_link WHERE token = xxx AND NOT expired
-    Bastion->>DB: UPSERT user + INSERT session
-    Bastion->>User: Set-Cookie: session (HMAC-sealed sid, httpOnly)
-    Note over User,Bastion: subsequent requests carry sealed cookie
+    V->>B: POST /api/dossiers (claim, sources, documents, mode)
+    B->>DB: the dossier, its 8 step rows and its documents, in one transaction
+    B-->>V: 202 → /d/<id>
+    loop one stage per invocation
+        B->>B: register the next advance with after(), before the stage runs
+        B->>DB: claim the next runnable stage (a lease, at most 3 attempts)
+        B->>S: the stage's calls, through the gateway, under the dossier's request id
+        B->>DB: record the outcome and its audit event
+    end
+    V->>B: GET /api/dossiers/<id>/stream (SSE) until done, then the receipt
+    V->>B: POST /api/dossiers/<id>/verify — re-checked live against each issuer
 ```
 
-### 🎬 Demo runner pipeline
-
-```mermaid
-flowchart LR
-    Step1[1. Scrape<br/>inkprint-backend<br/>fetch + extract] --> Step2[2. Sign<br/>bastion gateway<br/>Ed25519 JWT]
-    Step2 --> Step3[3. Debate<br/>paper-trail-backend<br/>LangGraph agents]
-    Step3 --> Step4[4. Measure<br/>slowquery pipeline<br/>capture + EXPLAIN]
-    Step4 --> Step5[5. Audit<br/>bastion events table<br/>append-only log]
-```
-
-### 📝 Audit + time-travel
-
-```mermaid
-flowchart TD
-    Action[Any Server Action] -->|INSERT| Events[(events table<br/>append-only<br/>UPDATE/DELETE blocked in Postgres)]
-    Events --> Query[SELECT DISTINCT ON entity_id<br/>WHERE timestamp <= T<br/>ORDER BY entity_id, timestamp DESC]
-    Query --> Snapshot[Entity state<br/>reconstructed at time T]
-```
-
----
-
-## 🗂️ Project structure
-
-```
-src/
-├── proxy.ts                          # Route-level auth gating + public-path allowlist
-├── app/
-│   ├── page.tsx                      # Landing
-│   ├── layout.tsx                    # Root layout + session provider
-│   ├── actions.ts                    # Server actions (all mutations)
-│   ├── (app)/                        # Authenticated routes
-│   │   ├── dashboard/page.tsx        # Service registry + health
-│   │   ├── audit/page.tsx            # Append-only audit log viewer
-│   │   ├── audit/[requestId]/page.tsx
-│   │   ├── time-travel/page.tsx      # DISTINCT ON replay UI
-│   │   ├── run/page.tsx              # Integrated demo runner
-│   │   ├── dossiers/[id]/page.tsx    # Signed dossier detail
-│   │   ├── services/[id]/page.tsx    # Per-service view
-│   │   └── whoami/page.tsx           # Current session info
-│   │   ├── forbidden.tsx             # Styled 403 interrupt page
-│   │   └── unauthorized.tsx          # Styled 401 interrupt page
-│   ├── (public)/                     # Login + magic-link callback
-│   │   ├── login/page.tsx
-│   │   └── auth/callback/route.ts
-│   └── api/                          # Route handlers
-│       ├── csrf/route.ts             # Double-submit token mint
-│       ├── dossiers/route.ts         # + [id]/verify, [id]/stream
-│       ├── health/ · status/         # Liveness + registry status
-│       ├── proxy/[service]/[...path] # Gateway proxy
-│       └── public-key/route.ts       # Ed25519 public key
-├── lib/
-│   ├── auth/                         # session, magic-link, rbac, csrf, return-to
-│   ├── audit/                        # write (appendEvent), replay (time-travel)
-│   ├── gateway/                      # jwt (Ed25519), client (proxy), services
-│   ├── db/                           # Drizzle schema + Neon client
-│   ├── rate-limit/                   # Upstash sliding window
-│   ├── csrf-client.ts                # Browser-side CSRF fetch helper
-│   ├── registry.ts                   # Service manifest + health checks
-│   └── validation.ts                 # Shared Zod schemas
-├── features/
-│   ├── dossier/                      # Cross-service dossier pipeline (server + components)
-│   ├── time-travel/                  # Replay controller, slider, Server Action
-│   └── audit/                        # Audit query
-└── components/
-    └── terminal/                     # AppNav, PageFrame, StatusBar, TerminalWindow
-```
-
----
-
-## 🛠️ Stack
-
-| Concern | Choice |
-|---|---|
-| **Framework** | Next.js 16 (App Router, Server Actions — no separate backend) |
-| **UI** | React 19 · TypeScript strict |
-| **Auth** | HMAC-sealed session cookies · magic link via Resend |
-| **RBAC** | 3 roles (admin / editor / viewer) · `requireRole()` page guards + `withRole()` in Server Actions |
-| **Database** | Neon Postgres via Drizzle ORM (7 tables: users, sessions, magic_links, events, dossiers, evidence_items, dossier_events) |
-| **Rate limiting** | Upstash Redis sliding window |
-| **JWT** | Ed25519 via jose |
-| **Testing** | Vitest (594 unit tests, 87.81% coverage) |
-| **Lint / Format** | Biome |
-| **Hosting** | Vercel |
-
----
-
-## 🔐 Security checklist
-
-| # | Control | Implementation |
+| Stage | Calls | Output |
 |---|---|---|
-| 1 | RBAC | 3-tier role enforcement via `requireRole()` page guards and `withRole()` in Server Actions — middleware only authenticates |
-| 2 | CSRF | Double-submit cookie pattern on the mutating route handlers (`POST /api/dossiers`, gateway proxy); Server Actions additionally get Next's built-in origin check |
-| 3 | Rate limiting | Upstash Redis sliding window on auth (10/min, fail-closed), gateway (60/min, fail-open) and CSRF minting (30/min) |
-| 4 | CSP | Content-Security-Policy + `Permissions-Policy` set in `next.config.ts` `headers()` |
-| 5 | httpOnly cookies | HMAC-sealed, httpOnly, secure, sameSite=lax |
-| 6 | No PII in cookies | Session cookie contains only an opaque session id (`sid`) — no email, role, or name — HMAC-sealed |
-| 7 | Magic link expiry | Tokens expire after 15 minutes, single-use |
-| 8 | Append-only audit | `REVOKE UPDATE/DELETE/TRUNCATE` + `BEFORE UPDATE/DELETE/TRUNCATE` triggers on `events` (`drizzle/0001_append_only_events.sql`) — rejected by Postgres, not by app code |
-| 9 | JWT short-lived | Ed25519 tokens with 60s TTL |
-| 10 | Input validation | Zod schemas on all Server Action inputs |
-| 11 | Error boundaries | No stack traces or internal state leaked to client |
+| wake | `GET /health` on every service the dossier needs, up to 90 s | which services are live |
+| gather | magpie `POST /api/scrape/batch` (skipped with no sources) | web evidence candidates |
+| read | inkthread: poll an upload's job, then the graph and the reading (skipped with no documents) | passages and tables with their pages and boxes |
+| seal | inkprint `POST /certificates/batch` over at most 12 selected items | a certificate per item |
+| debate | paper-trail `POST /debates` with the sealed items as its only evidence; poll; fetch the signed transcript | verdict, confidence, transcript hash and signature |
+| measure | `GET /_slowquery/queries?request_id=` on every service the dossier called | the perf receipt and its SHA-256 |
+| envelope | inkprint `POST /dossiers/envelope` over the certificates, transcript, perf hash and audit digest | an envelope id and signature |
+| record | the digest of the dossier's audit events | succeeded |
+
+A stage that waits on a long job (read, debate) polls once per invocation and returns `waiting` for 3 s. After each stage the runner hands the dossier to a fresh invocation with `after()`; that hand-off is registered **before** the stage runs, so a stage longer than the 10 s hand-off window cannot drop it (the e2e suite crosses a 12 s stage to prove it). The dossier's page also nudges a stalled stage, and a failed stage offers "retry from this stage". See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+### Receipts and verification
+
+`POST /api/dossiers/<id>/verify` re-checks everything live and answers each check as **pass**, **fail**, **unavailable** (the issuer could not be asked — never a pass) or **expired** (an upload's graph, gone by design after an hour):
+
+| Check | What it proves |
+|---|---|
+| certificates | each evidence row's text hashes to its certificate and inkprint's Ed25519 signature verifies with inkprint's published key |
+| transcript | the stored transcript equals paper-trail's live copy, hashes to its receipt, its signature verifies, and it carries this dossier's claim and verdict |
+| envelope | the envelope names exactly the stored certificates, transcript, perf hash and graph hashes, and inkprint's signature over it verifies |
+| perf | the perf receipt recomputes to its hash |
+| audit | the digest of the dossier's slice of the log recomputes, at the record bound and at the bound the envelope signed |
+| documents | each document's `graph_hash` and `sha256` are unchanged at inkthread |
+| steps | the runner's rows are present: exactly one per stage |
+
+The issuers sign Python's `json.dumps(sort_keys=True)` bytes, which bastion rebuilds exactly; fixtures produced by the issuers' own code prove it (`tests/fixtures/receipts/`). `GET /api/dossiers/<id>/receipts` downloads the whole bundle as canonical JSON (RFC 8785).
+
+---
+
+## 🔐 Security posture
+
+| Concern | What bastion does |
+|---|---|
+| **No sign-in** | No accounts, no cookies. A visitor is `v_` + 10 base32 characters of an HMAC of their address and the UTC date: it changes daily and cannot be reversed. It is the token `sub`, the rate-limit key and the audit actor |
+| **Secrets** | Two of bastion's own — a root secret and the Ed25519 signing key. Every purpose-specific key (the visitor ids, the runner's advance tokens) is derived from the root with HKDF-SHA256 |
+| **Tokens (contract v2)** | Ed25519 (`EdDSA`), `iss: bastion`, `aud` = the one service called, the capability's grant as `role`, `exp = iat + 60`, a fresh `jti`. Backends allow 10 s of leeway and fail closed without a key. The JWKS is public at `/.well-known/jwks.json` |
+| **Budgets** (per UTC day, shared) | debates 4 · uploads 3 · leak scans 10 · scrapes 30 · certificates 200 · feathers writes 50. A downstream 4xx that spent nothing gives the units back. Overridable with `BUDGET_*` |
+| **Rate limits** (per visitor) | gateway: free reads 120/min, every other call 30/min · wake 5/min · compose 3/hour · uploads 3/hour · retry 5/hour · verify 5/min · advance 60/min · receipts 30/min · audit and replay reads 60/min each · budgets and token preview 60/min · feathers proof 3/min |
+| **Every call audited** | each gateway call that reaches its budget lands in `events` with service, capability, status and latency — never a body; refusals with no side effect (bad input, a rate limit) are logged instead, so the append-only log cannot be grown without bound |
+| **Append-only audit** | `UPDATE`, `DELETE` and `TRUNCATE` on `events` are revoked and rejected by triggers, for the owner too (`drizzle/0001_append_only_events.sql`, proven by the integration tier). An owner could drop a trigger, which is why each envelope signs its dossier's slice |
+| **Downstream answers** | parsed with Zod, never cast; redirects never followed (they would carry the token); internal errors published as their bare code, never their message |
+| **Uploads** | at most 4 MB, `%PDF-` bytes only; inkthread processes and never keeps them. A dossier is public, and the compose form says so before any upload |
+| **Headers** | a source-restricting CSP (`'unsafe-inline'` stays until a nonce pipeline exists), `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff` |
+
+---
+
+## 📁 Project structure
+
+```
+bastion/
+├── src/
+│   ├── proxy.ts                 # security headers on every route; no gating (there is no sign-in)
+│   ├── app/                     # routes: / · /tools[/<id>] · /dossier · /d/[id] · /audit[/<id>] · /time-travel · /platform
+│   │   └── api/                 # tools, dossiers (+ advance, retry, stream, verify, receipts), uploads, platform/*
+│   ├── capabilities/            # one module per product: request builders, Zod schemas, the capability table
+│   ├── platform/
+│   │   ├── gateway/             # the one call pipeline, token minting, keys, typed results
+│   │   ├── registry/            # products, services, health probes, the shared status round
+│   │   ├── audit/               # appendEvent and the log's readers
+│   │   ├── budget.ts            # daily budgets (Upstash, in-process without it)
+│   │   ├── visitor.ts           # the daily pseudonym
+│   │   └── secrets.ts           # HKDF key derivation
+│   ├── dossier/                 # the runner, its 8 stages, evidence selection, receipt math, verification
+│   ├── features/                # page-level code: tools (8 workbenches), dossier, audit, time-travel, platform, health
+│   ├── components/              # the system map, receipts, wake gate, graph, page boxes, terminal frame
+│   └── lib/                     # Drizzle schema and client, v1 replay, site metadata
+├── drizzle/                     # 0000 schema · 0001 append-only triggers · 0002 v2 dossiers (additive)
+├── scripts/                     # migrate.mjs (runs inside Vercel builds), generate-keys.mjs
+├── tests/
+│   ├── unit/                    # Vitest, node environment
+│   ├── integration/db/          # real Postgres: append-only, claiming and leases, receipts, verify
+│   ├── e2e/                     # Playwright against the built app and a stub of every service
+│   └── fixtures/                # recorded downstream answers; receipts signed by the issuers' own code
+└── docs/specs/                  # 23 specs; 21 (v2) and 22 (token contract) are current
+```
 
 ---
 
 ## 🚀 Run locally
 
 ```bash
-# 1. clone & install
-git clone https://github.com/Abdul-Muizz1310/bastion.git
-cd bastion
+git clone https://github.com/Abdul-Muizz1310/bastion.git && cd bastion
 pnpm install
-
-# 2. env
-cp .env.example .env.local
-# fill in DATABASE_URL, IRON_SESSION_PASSWORD, RESEND_API_KEY,
-# UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
-
-# 3. dev
-pnpm dev
-# → http://localhost:3000
+cp .env.example .env.local        # DATABASE_URL, IRON_SESSION_PASSWORD, the signing key (node scripts/generate-keys.mjs)
+node scripts/migrate.mjs --force  # migrates the database DATABASE_URL names
+pnpm dev                          # http://localhost:3000
 ```
 
-### 📜 Scripts
+Without Upstash, budgets and rate limits are counted in-process (a warning says so). The downstream services default to their live Render hosts; each can be pointed elsewhere with `<SERVICE>_BACKEND_URL` (https only). Every variable is listed, with its default, in [`.env.example`](.env.example).
 
-```bash
-pnpm dev          # Next.js dev server
-pnpm build        # production build
-pnpm start        # production server
-pnpm test         # Vitest unit tests
-pnpm test:integration  # Postgres-backed tier (skips when DATABASE_URL is unset)
-pnpm bench        # Gateway Ed25519 JWT mint throughput
-pnpm lint         # Biome check
-pnpm format       # Biome write
-```
+| Script | Does |
+|---|---|
+| `pnpm dev` / `pnpm build` / `pnpm start` | Next.js; `build` migrates first, but only inside a Vercel build |
+| `pnpm test` | the unit tier (Vitest) |
+| `pnpm test:coverage` | the unit tier with coverage floors |
+| `pnpm test:integration` | the Postgres tier (needs `DATABASE_URL`) |
+| `pnpm test:e2e` | Playwright against the stub (needs a build and a local `DATABASE_URL`) |
+| `pnpm bench` | gateway token-mint throughput |
+| `pnpm lint` / `pnpm format` | Biome |
+
+---
+
+## 🧱 Stack
+
+| Concern | Choice |
+|---|---|
+| Framework | **Next.js 16** App Router — pages, route handlers, `after()`; no separate backend |
+| UI | **React 19**, Tailwind 4, an inline-SVG system map, `d3-force` for the graph layout |
+| Language | **TypeScript** strict; **Zod 4** at every boundary |
+| Database | **Neon Postgres** via **Drizzle** and postgres.js; append-only triggers on `events` |
+| Limits and budgets | **Upstash Redis** (sliding windows, daily counters) |
+| Tokens | **Ed25519** via `jose` (contract v2) |
+| Tests | **Vitest** (unit, integration), **Playwright** (e2e) |
+| Lint and format | **Biome** |
+| Hosting | **Vercel**; the products on **Render** |
 
 ---
 
 ## 🧪 Testing
 
 ```bash
-pnpm test                    # unit tier, single run (Vitest)
-pnpm test:watch              # unit tier, watch mode
-pnpm test:coverage           # unit tier + v8 coverage gate
-pnpm test:integration        # Postgres tier — skips when DATABASE_URL is unset
-pnpm test:e2e                # Playwright
+pnpm test                 # unit
+pnpm test:coverage        # unit + coverage floors
+pnpm test:integration     # real Postgres
+pnpm test:e2e             # Playwright: built app + stub (tests/e2e/README.md)
 ```
 
-Three tiers, all run in CI (`.github/workflows/ci.yml`): unit with a coverage
-gate, an integration tier against a real Postgres (this is what proves the
-`events` table rejects `UPDATE`/`DELETE`/`TRUNCATE`), and Playwright end-to-end.
+Measured on 2026-10-21 (Node 24.19, Linux):
 
 | Metric | Value |
 |---|---|
-| **Unit tests** | 594 (Vitest) |
-| **Line coverage** | **87.81%** |
-| **Methodology** | Red-first spec-TDD. Failing test before every feature. |
+| **Unit** | 2,832 tests in 190 files |
+| **Coverage** (unit) | 89.5 % lines · 87.6 % statements · 83.7 % branches · 80.3 % functions |
+| **Per-module floors** (90 % lines) | `src/capabilities` 100 % · `src/platform` 98.9 % · `src/dossier` 94.2 % |
+| **Integration** | 83 tests in 12 files, against a real Postgres (append-only triggers, concurrent claims, receipts, verification) |
+| **End to end** | 20 Playwright specs in 6 files against the built app and a stub of every service, 1.8 min (the asleep case waits out the 90 s wake); plus 1 live smoke, run only by hand |
+| **Methodology** | Spec-TDD: the spec first (`docs/specs/21-bastion-v2.md` §10 lists the e2e cases), then failing tests, then code |
 
-Reproducible performance numbers live in [`benchmarks/`](benchmarks/README.md) (`pnpm bench`).
+CI (`.github/workflows/ci.yml`) runs lint and types, the unit tier with coverage, the build, the integration tier against a Postgres service, and the e2e suite. The live smoke (`BASTION_LIVE_SMOKE=1 PLAYWRIGHT_BASE_URL=…`) spends one real debate and never runs in CI.
 
 ---
 
-## 📐 Engineering philosophy
+## ⚡ Benchmarks
+
+Every gateway call mints one token, so the signing cost sits on the hot path (`pnpm bench`, 20,000 mints after 500 warm-up, contract-v2 claims):
+
+| Run | Throughput | p50 | p95 | p99 |
+|---|---|---|---|---|
+| 1 | 3,633 mints/s | 0.269 ms | 0.331 ms | 0.384 ms |
+| 2 | 4,558 mints/s | 0.231 ms | 0.312 ms | 0.365 ms |
+
+Measured 2026-10-21 on Node 24.19, linux-x64. A quarter of a millisecond is three to four orders of magnitude below the downstream call it precedes; the 30 calls a minute per visitor is a policy, not a throughput limit. Details: [`benchmarks/README.md`](benchmarks/README.md).
+
+---
+
+## 🧭 Engineering philosophy
 
 | Principle | How it shows up |
 |---|---|
-| 🧪 **Spec-TDD** | Every feature ships with a red test first. |
-| 🛡️ **Negative-space programming** | Append-only audit (illegal states unrepresentable at DB level), `Literal` role types, Zod at every Server Action boundary. |
-| 🏗️ **Separation of concerns** | `app/` thin pages + Server Actions · `lib/` pure helpers (`auth/`, `audit/`, `gateway/`, `db/`) · `features/` domain logic. No cross-layer reaches. |
-| 🔤 **Typed everything** | TypeScript strict. Drizzle typed schema. Zod-inferred types. No `any`. |
-| 🌊 **Pure core, imperative shell** | RBAC checks, JWT mint, time-travel queries = pure. DB/Redis/Resend calls at edges only. |
-| 🎯 **One responsibility per module** | `lib/auth/` does auth. `lib/gateway/` does the gateway. `lib/audit/` does audit. Never "and". |
+| 🔴 **Spec-TDD** | Spec 21 holds every behaviour and case; each task wrote its failing tests first. The e2e suite found a real bug — a hand-off dropped after a long stage — and the fix landed test-first |
+| 🚫 **Negative-space programming** | Capabilities, stages, check states and statuses are closed unions; every downstream answer is parsed; a blank or malformed key id, budget or URL fails loudly; an unchecked receipt is never a pass |
+| 🏗️ **Separation of concerns** | Pages render; route handlers are thin shells; the gateway is the only door to a service; stages are pure handlers over injected calls |
+| 🔤 **Typed everything** | TypeScript strict, Zod at each HTTP and database boundary, one capability table typed end to end |
+| 🌊 **Pure core, imperative shell** | Evidence selection, receipt math, canonical JSON, the nudge rule, the wake model and the health classifier are pure; I/O lives at the edges |
 
 ---
 
-## 🚀 Deploy
+## ⚠️ Scope & limitations
 
-Hosted on **Vercel**. Push to `main` → Vercel build → auto-deploy.
-
-Required env vars:
-- `DATABASE_URL` (Neon Postgres)
-- `IRON_SESSION_PASSWORD` (32+ char secret)
-- `RESEND_API_KEY`
-- `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`
-
----
-
-## 📄 License
-
-MIT. See [LICENSE](LICENSE).
+- **Free tiers set the pace.** Render's free services sleep after 15 minutes and take about a minute to wake; the free models allow 50 requests a day across the whole portfolio, which is why the budgets are low.
+- **Budgets are shared.** One visitor can spend the day's debates for everyone; per-visitor quotas would sit on top.
+- **Signatures are checked against the issuers' current keys.** Rotating an issuer's key would turn its old dossiers to fail until key history is published.
+- **The perf receipt is only as request-scoped as each service.** It lists the queries each service attributes to the dossier's request id; a service not yet on slowquery-detective 0.2 answers with everything it saw.
+- **Uploads are gone after an hour** (DR-0029): their quoted passages stay in the dossier, and the documents check reports the graph as expired, not failed.
+- **Without Upstash** (local and the e2e run) budgets and limits are per process.
 
 ---
 
-> 🏰 **`bastion --help`** · one control plane to rule them all
+## 🚦 Status
+
+| Milestone | Status |
+|---|---|
+| v1: signed-in control plane, 5 services | ✅ Live at [bastion-six.vercel.app](https://bastion-six.vercel.app) |
+| v2: no sign-in, 8 workbenches, durable dossiers, live verification | ✅ Built and tested on branch `v2` (unit, integration, e2e) |
+| Contract v2 on all six backends | 🟡 Rolling out (spec 22 §5); v2 deploys after it |
+| Live smoke against the v2 deployment | 🟡 Runs once the backends are on contract v2 |
+
+---
+
+## 📜 License
+
+MIT — see [LICENSE](LICENSE).
+
+---
+
+> 🏰 *Tools that hand you a receipt — and one place to check every one of them.*

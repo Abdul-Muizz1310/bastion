@@ -1,19 +1,70 @@
-# Why Bastion
+# Why bastion
 
 ## The obvious version
 
-A portfolio landing page with links to five projects. Maybe a grid of cards, each with a description and a "View Project" button. Static, no backend, deployed in an afternoon. You could add thumbnails, maybe a dark theme, and call it done. Every developer portfolio looks like this because it works — but it proves nothing about how the projects relate to each other or whether they function as a system.
+A portfolio landing page with a card per project: a description, a screenshot, a "view project"
+link. It looks finished and proves nothing. A visitor cannot tell whether the products work, let
+alone whether they work together, and a recruiter who wants to check a claim has nothing to check.
+
+bastion v1 went one step further: a signed-in control plane that called four services through a
+gateway and showed they answered. That proved the services were up. It did not let a stranger use
+them, it hid two products (inkthread and inkgrid) entirely, and its demo dossier ran in one
+unawaited promise, never sealed its envelope and could not be verified by anyone.
 
 ## Why I built it differently
 
-Bastion is the control plane that proves the five services actually work together, not just independently. Instead of a static landing page, it is a full-stack Next.js 16 application with its own auth system (HMAC-sealed session cookies, magic links via Resend), RBAC with three roles, an append-only audit log with time-travel replay, and an API gateway that mints Ed25519-signed JWTs to call downstream services.
+Every product in the portfolio hands back a receipt: a signed certificate, a signed transcript, a
+verification report, an exact `CREATE INDEX`. bastion v2 is built around that one idea. It is the
+place where a visitor operates each product live and keeps its receipt, and where the products are
+chained into a dossier whose receipt binds all the others — the receipt of receipts.
 
-The integrated demo runs a cross-service workflow through the gateway — scrape, sign, debate, analyze, audit — proving distributed tracing and failure isolation across the entire platform. Every gateway call carries a unique `requestId` that threads through all five services and lands in the audit log, so you can trace a single request from browser click to downstream response.
+**No sign-in.** A sign-in wall is the first thing that stops a reviewer from trying anything, and
+an account system is a liability I would have to defend. A visitor is a daily pseudonym — an HMAC of
+their address and the UTC date, rotated every day and never reversible — which is enough to key
+rate limits, budgets and the audit log without storing anyone. Capability grants replace user roles:
+the token bastion mints says what one call may do, not who the caller is.
 
-I chose append-only events over mutable state because an audit log you can edit is not an audit log. The `events` table is append-only at the database level: `UPDATE`, `DELETE` and `TRUNCATE` are revoked from `PUBLIC` and blocked by `BEFORE`-triggers that raise `insufficient_privilege`, so even the table owner — which is the role the app connects as — cannot rewrite history. Time-travel replay uses `DISTINCT ON (entity_type, entity_id) WHERE created_at <= $T` to reconstruct state at any past moment. This is the same pattern production audit systems use, and it means the demo data is also the proof that the demo ran.
+**Budgets instead of trust.** The products run on free tiers: Render services that sleep, and free
+models limited to 50 requests a day across the whole portfolio. So everything that spends — a
+debate, an upload, a scrape, a certificate — draws from a daily budget shared by every visitor, and
+each visitor's calls to a service, spends and reads of the log are rate-limited. The interface says
+"budget spent" or "asleep" for what they are, never as a product failing.
 
-I chose Server Actions over a separate API because splitting bastion into two repos would add deployment complexity without adding architectural signal. The entire backend is Server Actions and route handlers, with middleware doing route-level authentication gating, which is how Next.js 16 is meant to be used.
+**A dossier is rows, not a promise.** Each of the eight stages is a Postgres row with a lease, an
+attempt count and a time it may run again. One stage runs per invocation and hands the dossier to
+the next with `after()`, so a run survives a crash, a timeout and a closed tab, and two browsers
+nudging the same dossier cannot run a stage twice.
+
+**Verification without trusting bastion.** The issuers sign their receipts with their own keys.
+"Verify everything" fetches those keys and re-checks each signature and hash live; bastion's own
+receipts (the perf receipt, the audit digest) are recomputed from what it stored. Anything that
+could not be checked reads as unavailable — never as a pass. The audit log is append-only in
+Postgres itself, and each dossier's envelope signs the digest of its own slice of that log, so even
+the table owner cannot quietly rewrite a dossier's history.
+
+**One door to every service.** All 37 capabilities go through one gateway function driven by a typed
+table: rate limit, budget, a token bound to one audience, the call, a schema parse of the answer, an
+audit event. A new capability is a row in that table, not a new code path.
 
 ## What I'd change if I did it again
 
-Authorization is spread across three shapes: `requireRole()` at the page layer, `withRole()` inside Server Actions, and inline role comparisons where a query is *scoped* to the actor rather than blocked (a viewer only sees their own audit events). The middleware deliberately does none of it — it only authenticates. In a production system with more roles, I would extract a policy engine (something like Cedar or Open Policy Agent) instead of inlining role arrays. The current approach is correct for three roles but would get brittle at ten. I would also add WebSocket-based live tailing for the audit log instead of polling, so the time-travel view updates in real time during the demo.
+- **A queue under the runner.** The dossier chain rides on `after()`. The end-to-end suite found
+  that Next runs a function given to `after()` only when the response closes, so a hand-off
+  registered after a stage that outlived its caller was silently dropped. Registering the hand-off
+  before the stage fixed it, but the runner still depends on a platform detail; a durable queue
+  (QStash, or Vercel's own) would make each hand-off a message that cannot be lost.
+- **Per-visitor quotas under the shared budgets.** Today one visitor can spend the day's debates
+  for everyone. A small per-visitor share of each budget would keep the platform usable for the next
+  person without raising the totals.
+- **Published key history.** Signatures are checked against each issuer's current key, so rotating
+  a key would turn every older dossier's checks to fail. Each issuer should publish its retired keys
+  (a JWKS with `kid` history), and each receipt should carry the `kid` it was signed with.
+- **A transparency log for the whole audit log.** Envelopes sign each dossier's slice, but a
+  Merkle tree over all events, with its root published, would make tampering with any event —
+  not just a dossier's — detectable by anyone.
+- **Contract tests against the live schemas.** The stub's fixtures were recorded by hand from each
+  backend's models and live answers. Generating them from each backend's OpenAPI document in CI
+  would catch a renamed field before a release, not after.
+- **A DOM test runner for the client islands.** The wake gates, the live dossier and the compose form
+  are covered by their pure cores, by rendered markup and by Playwright; a component runner with
+  real events would shorten the loop between a change and its proof.
