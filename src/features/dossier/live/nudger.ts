@@ -12,6 +12,7 @@ import { frontier, isDue, NUDGE_GRACE_MS, nudgeAt } from "./nudge";
  * - a 429 waits the `retryAfterS` it was given; any other failure (a throw included) backs off 15 s,
  *   doubling to 2 min, and a success resets that;
  * - a 404 (the dossier is gone) stops it for good; an error stage or a finished dossier plans none;
+ * - `pause` (a hidden tab) plans nothing — a call in flight still settles — and `resume` plans afresh;
  * - `dispose` aborts the call in flight and plans nothing more.
  */
 
@@ -34,6 +35,9 @@ export type NudgerStatus = { inFlight: boolean; stopped: boolean; holdUntil: num
 
 export type Nudger = {
   update(steps: readonly StepView[]): void;
+  /** The tab is hidden: plan nothing (a call in flight settles); `resume` plans afresh. */
+  pause(): void;
+  resume(): void;
   dispose(): void;
   status(): NudgerStatus;
 };
@@ -49,6 +53,7 @@ export function createNudger(deps: NudgerDeps): Nudger {
   let failures = 0;
   let stopped = false;
   let disposed = false;
+  let paused = false;
 
   function clear(): void {
     if (timer !== null) deps.clearTimer(timer);
@@ -57,7 +62,7 @@ export function createNudger(deps: NudgerDeps): Nudger {
 
   function plan(): void {
     clear();
-    if (disposed || stopped || controller !== null) return;
+    if (disposed || stopped || paused || controller !== null) return;
     const at = nudgeAt(steps);
     if (at === null) return;
     const when = Math.max(at, holdUntil);
@@ -87,7 +92,7 @@ export function createNudger(deps: NudgerDeps): Nudger {
 
   function fire(): void {
     timer = null;
-    if (disposed || stopped || controller !== null) return;
+    if (disposed || stopped || paused || controller !== null) return;
     const now = deps.now();
     const step = frontier(steps);
     if (step === null || !isDue(step, now - NUDGE_GRACE_MS) || now < holdUntil) {
@@ -117,6 +122,14 @@ export function createNudger(deps: NudgerDeps): Nudger {
     update(next) {
       steps = next;
       if (controller === null) plan();
+    },
+    pause() {
+      paused = true;
+      clear();
+    },
+    resume() {
+      paused = false;
+      plan();
     },
     dispose() {
       disposed = true;

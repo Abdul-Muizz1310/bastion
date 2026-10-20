@@ -51,6 +51,13 @@ describe("EvidenceTable", () => {
     expect(links(web).map((l) => l.href)).toContain("https://news.ycombinator.com/item?id=41");
   });
 
+  it("marks a scraped page's link nofollow ugc noreferrer (Ruling AK)", () => {
+    const web = links(sliceByAttr(render(), "id", "e-w-hackernews-41")).find(
+      (l) => l.href === "https://news.ycombinator.com/item?id=41",
+    );
+    expect(web?.tag).toMatch(/\srel="nofollow ugc noreferrer"/);
+  });
+
   it("says a row was not certified instead of leaving the cell empty", () => {
     expect(textOf(sliceByAttr(render(), "id", "e-w-x-unsealed"))).toContain("not certified");
   });

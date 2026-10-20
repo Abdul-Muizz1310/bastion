@@ -65,6 +65,16 @@ describe("liveReducer", () => {
     expect(s.connection).toBe("reconnecting");
   });
 
+  it("finishes on a done whose body did not parse, keeping what it knew (Ruling AK)", () => {
+    const s = liveReducer(running(), { type: "event", event: { type: "ended" } });
+    expect(s).toMatchObject({ finished: true, connection: "closed", status: "running" });
+  });
+
+  it("knows a paused stream (hidden tab) and one that stopped trying", () => {
+    expect(liveReducer(running(), { type: "connection", state: "paused" }).connection).toBe("paused");
+    expect(liveReducer(running(), { type: "connection", state: "failed" }).connection).toBe("failed");
+  });
+
   it("ignores connection changes once finished", () => {
     const done = liveReducer(running(), {
       type: "event",

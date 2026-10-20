@@ -184,6 +184,33 @@ describe("createNudger", () => {
     expect(advance).toHaveBeenCalledTimes(1);
   });
 
+  it("pauses while the tab is hidden and plans afresh when shown", async () => {
+    const { advance, nudger } = harness();
+    nudger.update(viewsAt("seal", "running", { leaseUntil: at(-60_000) }));
+    nudger.pause();
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(advance).not.toHaveBeenCalled();
+    nudger.update(viewsAt("seal", "running", { leaseUntil: at(-60_000) }));
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(advance).not.toHaveBeenCalled();
+    nudger.resume();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(advance).toHaveBeenCalledTimes(1);
+  });
+
+  it("a call in flight when the tab hides settles, but plans nothing until shown", async () => {
+    const { advance, calls, nudger } = harness();
+    nudger.update(viewsAt("seal", "running", { leaseUntil: at(-60_000) }));
+    await vi.advanceTimersByTimeAsync(0);
+    nudger.pause();
+    await settle(calls[0], { kind: "failed", detail: "x" });
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(advance).toHaveBeenCalledTimes(1);
+    nudger.resume();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(advance).toHaveBeenCalledTimes(2);
+  });
+
   it("counts a thrown advance as a failure, never a crash", async () => {
     const advance = vi.fn(async () => {
       throw new Error("network");

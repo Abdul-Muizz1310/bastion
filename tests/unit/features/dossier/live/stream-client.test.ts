@@ -13,8 +13,8 @@ class FakeSource implements EventSourceLike {
   readonly url: string;
   readyState = 0;
   closed = false;
-  onopen: (() => void) | null = null;
-  onerror: (() => void) | null = null;
+  onopen: ((event: Event) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
   private readonly listeners = new Map<string, ((e: { data: string }) => void)[]>();
 
   constructor(url: string) {
@@ -51,12 +51,20 @@ const STEP = {
 function follow() {
   const onEvent = vi.fn();
   const onConnection = vi.fn();
-  const close = followDossier(DOSSIER_ID, { onEvent, onConnection }, {
+  const stream = followDossier(DOSSIER_ID, { onEvent, onConnection }, {
     EventSourceImpl: FakeSource,
     setTimer: (fn, ms) => setTimeout(fn, ms),
     clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
   });
-  return { onEvent, onConnection, close };
+  return { onEvent, onConnection, close: () => stream.close(), stream };
+}
+
+/** The browser gave up on the latest source (a 404 or a 500 fails an EventSource for good). */
+function giveUp() {
+  const src = FakeSource.all.at(-1);
+  if (!src) throw new Error("no source");
+  src.readyState = 2;
+  src.onerror?.(new Event("error"));
 }
 
 beforeEach(() => {
@@ -72,7 +80,7 @@ describe("followDossier", () => {
   it("opens the dossier's stream and reports the connection", () => {
     const { onConnection } = follow();
     expect(FakeSource.all[0]?.url).toBe(`/api/dossiers/${DOSSIER_ID}/stream`);
-    FakeSource.all[0]?.onopen?.();
+    FakeSource.all[0]?.onopen?.(new Event("open"));
     expect(onConnection).toHaveBeenCalledWith("open");
   });
 
@@ -121,11 +129,11 @@ describe("followDossier", () => {
     const src = FakeSource.all[0];
     if (!src) throw new Error("no source");
     src.readyState = 0; // CONNECTING: the browser is retrying on its own
-    src.onerror?.();
+    src.onerror?.(new Event("error"));
     expect(onConnection).toHaveBeenLastCalledWith("reconnecting");
     expect(src.closed).toBe(false);
     src.readyState = 2; // CLOSED: it gave up
-    src.onerror?.();
+    src.onerror?.(new Event("error"));
     await vi.advanceTimersByTimeAsync(2_000);
     expect(FakeSource.all).toHaveLength(2);
   });
@@ -135,6 +143,65 @@ describe("followDossier", () => {
     FakeSource.all[0]?.emit("timeout", {});
     close();
     await vi.advanceTimersByTimeAsync(600_000);
+    expect(FakeSource.all).toHaveLength(1);
+  });
+
+  it("ends on done even when its body does not parse — the page renders again from the server (Ruling AK)", async () => {
+    const { onEvent } = follow();
+    const src = FakeSource.all[0];
+    for (const fn of (src as unknown as { listeners: Map<string, ((e: { data: string }) => void)[]> }).listeners.get("done") ?? []) {
+      fn({ data: "{not json" });
+    }
+    expect(onEvent).toHaveBeenLastCalledWith({ type: "ended" });
+    expect(src?.closed).toBe(true);
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(FakeSource.all).toHaveLength(1);
+  });
+
+  it("stops reconnecting after five failures in a row without once opening, and says so (Ruling AK)", async () => {
+    const { onConnection } = follow();
+    for (let i = 0; i < 5; i++) {
+      giveUp();
+      await vi.advanceTimersByTimeAsync(60_000);
+    }
+    expect(FakeSource.all).toHaveLength(5);
+    expect(onConnection).toHaveBeenLastCalledWith("failed");
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(FakeSource.all).toHaveLength(5);
+  });
+
+  it("an open resets that count", async () => {
+    follow();
+    for (let i = 0; i < 4; i++) {
+      giveUp();
+      await vi.advanceTimersByTimeAsync(60_000);
+    }
+    FakeSource.all.at(-1)?.onopen?.(new Event("open"));
+    for (let i = 0; i < 4; i++) {
+      giveUp();
+      await vi.advanceTimersByTimeAsync(60_000);
+    }
+    expect(FakeSource.all).toHaveLength(9);
+  });
+
+  it("pauses while the tab is hidden — the stream closed, no reconnect — and reopens when shown", async () => {
+    const { onConnection, stream } = follow();
+    FakeSource.all[0]?.emit("timeout", {});
+    stream.pause();
+    expect(onConnection).toHaveBeenLastCalledWith("paused");
+    expect(FakeSource.all[0]?.closed).toBe(true);
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(FakeSource.all).toHaveLength(1);
+    stream.resume();
+    expect(FakeSource.all).toHaveLength(2);
+    expect(FakeSource.all[1]?.closed).toBe(false);
+  });
+
+  it("does not reopen on resume once the run is done", () => {
+    const { stream } = follow();
+    FakeSource.all[0]?.emit("done", { status: "succeeded", verdict: "TRUE", confidence: 0.8 });
+    stream.pause();
+    stream.resume();
     expect(FakeSource.all).toHaveLength(1);
   });
 

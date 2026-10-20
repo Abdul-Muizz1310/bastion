@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { citationSegments, evidenceHref, httpUrl } from "../citations";
+import { citationSegments, evidenceHref, httpUrl, UNTRUSTED_REL } from "../citations";
 import type { TranscriptReceiptView, TranscriptRound } from "../receipt-view";
 
 /**
@@ -95,7 +95,7 @@ function Citations({
                 {c.ref.slice(0, 8)}
               </a>
             ) : url !== null ? (
-              <a href={url} className={LINK}>
+              <a href={url} rel={UNTRUSTED_REL} className={LINK}>
                 {c.ref}
               </a>
             ) : (

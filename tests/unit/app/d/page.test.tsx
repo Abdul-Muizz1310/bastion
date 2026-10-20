@@ -126,11 +126,14 @@ describe("/d/[id]", () => {
     expect(link?.name).toMatch(/verify everything/);
   });
 
-  it("draws the documents behind inkthread's wake gate, anchored for the evidence rows", async () => {
+  it("lists the documents' quoted pages, anchored for the evidence rows, without waking inkthread (Ruling AJ)", async () => {
     const html = await render();
     const section = sliceByAttr(html, "data-section", "documents");
-    expect(section).toContain('data-gate="checking"');
+    expect(section).not.toContain("data-gate=");
     expect(section).toContain(`data-document="${documentRow().documentId}"`);
+    expect(section).toContain(`id="doc-${documentRow().documentId}-p1"`);
+    const locator = links(sliceByAttr(html, "id", "e-d5152b39-p12")).find((l) => l.href?.startsWith("#doc-"));
+    expect(section).toContain(`id="${locator?.href?.slice(1)}"`);
   });
 
   it("lists the eight stages in stage order, all settled, with no retry", async () => {
@@ -169,6 +172,10 @@ describe("/d/[id]", () => {
     expect(links(html).map((l) => l.href)).not.toContain("#verify-title");
     expect(text).toMatch(/connecting to the live run/);
     expect(text).toMatch(/the receipt appears here once the run finishes/);
+    // The live card: counts the stream does not carry are never stale zeros (review round 1).
+    expect(text).toMatch(/evidence\s+after seal/);
+    expect(text).toMatch(/envelope\s+after the run/);
+    expect(text).not.toMatch(/0 items/);
   });
 
   it("renders a failed dossier with retry on the failed stage and the receipts it holds", async () => {
@@ -202,6 +209,17 @@ describe("/d/[id]", () => {
     expect(html.match(/data-stage=/g)).toHaveLength(7);
     expect(textOf(html)).toMatch(/not one per stage/);
     expect(textOf(html)).not.toMatch(/connecting to the live run/);
+  });
+
+  it("shows an unfinished v1 dossier (no step rows) statically: nothing follows or nudges it (Ruling AK)", async () => {
+    store.findDossier.mockResolvedValue(
+      dossierRow({ status: "running", verdict: null, confidence: null, envelopeId: null, visitor: null, userId: "u1" }),
+    );
+    store.loadSteps.mockResolvedValue([]);
+    receipts.mockResolvedValue([]);
+    const text = textOf(await render());
+    expect(text).toMatch(/predates the eight-stage runner/);
+    expect(text).not.toMatch(/connecting to the live run/);
   });
 
   it("renders a v1 dossier (no step rows) without inventing stages", async () => {

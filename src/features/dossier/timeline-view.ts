@@ -55,6 +55,14 @@ function productOf(stage: Stage, error: string): string {
 }
 
 export function errorView(stage: Stage, error: string): ErrorView {
+  if (/^(stage_threw|invalid_outcome)\b/.test(error)) {
+    // Never the message: the stream already carries the bare code (publicError).
+    return {
+      tone: "bastion",
+      title: "bastion hit an internal error running this stage",
+      detail: "Nothing is wrong with the product it calls. Retry from this stage.",
+    };
+  }
   const product = productOf(stage, error);
   if (/\bbudget_exhausted\b/.test(error)) {
     return {

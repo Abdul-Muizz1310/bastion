@@ -25,7 +25,9 @@ export type StreamEvent =
   | { type: "status"; status: StatusEvent }
   | { type: "done"; done: DoneEvent }
   | { type: "timeout" }
-  | { type: "heartbeat" };
+  | { type: "heartbeat" }
+  /** A done whose body did not parse: the run's stream is over all the same (Ruling AK). */
+  | { type: "ended" };
 
 const isoTime = z.string().check(z.refine((s) => !Number.isNaN(Date.parse(s)), "not a time"));
 const time = z.nullable(isoTime);

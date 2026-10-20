@@ -1,4 +1,4 @@
-import { documentAnchor, evidenceHref } from "../citations";
+import { documentAnchor, evidenceHref, UNTRUSTED_REL } from "../citations";
 import type { EvidenceRowView } from "../receipt-view";
 import { CertVerifyState } from "./verify-context";
 
@@ -134,7 +134,7 @@ function Locator({ row }: { row: EvidenceRowView }) {
   if (row.link) {
     return (
       <>
-        <a href={row.link} className={LINK}>
+        <a href={row.link} rel={UNTRUSTED_REL} className={LINK}>
           {row.title || host(row.link)}
         </a>
         <span className="block text-fg-muted" translate="no">

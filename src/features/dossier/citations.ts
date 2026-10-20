@@ -50,3 +50,6 @@ export function httpUrl(value: string | null | undefined): string | null {
     return null;
   }
 }
+
+/** Every outbound link taken from scraped or model-written content (Ruling AK). */
+export const UNTRUSTED_REL = "nofollow ugc noreferrer";

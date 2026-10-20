@@ -111,6 +111,18 @@ describe("errorView", () => {
     });
   });
 
+  it.each(["stage_threw", "invalid_outcome", "stage_threw: a message that must never show"])(
+    "names bastion's own internal error (%s) as bastion's, with the retry, and nothing of its message",
+    (error) => {
+      const v = errorView("seal", error);
+      expect(v).toEqual({
+        tone: "bastion",
+        title: "bastion hit an internal error running this stage",
+        detail: "Nothing is wrong with the product it calls. Retry from this stage.",
+      });
+    },
+  );
+
   it("falls back to the stage's product for anything else", () => {
     expect(errorView("debate", "debate_failed: 889d7f2b")).toMatchObject({
       tone: "product",

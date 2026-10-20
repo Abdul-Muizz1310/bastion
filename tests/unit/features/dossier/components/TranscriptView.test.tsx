@@ -114,6 +114,10 @@ describe("TranscriptView", () => {
     );
     const hrefs = links(html).map((l) => l.href);
     expect(hrefs).toContain("https://www.uspto.gov/fees");
+    // A model-written citation: never endorsed, never told where it came from (Ruling AK).
+    expect(links(html).find((l) => l.href === "https://www.uspto.gov/fees")?.tag).toMatch(
+      /\srel="nofollow ugc noreferrer"/,
+    );
     expect(hrefs.some((h) => h?.startsWith("javascript"))).toBe(false);
     expect(textOf(html)).toContain("javascript:alert(1)");
   });

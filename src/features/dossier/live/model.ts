@@ -6,7 +6,7 @@ import type { DossierStatus, StreamEvent, Verdict } from "./events";
  * The steps stay one per stage in stage order; a dossier that predates the step machine has none.
  */
 
-export type Connection = "connecting" | "open" | "reconnecting" | "closed";
+export type Connection = "connecting" | "open" | "reconnecting" | "paused" | "failed" | "closed";
 
 export type LiveState = {
   steps: readonly StepView[];
@@ -27,7 +27,7 @@ export type LiveInitial = {
 
 export type LiveAction =
   | { type: "event"; event: StreamEvent }
-  | { type: "connection"; state: "open" | "reconnecting" };
+  | { type: "connection"; state: "open" | "reconnecting" | "paused" | "failed" };
 
 const terminal = (status: DossierStatus) => status === "succeeded" || status === "failed";
 
@@ -78,6 +78,8 @@ export function liveReducer(state: LiveState, action: LiveAction): LiveState {
         finished: true,
         connection: "closed",
       };
+    case "ended":
+      return { ...state, finished: true, connection: "closed" };
     case "timeout":
       return state.finished ? state : { ...state, connection: "reconnecting" };
     case "heartbeat":
