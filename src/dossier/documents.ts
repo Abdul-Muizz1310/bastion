@@ -15,7 +15,13 @@ export async function listDocuments(dossierId: string): Promise<DossierDocument[
   );
 }
 
-export type DocumentFacts = { sha256: string; graphHash: string; pageCount: number };
+/** What the read stage learns of a document from its graph; `title` is null when it has none. */
+export type DocumentFacts = {
+  sha256: string;
+  graphHash: string;
+  pageCount: number;
+  title: string | null;
+};
 
 export async function saveDocumentFacts(
   dossierId: string,

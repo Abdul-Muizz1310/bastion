@@ -21,6 +21,7 @@ import { callContext, failure } from "./shared";
  * a word stem of four letters or more with the claim. Tables come from the reading, as Markdown.
  * The output is the flat `Candidate[]` (Task 7's seal reads `ctx.outputs.read`); while waiting, the
  * output is `{ docs: { [documentId]: Candidate[] } }` so finished documents are not fetched again.
+ * Each document read records its sha256, graph hash, page count and title (`documentTitle`).
  */
 
 export type ReadDeps = {
@@ -39,6 +40,22 @@ function bbox4(b: readonly number[]): [number, number, number, number] {
 
 function shortId(documentId: string): string {
   return documentId.slice(0, 8);
+}
+
+/** A non-blank string, trimmed; anything else is missing. */
+function present(s: string | null | undefined): string | null {
+  const trimmed = s?.trim() ?? "";
+  return trimmed === "" ? null : trimmed;
+}
+
+/**
+ * Pure: what the receipt calls a document (spec 21 §6.3) — the first line of inkthread's title,
+ * else its file name, else null (then, and only then, the receipt shows its id).
+ */
+export function documentTitle(
+  document: Pick<Graph["document"], "title" | "file_name">,
+): string | null {
+  return present(document.title?.split("\n")[0]) ?? present(document.file_name);
 }
 
 /** Pure: the passage and table candidates of one document. */
@@ -145,6 +162,7 @@ export function readStage(deps: ReadDeps, siteUrl: string): StageHandler {
       sha256: graph.data.document.sha256,
       graphHash: graph.data.provenance.graph_hash,
       pageCount: graph.data.document.page_count,
+      title: documentTitle(graph.data.document),
     });
     return {
       kind: "done",

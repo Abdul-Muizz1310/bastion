@@ -3,7 +3,7 @@ import { inkthread } from "@/capabilities/inkthread";
 import type { DossierDocument } from "@/lib/db/schema";
 import { callContext } from "@/dossier/stages/shared";
 import { POLL_MS } from "@/dossier/stages";
-import { type ReadDeps, documentCandidates, readStage } from "@/dossier/stages/read";
+import { type ReadDeps, documentCandidates, documentTitle, readStage } from "@/dossier/stages/read";
 import type { Candidate } from "@/dossier/select-evidence";
 import type { GatewayResult } from "@/platform/gateway/result";
 import { DOSSIER_ID, dossier, fixture, stageCtx } from "./helpers";
@@ -46,6 +46,20 @@ function deps(over: Partial<ReadDeps> = {}): ReadDeps {
 const run = (d: ReadDeps, ctx = stageCtx({ dossier: dossier({ claim: "zebra" }) })) =>
   readStage(d, SITE)(ctx);
 
+describe("documentTitle — what the receipt calls a document", () => {
+  it.each([
+    ["inkthread's title", { title: "Fee schedule", file_name: "fees.pdf" }, "Fee schedule"],
+    ["the title's first line only", { title: "Fee schedule\nUSPTO 2026", file_name: "fees.pdf" }, "Fee schedule"],
+    ["the title trimmed", { title: "  Fee schedule  ", file_name: null }, "Fee schedule"],
+    ["the file name when there is no title", { title: null, file_name: "fees.pdf" }, "fees.pdf"],
+    ["the file name when the title is blank", { title: " \n x", file_name: "fees.pdf" }, "fees.pdf"],
+    ["null when neither is there", { title: null, file_name: null }, null],
+    ["null when both are blank", { title: "", file_name: "   " }, null],
+  ])("is %s", (_name, document, expected) => {
+    expect(documentTitle(document)).toBe(expected);
+  });
+});
+
 describe("read stage", () => {
   it("is skipped with no documents", async () => {
     expect(await run(deps({ documents: async () => [] }))).toEqual({
@@ -83,7 +97,17 @@ describe("read stage", () => {
       sha256: graph().document.sha256,
       graphHash: graph().provenance.graph_hash,
       pageCount: 15,
+      // The fixture's graph has no title: the receipt names it by its file, not its UUID.
+      title: "uspto-fee-schedule.pdf",
     });
+  });
+
+  it("records inkthread's own title when the graph has one", async () => {
+    const titled = graph();
+    titled.document.title = "Patent fees\n(effective 2026)";
+    const d = deps({ graph: vi.fn(async () => ok(titled)) });
+    await run(d);
+    expect(vi.mocked(d.save).mock.calls[0]?.[2]).toMatchObject({ title: "Patent fees" });
   });
 
   it("waits while the upload's job is running, then reads when it succeeds", async () => {

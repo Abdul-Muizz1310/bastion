@@ -411,7 +411,10 @@ A dossier is rows, not a promise. `dossier_steps` holds one row per stage with `
 - `dossiers`: `user_id` becomes nullable; add `visitor` (text). Old rows are untouched.
 - `dossier_steps` (new): `(dossier_id, stage)` unique; the state machine above.
 - `dossier_documents` (new): dossier id, inkthread document id, sha256, title, kind (sample/upload),
-  `graph_hash`, page count.
+  `graph_hash`, page count. The read stage writes sha256, `graph_hash`, page count and title from
+  the graph it read; the title is the first line of inkthread's `document.title`, else its
+  `file_name` (blank counts as missing), else null. The receipt names a document by its title, and
+  by its id only when it has none.
 - `evidence_items`: add `kind` (`web` · `passage` · `table`), `product`, `locator` (jsonb: URL, or
   document id + page + bbox + node id), `excerpt`, `inkprint_hash`; `stable_id` stays the per-dossier key.
 - `receipts` (new): dossier id, kind (`certificate` · `transcript` · `perf` · `envelope` · `audit`),

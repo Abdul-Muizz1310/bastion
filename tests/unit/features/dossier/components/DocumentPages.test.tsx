@@ -64,6 +64,24 @@ describe("DocumentPages — before the visitor asks (Ruling AJ)", () => {
     expect(textOf(p1)).toMatch(/page 1/);
   });
 
+  /** The document's heading (an h3, which the html helpers' letter-only tag names do not match). */
+  const headingOf = (markup: string) => {
+    const match = new RegExp(`<h3 id="doc-${DOC}-title"[^>]*>([\\s\\S]*?)</h3>`).exec(markup);
+    if (!match) throw new Error("no document heading");
+    return textOf(match[1] ?? "");
+  };
+
+  it("names the document by its title, not its id", () => {
+    const heading = headingOf(html);
+    expect(heading).toMatch(/^uspto-fee-schedule\.pdf/);
+    expect(heading).not.toContain(DOC);
+  });
+
+  it("falls back to the id only for a document with no title", () => {
+    const untitled = renderToStaticMarkup(<DocumentPages documents={[doc({ title: null })]} />);
+    expect(headingOf(untitled)).toMatch(new RegExp(`^${DOC}`));
+  });
+
   it("offers to show the passages on their pages, saying it wakes inkthread", () => {
     expect(isDisabled(buttonNamed(html, /show on its pages/))).toBe(false);
     expect(textOf(html)).toMatch(/wakes inkthread/);
