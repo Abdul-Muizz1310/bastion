@@ -61,6 +61,41 @@ describe("SlowqueryWorkbench", () => {
     expect(textOf(render({ fleet }))).toMatch(/paper-trail\s*\??\s*unknown · no \/_slowquery here yet/);
   });
 
+  it("says a routed host's background wake was refused, never that bastion is waking it (round 4)", () => {
+    const text = textOf(
+      render(
+        {
+          fleet: [
+            { service: "magpie", outcome: { ok: false, kind: "asleep", requestId: "rid-m" } },
+            { service: "slowquery", outcome: ok(demo, "rid-demo") },
+          ],
+        },
+        { side: { magpie: { phase: "done", answer: { kind: "rate_limited", retryAfterS: 17 } } } },
+      ),
+    );
+    expect(text).toMatch(
+      /magpie\s*◌?\s*asleep · bastion could not wake magpie — too many wakes; try again in 17 s/,
+    );
+    expect(text).not.toMatch(/waking/);
+  });
+
+  it("says a routed host's background wake is in flight while it is", () => {
+    const text = textOf(
+      render(
+        { fleet: [{ service: "magpie", outcome: { ok: false, kind: "asleep", requestId: "rid-m" } }] },
+        { side: { magpie: { phase: "waking" } } },
+      ),
+    );
+    expect(text).toMatch(/magpie\s*◌?\s*asleep · bastion is waking magpie now/);
+  });
+
+  it("keeps saying the gate's own host is being woken again", () => {
+    const text = textOf(
+      render({ fleet: [{ service: "slowquery", outcome: { ok: false, kind: "asleep", requestId: "rid-d" } }] }),
+    );
+    expect(text).toMatch(/slowquery\s*◌?\s*asleep · bastion is waking it/);
+  });
+
   it("shows a fingerprint's EXPLAIN plan and its exact CREATE INDEX, with the receipt", () => {
     const html = render({ fleet, chosen: { service: "magpie", id: detail.fingerprint.id }, detail: ok(detail, RID) });
     const text = textOf(html);

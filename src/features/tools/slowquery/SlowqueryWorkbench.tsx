@@ -16,7 +16,18 @@ import { OutcomeNotice } from "@/components/tools/OutcomeNotice";
 import { Panel, WithReceipt } from "@/components/tools/Panel";
 import { BUTTON, BUTTON_QUIET, MONO_BLOCK } from "@/components/tools/styles";
 import { ToolReceipt } from "@/components/tools/ToolReceipt";
-import { useRewake, useWakeReady } from "@/components/tools/WakeGate";
+import {
+  useGateServices,
+  useRewake,
+  useSideWakes,
+  useWakeReady,
+} from "@/components/tools/WakeGate";
+import {
+  rewakePlan,
+  type SideWakes,
+  sideWakeWords,
+  type WakePlan,
+} from "@/components/tools/wake-model";
 import { callTool } from "../client";
 import { ms, plural, utc } from "../format";
 import type { FailedOutcome, ToolOutcome } from "../outcome";
@@ -39,10 +50,29 @@ export type SlowqueryState = {
 
 const P = "slowquery";
 
-function hostFailure(f: FailedOutcome): { state: "asleep" | "down" | "unknown"; detail?: string } {
+/**
+ * What an asleep host's badge says is being done about it (Ruling AI, review round 4): the gate's
+ * own host is woken again above; a routed host's background wake is worded from its own answer, so
+ * a refused or failed wake never reads as "waking".
+ */
+function asleepWords(plan: WakePlan, side: SideWakes): string {
+  switch (plan.kind) {
+    case "gate":
+      return "bastion is waking it";
+    case "side":
+      return sideWakeWords(plan.service, side[plan.service]);
+    case "none":
+      return "nothing on this page wakes it";
+  }
+}
+
+function hostFailure(
+  f: FailedOutcome,
+  asleep: string,
+): { state: "asleep" | "down" | "unknown"; detail?: string } {
   switch (f.kind) {
     case "asleep":
-      return { state: "asleep", detail: "bastion is waking it" };
+      return { state: "asleep", detail: asleep };
     case "rate_limited":
       return { state: "unknown", detail: `rate limited · retry in ${f.retryAfterS} s` };
     case "downstream_error":
@@ -57,6 +87,8 @@ function hostFailure(f: FailedOutcome): { state: "asleep" | "down" | "unknown"; 
 export function SlowqueryWorkbench({ initial = {} }: { initial?: SlowqueryState }) {
   const ready = useWakeReady();
   const rewake = useRewake();
+  const gateServices = useGateServices();
+  const side = useSideWakes();
   const [fleet, setFleet] = useState<HostAnswer[] | null>(initial.fleet ?? null);
   const [reading, setReading] = useState(false);
   const [chosen, setChosen] = useState(initial.chosen ?? null);
@@ -143,7 +175,13 @@ export function SlowqueryWorkbench({ initial = {} }: { initial?: SlowqueryState 
                   </li>
                 ) : (
                   <li key={h.service}>
-                    <ServiceBadge service={h.service} {...hostFailure(h.failure)} />
+                    <ServiceBadge
+                      service={h.service}
+                      {...hostFailure(
+                        h.failure,
+                        asleepWords(rewakePlan(gateServices, h.service), side),
+                      )}
+                    />
                   </li>
                 ),
               )}

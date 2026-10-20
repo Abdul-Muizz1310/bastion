@@ -1,15 +1,17 @@
+import { useId } from "react";
 import type { FailedOutcome } from "@/features/tools/outcome";
 import type { ServiceId } from "@/platform/registry/products";
 import { AuditLink } from "./AuditLink";
 import { BUTTON_QUIET } from "./styles";
-import { useGateServices, useSideWakes } from "./WakeGate";
+import { useGateServices, useSideWakes, useWakeReady } from "./WakeGate";
 import { rewakePlan, type SideWakes, sideWakeWords, type WakePlan } from "./wake-model";
 
 /**
  * A failed action, said for what it is (spec 21 §5.1 invariant 4). The platform's limits — asleep,
  * rate limited, today's budget spent — are named as such and never as the product failing; the
  * product's own answer keeps its status and reason; bastion's own trouble says it is bastion's. An
- * asleep answer names what bastion is waking for it, or says nothing is (Ruling AI).
+ * asleep answer names what bastion is waking for it, or says nothing is (Ruling AI). A manual retry
+ * is an action: it stays disabled, and says why, until the gate is live (invariant 1, round 4).
  */
 
 const SLEEP = "Free Render services sleep after 15 minutes and take about a minute to wake.";
@@ -98,6 +100,8 @@ export function OutcomeNotice({
 }) {
   const plan = rewakePlan(useGateServices(), wakes);
   const { tone, title, body } = describe(failure, product, plan, useSideWakes());
+  const ready = useWakeReady();
+  const heldId = `retry-held-${useId()}`;
   return (
     <div
       data-kind={failure.kind}
@@ -109,10 +113,21 @@ export function OutcomeNotice({
         <AuditLink requestId={failure.requestId} className="mt-2 inline-block" />
       ) : null}
       {onRetry ? (
-        <div className="mt-3">
-          <button type="button" onClick={onRetry} className={BUTTON_QUIET}>
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={!ready}
+            aria-describedby={ready ? undefined : heldId}
+            className={BUTTON_QUIET}
+          >
             try again
           </button>
+          {ready ? null : (
+            <span id={heldId} className="text-fg-muted">
+              This unlocks once the wake above answers live.
+            </span>
+          )}
         </div>
       ) : null}
     </div>

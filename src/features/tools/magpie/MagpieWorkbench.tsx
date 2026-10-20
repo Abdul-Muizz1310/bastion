@@ -19,6 +19,7 @@ import { callTool } from "../client";
 import { plural, short, utc } from "../format";
 import type { ToolOutcome } from "../outcome";
 import { useAction, useFirstLoad } from "../use-action";
+import { ITEMS, type MagpieList, runDue, sourceReads } from "./loads";
 
 /**
  * magpie's workbench (spec 21 §5, §5.1): pick a source, browse its items (each with its content
@@ -33,7 +34,6 @@ export type MagpieState = {
   heals?: ToolOutcome<MagpieHeal[]>;
 };
 
-const ITEMS = 20;
 const P = "magpie";
 
 export function MagpieWorkbench({ initial = {} }: { initial?: MagpieState }) {
@@ -45,11 +45,11 @@ export function MagpieWorkbench({ initial = {} }: { initial?: MagpieState }) {
   const scrape = useAction(initial.scrape ?? null);
   const [source, setSource] = useState<string | null>(initial.source ?? null);
 
+  // A list's retry reads that list alone; only choosing a source clears the scrape (round 4).
+  const reads = sourceReads({ items, heals, scrape });
   const choose = (name: string) => {
     setSource(name);
-    scrape.set(null);
-    void items.run((signal) => callTool(magpie.items, { name, limit: ITEMS }, { signal }));
-    void heals.run((signal) => callTool(magpie.heals, { source: name, limit: 10 }, { signal }));
+    reads.choose(name);
   };
 
   const loadSources = () =>
@@ -69,14 +69,19 @@ export function MagpieWorkbench({ initial = {} }: { initial?: MagpieState }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the gate opens
   useEffect(() => {
     if (!ready) return;
-    if (sourcesLoad(sources.outcome)) {
-      loadSources();
-      return;
-    }
-    // The sources came back: a source's items or heals that failed are its first loads too.
-    const itemsAgain = itemsLoad(items.outcome);
-    const healsAgain = healsLoad(heals.outcome);
-    if (source !== null && (itemsAgain || healsAgain)) choose(source);
+    // The sources first; once they came back, a source's items or heals that failed are first
+    // loads too — each retried on its own, keeping the scrape.
+    const due = (list: MagpieList): boolean => {
+      switch (list) {
+        case "sources":
+          return sourcesLoad(sources.outcome);
+        case "items":
+          return itemsLoad(items.outcome);
+        case "heals":
+          return healsLoad(heals.outcome);
+      }
+    };
+    runDue(due, source, { sources: loadSources, reads });
   }, [ready]);
 
   const runScrape = () => {
@@ -197,7 +202,7 @@ export function MagpieWorkbench({ initial = {} }: { initial?: MagpieState }) {
           state={items}
           product={P}
           what="the items"
-          retry={source === null ? undefined : () => choose(source)}
+          retry={source === null ? undefined : () => reads.items(source)}
         >
           {(list, requestId) => (
             <WithReceipt
@@ -240,7 +245,7 @@ export function MagpieWorkbench({ initial = {} }: { initial?: MagpieState }) {
           state={heals}
           product={P}
           what="the heal history"
-          retry={source === null ? undefined : () => choose(source)}
+          retry={source === null ? undefined : () => reads.heals(source)}
         >
           {(list, requestId) => (
             <WithReceipt

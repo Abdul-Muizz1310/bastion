@@ -29,15 +29,6 @@ export async function runAction<O>(
 }
 
 /**
- * Ruling AI: whether a first load should run when the gate opens — never loaded, or failed (an
- * asleep first load re-wakes the gate; once it reopens, the load runs again). Never a reload of
- * what already came back.
- */
-export function needsLoad(outcome: ToolOutcome<unknown> | null): boolean {
-  return outcome === null || !outcome.ok;
-}
-
-/**
  * Review round 3: a first load retries at most once per failure. A load the gateway keeps timing
  * out (it reads as asleep, which re-gates the page) would otherwise loop forever; after its one
  * retry the panel shows the failure with a manual retry. A success clears the flag.

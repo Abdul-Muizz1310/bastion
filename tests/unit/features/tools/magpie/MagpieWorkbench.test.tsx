@@ -75,6 +75,11 @@ describe("MagpieWorkbench", () => {
     expect(isDisabled(buttonNamed(html, /^\s*try again\s*$/))).toBe(false);
   });
 
+  it("holds that manual retry while the gate is waking magpie again (invariant 1)", () => {
+    const html = render({ gate: "waking" }, { sources: { ok: false, kind: "asleep", requestId: "rid-s" } });
+    expect(isDisabled(buttonNamed(html, /^\s*try again\s*$/))).toBe(true);
+  });
+
   it("names an item that has neither title nor URL instead of drawing an empty link", () => {
     const html = render();
     expect(textOf(html)).toContain("(no title)");

@@ -10,7 +10,7 @@ vi.mock("next/link", () => ({
 import { OutcomeNotice } from "@/components/tools/OutcomeNotice";
 import type { FailedOutcome } from "@/features/tools/outcome";
 import { links, sliceByAttr, textOf } from "../../helpers/html";
-import { Seeded } from "./gate-fixtures";
+import { buttonNamed, type GateSeed, isDisabled, Seeded } from "./gate-fixtures";
 
 /**
  * A failure said for what it is (spec 21 §5.1 invariant 4): the platform's limits are never shown
@@ -88,12 +88,39 @@ describe("OutcomeNotice", () => {
     expect(text).not.toMatch(/is waking magpie/);
   });
 
+  const withRetry = (gate: GateSeed) =>
+    renderToStaticMarkup(
+      <Seeded name="magpie" services={["magpie"]} gate={gate}>
+        <OutcomeNotice failure={{ ok: false, kind: "asleep", requestId: RID }} product="magpie" onRetry={() => {}} />
+      </Seeded>,
+    );
+
   it("offers a manual retry when the panel gives one", () => {
+    const retry = buttonNamed(withRetry("live"), /^\s*try again\s*$/);
+    expect(isDisabled(retry)).toBe(false);
+    expect(retry).not.toMatch(/aria-describedby/);
+    expect(render({ ok: false, kind: "asleep", requestId: RID })).not.toMatch(/<button/);
+  });
+
+  it.each<GateSeed>(["checking", "waking", "asleep", "failed"])(
+    "holds the manual retry while the gate is %s, and says why (invariant 1, round 4)",
+    (gate) => {
+      const html = withRetry(gate);
+      const retry = buttonNamed(html, /^\s*try again\s*$/);
+      expect(isDisabled(retry)).toBe(true);
+      const describedBy = /aria-describedby="([^"]+)"/.exec(retry)?.[1];
+      expect(describedBy).toBeDefined();
+      expect(textOf(sliceByAttr(html, "id", describedBy ?? ""))).toMatch(
+        /unlocks once the wake above answers live/,
+      );
+    },
+  );
+
+  it("holds the manual retry outside any gate: there is nothing live to retry against", () => {
     const html = renderToStaticMarkup(
       <OutcomeNotice failure={{ ok: false, kind: "asleep", requestId: RID }} product="magpie" onRetry={() => {}} />,
     );
-    expect(html).toMatch(/<button[^>]*type="button"[^>]*>try again<\/button>/);
-    expect(render({ ok: false, kind: "asleep", requestId: RID })).not.toMatch(/<button/);
+    expect(isDisabled(buttonNamed(html, /^\s*try again\s*$/))).toBe(true);
   });
 
   it("says nothing is being woken when nothing is", () => {

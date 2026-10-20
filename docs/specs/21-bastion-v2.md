@@ -158,7 +158,10 @@ asleep answers in parallel start one re-wake; a first load that failed runs agai
 reopens — at most once per failure (a load the gateway keeps timing out must not loop), after
 which its panel shows the failure with a manual retry. A background wake's own answer is kept: when
 the wake route refuses it (5 a minute) or it fails, the notice says bastion could not wake the host,
-never that it is waking it.
+never that it is waking it; slowquery's fleet badges word a routed host the same way, and only the
+gate's own host reads as being woken again (review round 4). A manual retry is an action: it stays
+disabled, saying why, until the gate is live. A retry reloads only the read that failed and never
+clears another result — a retry of magpie's items or heal history keeps the visitor's scrape.
 
 **Budgets.** The page renders with today's budgets (`budgetsLeft()`; unavailable ⇒ none shown) and
 re-reads `GET /api/platform/budgets` after every budgeted action. A budgeted action shows its meter
@@ -229,7 +232,8 @@ and reason; an answer in an unexpected shape says so; bastion unreachable says s
   detail}], requestId}`.
 
 Invariants and cases:
-1. No action is enabled before its gate is live, nor a budgeted one with too few units left.
+1. No action — a manual retry included — is enabled before its gate is live, nor a budgeted one
+   with too few units left.
 2. A failed wake request never crashes the page and never shows a guessed state.
 3. Every action result shows a receipt with a copy button and a link to `/audit/<requestId>`; list
    reads link their request id to the audit trail.
