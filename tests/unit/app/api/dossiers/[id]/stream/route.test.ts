@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockFind = vi.fn();
 const mockSummaries = vi.fn();
@@ -6,6 +6,11 @@ vi.mock("@/dossier/store", () => ({
   findDossier: (...args: unknown[]) => mockFind(...args),
   loadStepSummaries: (...args: unknown[]) => mockSummaries(...args),
 }));
+const limits = vi.hoisted(() => {
+  const check = vi.fn();
+  return { check, createRateLimiter: vi.fn(() => ({ check })) };
+});
+vi.mock("@/platform/ratelimit", () => ({ createRateLimiter: limits.createRateLimiter }));
 
 import * as route from "@/app/api/dossiers/[id]/stream/route";
 import {
@@ -297,13 +302,54 @@ describe("streamDossier", () => {
 });
 
 describe("GET /api/dossiers/[id]/stream", () => {
+  // Read before beforeEach clears the mocks: the limiter is built once, when the module loads.
+  const limiterConfigs = [...limits.createRateLimiter.mock.calls];
+
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("IRON_SESSION_PASSWORD", "x".repeat(32));
+    limits.check.mockResolvedValue({ success: true, limit: 10, remaining: 9 });
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   const ctx = { params: Promise.resolve({ id: DOSSIER_ID }) };
-  const req = () => new Request(`http://x/api/dossiers/${DOSSIER_ID}/stream`);
+  const req = () =>
+    new Request(`http://x/api/dossiers/${DOSSIER_ID}/stream`, {
+      headers: { "x-forwarded-for": "203.0.113.9" },
+    });
+
+  it("limits opening a stream to 10 a minute per visitor (each holds a function for 300 s)", async () => {
+    expect(limiterConfigs).toEqual([[{ max: 10, windowMs: 60_000 }]]);
+    mockFind.mockResolvedValue(dossierRow());
+    mockSummaries.mockResolvedValue(summarized(stepRows()));
+    await (await GET(req() as never, ctx)).text();
+    expect(limits.check).toHaveBeenCalledOnce();
+    expect(limits.check).toHaveBeenCalledWith(expect.stringMatching(/^stream:v_[a-z2-7]{10}$/));
+  });
+
+  it("answers 429 over the limit, with retry-after, in the house error shape, before reading the dossier", async () => {
+    limits.check.mockResolvedValue({ success: false, limit: 10, remaining: 0, retryAfter: 23 });
+    const res = await GET(req() as never, ctx);
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("23");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    const body = await res.json();
+    expect(body).toStrictEqual({ error: "rate_limited", retryAfterS: 23, requestId: expect.any(String) });
+    expect(res.headers.get("x-request-id")).toBe(body.requestId);
+    expect(mockFind).not.toHaveBeenCalled();
+    expect(mockSummaries).not.toHaveBeenCalled();
+  });
+
+  it("waits 60 s when the limiter names no reset", async () => {
+    limits.check.mockResolvedValue({ success: false, limit: 10, remaining: 0 });
+    const res = await GET(req() as never, ctx);
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("60");
+  });
 
   it("is public and streams text/event-stream, uncached, from the step summaries", async () => {
     mockFind.mockResolvedValue(dossierRow());
@@ -328,10 +374,12 @@ describe("GET /api/dossiers/[id]/stream", () => {
     expect(body).not.toContain("SELECT");
   });
 
-  it("answers 404 for an unknown dossier", async () => {
+  it("answers 404 for an unknown dossier, in the house error shape", async () => {
     mockFind.mockResolvedValue(null);
     const res = await GET(req() as never, ctx);
     expect(res.status).toBe(404);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.json()).toStrictEqual({ error: "unknown_dossier", requestId: expect.any(String) });
   });
 
   it("ends with a stream_error that names nothing of the cause when the database fails mid-stream", async () => {

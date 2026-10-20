@@ -591,6 +591,12 @@ receipt ids) — never a stage's whole output, which for gather holds whole web 
   opened (however slow the reads were), so a stream ends within `maxDuration` (300 s); the island
   reconnects. A client that disconnects stops the polling.
 
+Each open stream holds a function for up to 300 s and reads Postgres every 2 s, so opening one is
+limited to 10 a minute per visitor (key `stream:<visitor>`, checked before the dossier is read;
+final review). Over the limit the route answers 429 `{error: "rate_limited", retryAfterS,
+requestId}` with `retry-after`, the shape of every other refusal; an unknown dossier is 404
+`{error: "unknown_dossier", requestId}`.
+
 The island's end of it (Ruling AK, review round 1): every event is parsed and a malformed one
 dropped — except `done`, which ends the stream even when its body does not parse (the page then
 renders again from the server's truth). A stream that fails to open five times in a row without

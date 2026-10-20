@@ -1,8 +1,12 @@
+import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import type { StepSummaryRow } from "@/dossier/step-summary";
 import { findDossier, loadStepSummaries } from "@/dossier/store";
 import { sortByStage, stepFingerprint, stepView } from "@/features/dossier/step-view";
 import type { Dossier } from "@/lib/db/schema";
+import { errorResponse } from "@/platform/gateway/http";
+import { createRateLimiter } from "@/platform/ratelimit";
+import { visitorFromRequest } from "@/platform/visitor";
 
 /**
  * `GET /api/dossiers/[id]/stream` (spec 21 §6.6, "The live run"): a dossier's progress as
@@ -22,12 +26,18 @@ import type { Dossier } from "@/lib/db/schema";
  *
  * A database error mid-stream ends it with `stream_error` naming nothing of the cause (an
  * EventSource's own `error` event cannot carry data, hence not that name).
+ *
+ * Each open stream holds a function for up to 300 s and reads Postgres every 2 s, so opening one
+ * is limited to 10 a minute per visitor, before the dossier is read (final review): over it, 429
+ * `rate_limited` with `retry-after`. The island's capped, backed-off reconnects absorb it.
  */
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 /** The stream's own end: 30 s inside `maxDuration` leaves room for one slow last read. */
 export const STREAM_DEADLINE_MS = 270_000;
+
+const streamLimiter = createRateLimiter({ max: 10, windowMs: 60_000 });
 
 type StatusRow = Pick<Dossier, "status" | "verdict" | "confidence">;
 
@@ -126,14 +136,18 @@ export async function* streamDossier(
 type Context = { params: Promise<{ id: string }> };
 
 export async function GET(request: NextRequest, ctx: Context): Promise<Response> {
+  const requestId = randomUUID();
   const { id } = await ctx.params;
-  const dossier = await findDossier(id);
-  if (dossier === null) {
-    return Response.json(
-      { error: "unknown_dossier" },
-      { status: 404, headers: { "cache-control": "no-store" } },
-    );
+  const limit = await streamLimiter.check(`stream:${visitorFromRequest(request)}`);
+  if (!limit.success) {
+    return errorResponse(429, {
+      error: "rate_limited",
+      retryAfterS: limit.retryAfter ?? 60,
+      requestId,
+    });
   }
+  const dossier = await findDossier(id);
+  if (dossier === null) return errorResponse(404, { error: "unknown_dossier", requestId });
 
   const encoder = new TextEncoder();
   const gone = new AbortController();
