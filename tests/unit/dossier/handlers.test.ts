@@ -38,6 +38,7 @@ describe("HANDLERS", () => {
         requestId: "r",
         outputs: {},
         now: new Date(),
+        signal: new AbortController().signal,
       });
       expect(outcome).toEqual({ kind: "error", error: "not_implemented", retryable: false });
     },

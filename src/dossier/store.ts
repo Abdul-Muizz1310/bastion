@@ -32,6 +32,9 @@ type Db = ReturnType<typeof getDb>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type Executor = Db | Tx;
 
+/** A claim: the row as this invocation read it, and the row it wrote. */
+export type Claim = { previous: StepRow; claimed: StepRow };
+
 export type Recorded =
   | { recorded: true; dossier: DossierStatus; steps: StepRow[] }
   | { recorded: false };
@@ -86,11 +89,16 @@ export async function loadSteps(dossierId: string): Promise<StepRow[]> {
 }
 
 /**
- * Claim the dossier's next runnable stage, atomically. Returns the claimed row — `running`, or
- * `error` when an abandoned stage had used its last attempt — or null when nothing is claimable
- * (another invocation holds the stage, it is not due yet, the dossier is finished or failed).
+ * Claim the dossier's next runnable stage, atomically. The claimed row is `running`, or `error` when
+ * an abandoned stage had used its last attempt; null when nothing is claimable (another invocation
+ * holds the stage, it is not due yet, the dossier is finished or failed).
  */
 export async function claimNext(dossierId: string, now: Date): Promise<StepRow | null> {
+  return (await claim(dossierId, now))?.claimed ?? null;
+}
+
+/** `claimNext`, also handing back the row as it was read before the claim. */
+export async function claim(dossierId: string, now: Date): Promise<Claim | null> {
   if (!UUID.test(dossierId)) return null;
   return getDb().transaction(async (tx) => {
     const steps = await selectSteps(tx, dossierId);
@@ -115,7 +123,7 @@ export async function claimNext(dossierId: string, now: Date): Promise<StepRow |
     const row = claimed[0];
     if (row === undefined) return null;
     await syncDossier(tx, dossierId, now);
-    return toStepRow(row);
+    return { previous: observed, claimed: toStepRow(row) };
   });
 }
 

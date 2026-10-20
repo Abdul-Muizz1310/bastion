@@ -65,7 +65,14 @@ vi.mock("@/lib/db/client", () => {
 });
 
 import { claimStep, initialSteps, LEASE_MS, type Stage, type StepRow } from "@/dossier/stages";
-import { claimNext, findDossier, loadSteps, recordOutcome, resetStep } from "@/dossier/store";
+import {
+  claim,
+  claimNext,
+  findDossier,
+  loadSteps,
+  recordOutcome,
+  resetStep,
+} from "@/dossier/store";
 import { dossierSteps, dossiers } from "@/lib/db/schema";
 
 const ID = "550e8400-e29b-41d4-a716-446655440000";
@@ -132,6 +139,17 @@ describe("claimNext", () => {
       error: null,
       updatedAt: NOW,
     });
+  });
+
+  it("claim also hands back the row as it was before the claim (for ruling O's audit)", async () => {
+    const before = steps({ wake: { status: "waiting", attempt: 1, startedAt: at(-9000) } });
+    const claimed = claimStep(before[0] as StepRow, NOW);
+    fake.selects.push(
+      before,
+      before.map((r) => (r.stage === "wake" ? claimed : r)),
+    );
+    fake.returnings.push([claimed]);
+    expect(await claim(ID, NOW)).toEqual({ previous: before[0], claimed });
   });
 
   it("writes nothing when the dossier has no steps (v1) or nothing is claimable", async () => {

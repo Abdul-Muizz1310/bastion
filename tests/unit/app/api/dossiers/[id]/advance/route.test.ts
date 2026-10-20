@@ -38,6 +38,7 @@ import * as route from "@/app/api/dossiers/[id]/advance/route";
 import { ADVANCE_HEADER, advanceToken } from "@/dossier/chain";
 import { HANDLERS } from "@/dossier/handlers";
 import { type AdvanceResult, UnknownDossierError } from "@/dossier/runner";
+import { LEASE_MS, TIMEOUT_GRACE_MS } from "@/dossier/stages";
 
 const ID = "550e8400-e29b-41d4-a716-446655440000";
 const NOW = new Date("2026-10-20T12:00:00.000Z");
@@ -83,6 +84,8 @@ describe("POST /api/dossiers/[id]/advance", () => {
   it("is dynamic and may run a whole stage (maxDuration 300)", () => {
     expect(route.dynamic).toBe("force-dynamic");
     expect(route.maxDuration).toBe(300);
+    // A timed-out stage is held off until claim + lease + grace: the claiming invocation is dead by then.
+    expect(route.maxDuration * 1000).toBe(LEASE_MS + TIMEOUT_GRACE_MS);
   });
 
   it("is rate-limited to 60 a minute per visitor", async () => {

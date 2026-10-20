@@ -12,6 +12,7 @@ import {
   type StageHandler,
   type StageOutcome,
   type StepRow,
+  TIMEOUT_GRACE_MS,
 } from "@/dossier/stages";
 import { claimNext, loadSteps, recordOutcome, resetStep } from "@/dossier/store";
 import { getDb } from "@/lib/db/client";
@@ -179,6 +180,46 @@ describe.skipIf(!LOCAL)("durable runner against Postgres (spec 21 §6.2)", () =>
     });
     expect(await claimNext(id, after(t0, RETRY_DELAY_MS - 1))).toBeNull();
     expect(await claimNext(id, after(t0, RETRY_DELAY_MS))).toMatchObject({ attempt: 2 });
+  });
+
+  it("holds a timed-out stage off until claim + 300 s, so it never runs twice at once", async () => {
+    const t0 = new Date();
+    const id = await newDossier(after(t0, -1000));
+    const { map } = countingHandlers(0);
+    let signal: AbortSignal | undefined;
+    const hang: StageHandler = (ctx) => {
+      signal = ctx.signal;
+      return new Promise(() => {});
+    };
+    const options = { now: () => t0, stageBudgetMs: 20 };
+    const result = await advance(id, { ...map, wake: hang }, options);
+    const floor = after(t0, LEASE_MS + TIMEOUT_GRACE_MS);
+    expect(result).toMatchObject({ ran: "wake", status: "pending", nextAt: floor });
+    expect(signal?.aborted).toBe(true);
+    expect(await step(id, "wake")).toMatchObject({ status: "pending", notBefore: floor });
+    expect(await claimNext(id, after(floor, -1))).toBeNull();
+    expect(await claimNext(id, floor)).toMatchObject({ stage: "wake", attempt: 2 });
+  });
+
+  it("audits a run of waiting polls once, then the final transition (ruling O)", async () => {
+    const t0 = new Date();
+    const id = await newDossier(after(t0, -1000));
+    const { map } = countingHandlers(0);
+    let polls = 0;
+    const wake: StageHandler = async () => {
+      polls += 1;
+      if (polls < 4) return { kind: "waiting", output: { polls }, retryInMs: 3000 };
+      return { kind: "ok", output: { polls } };
+    };
+    for (const t of [0, 3000, 6000, 9000]) {
+      expect((await advance(id, { ...map, wake }, { now: () => after(t0, t) })).ran).toBe("wake");
+    }
+    const audit = await getDb()
+      .select({ action: events.action })
+      .from(events)
+      .where(eq(events.requestId, `it-runner-${id}`))
+      .orderBy(events.id);
+    expect(audit.map((e) => e.action)).toEqual(["dossier.stage.waiting", "dossier.stage.ok"]);
   });
 
   it("discards a result whose lease was lost to a later claim", async () => {

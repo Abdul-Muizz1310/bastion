@@ -27,14 +27,14 @@ vi.mock("@/dossier/store", async () => {
   return {
     findDossier: vi.fn(async (id: string) => mem.dossiers.get(id) ?? null),
     loadSteps: vi.fn(async (id: string) => rows(id)),
-    claimNext: vi.fn(async (id: string, now: Date) => {
+    claim: vi.fn(async (id: string, now: Date) => {
       if (rows(id).length === 0) return null;
       const stage = s.nextRunnable(rows(id), now);
-      const row = rows(id).find((r) => r.stage === stage);
-      if (row === undefined) return null;
-      const claimed = s.claimStep(row, now);
+      const previous = rows(id).find((r) => r.stage === stage);
+      if (previous === undefined) return null;
+      const claimed = s.claimStep(previous, now);
       put(claimed);
-      return claimed;
+      return { previous, claimed };
     }),
     recordOutcome: vi.fn(async (claimed: StepRow, next: StepRow) => {
       const current = rows(claimed.dossierId).find((r) => r.stage === claimed.stage);
@@ -148,6 +148,7 @@ describe("advance — one stage per invocation", () => {
       requestId: "req-dossier-1",
       outputs: { wake: { live: ["magpie"] }, gather: { job: "j1" } },
       now: NOW,
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -164,7 +165,7 @@ describe("advance — one stage per invocation", () => {
     await expect(advance(ID, handlers(), { now: clock })).rejects.toBeInstanceOf(
       UnknownDossierError,
     );
-    expect(store.claimNext).not.toHaveBeenCalled();
+    expect(store.claim).not.toHaveBeenCalled();
   });
 
   it("leaves a v1 dossier (no step rows) alone, reporting its stored status", async () => {
@@ -207,6 +208,41 @@ describe("advance — one stage per invocation", () => {
     const result = await advance(ID, handlers({ wake: hang }), { now: clock, stageBudgetMs: 5 });
     expect(result.status).toBe("pending");
     expect(stepOf("wake").error).toMatch(/^stage_timeout/);
+  });
+
+  it("aborts the handler's signal when its budget runs out (review fix 1)", async () => {
+    seed();
+    let seen: AbortSignal | undefined;
+    const hang: StageHandler = (ctx) => {
+      seen = ctx.signal;
+      return new Promise(() => {});
+    };
+    await advance(ID, handlers({ wake: hang }), { now: clock, stageBudgetMs: 5 });
+    expect(seen?.aborted).toBe(true);
+  });
+
+  it("does not abort the signal of a stage that finished in time", async () => {
+    seed();
+    let seen: AbortSignal | undefined;
+    const quick: StageHandler = async (ctx) => {
+      seen = ctx.signal;
+      return { kind: "ok", output: {} };
+    };
+    await advance(ID, handlers({ wake: quick }), { now: clock, stageBudgetMs: 5 });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(seen?.aborted).toBe(false);
+  });
+
+  it("keeps a timed-out stage off-limits until claim + 300 s, so it never runs twice at once", async () => {
+    seed();
+    const hang = vi.fn<StageHandler>(() => new Promise(() => {}));
+    const map = handlers({ wake: hang });
+    const result = await advance(ID, map, { now: clock, stageBudgetMs: 5 });
+    expect(result).toMatchObject({ ran: "wake", status: "pending", nextAt: at(300_000) });
+    expect((await advance(ID, map, { now: () => at(299_999), stageBudgetMs: 5 })).ran).toBeNull();
+    expect(hang).toHaveBeenCalledTimes(1);
+    expect((await advance(ID, map, { now: () => at(300_000), stageBudgetMs: 5 })).ran).toBe("wake");
+    expect(stepOf("wake").attempt).toBe(2);
   });
 
   it("gives a stage 240 s by default", async () => {
@@ -286,6 +322,36 @@ describe("advance — one stage per invocation", () => {
         metadata: { stage: "wake", attempt: 1, error: "e" },
       }),
     );
+  });
+
+  it("audits N waiting polls once, then the final transition (ruling O)", async () => {
+    seed();
+    const wake = vi
+      .fn<StageHandler>()
+      .mockResolvedValueOnce({ kind: "waiting", output: { n: 1 }, retryInMs: 3000 })
+      .mockResolvedValueOnce({ kind: "waiting", output: { n: 2 }, retryInMs: 3000 })
+      .mockResolvedValueOnce({ kind: "waiting", output: { n: 3 }, retryInMs: 3000 })
+      .mockResolvedValueOnce({ kind: "ok", output: { done: true } });
+    const map = handlers({ wake });
+    for (const t of [0, 3000, 6000, 9000]) {
+      expect((await advance(ID, map, { now: () => at(t) })).ran).toBe("wake");
+    }
+    expect(wake).toHaveBeenCalledTimes(4);
+    expect(appendEvent.mock.calls.map(([e]) => e.action)).toEqual([
+      "dossier.stage.waiting",
+      "dossier.stage.ok",
+    ]);
+  });
+
+  it("audits each failed attempt even though the stage stays pending between them", async () => {
+    seed();
+    const map = handlers({ wake: answer({ kind: "error", error: "e", retryable: true }) });
+    await advance(ID, map, { now: clock });
+    await advance(ID, map, { now: () => at(5000) });
+    expect(appendEvent.mock.calls.map(([e]) => [e.action, e.metadata.attempt])).toEqual([
+      ["dossier.stage.pending", 1],
+      ["dossier.stage.pending", 2],
+    ]);
   });
 
   it("takes a dossier through all eight stages to succeeded, each handler once", async () => {

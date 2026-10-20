@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyOutcome,
+  applyTimeout,
   claimableAt,
   claimStep,
   dossierError,
@@ -8,6 +9,7 @@ import {
   initialSteps,
   LEASE_MS,
   MAX_ATTEMPTS,
+  MAX_WAIT_MS,
   nextRunnable,
   POLL_MS,
   RETRY_DELAY_MS,
@@ -19,6 +21,7 @@ import {
   type StepRow,
   stageOutputs,
   stepRowSchema,
+  TIMEOUT_GRACE_MS,
 } from "@/dossier/stages";
 
 /**
@@ -369,6 +372,97 @@ describe("applyOutcome", () => {
     expect(applyOutcome(running(), { kind: "waiting", output: {}, retryInMs: 0 }, NOW).status).toBe(
       "waiting",
     );
+  });
+});
+
+describe("applyTimeout (review fix 1: no double run after an overrun)", () => {
+  it("a stage's lease plus the grace is the claiming invocation's maxDuration (300 s)", () => {
+    expect(LEASE_MS + TIMEOUT_GRACE_MS).toBe(300_000);
+  });
+
+  it("is a retryable stage_timeout that is not claimable before claim + 300 s", () => {
+    const claimed = claimStep(row("seal"), NOW);
+    const timedOut = applyTimeout(claimed, at(STAGE_BUDGET_MS));
+    expect(timedOut).toMatchObject({
+      status: "pending",
+      attempt: 1,
+      leaseUntil: EPOCH,
+      notBefore: at(300_000),
+    });
+    expect(timedOut.error).toMatch(/^stage_timeout/);
+    const set = steps({ ...done("wake", "gather", "read"), seal: timedOut });
+    expect(nextRunnable(set, at(299_999))).toBeNull();
+    expect(nextRunnable(set, at(300_000))).toBe("seal");
+    expect(claimableAt(set)).toEqual(at(300_000));
+  });
+
+  it("measures the floor from the claim, also for a waiting stage's later poll", () => {
+    const poll = claimStep(
+      row("debate", { status: "waiting", attempt: 1, startedAt: NOW }),
+      at(60_000),
+    );
+    expect(applyTimeout(poll, at(300_000)).notBefore).toEqual(at(360_000));
+  });
+
+  it("is terminal on the last attempt and keeps the floor for a visitor's retry", () => {
+    const claimed = claimStep(row("seal", { attempt: MAX_ATTEMPTS - 1 }), NOW);
+    const failed = applyTimeout(claimed, at(STAGE_BUDGET_MS));
+    expect(failed).toMatchObject({
+      status: "error",
+      attempt: MAX_ATTEMPTS,
+      notBefore: at(300_000),
+    });
+
+    const set = steps({ ...done("wake", "gather", "read"), seal: failed });
+    const retry = retryStep(set, "seal", at(250_000));
+    if (!retry.ok) throw new Error("retry refused");
+    expect(retry.row).toMatchObject({ status: "pending", attempt: 0, notBefore: at(300_000) });
+    const retried = steps({ ...done("wake", "gather", "read"), seal: retry.row });
+    expect(nextRunnable(retried, at(299_999))).toBeNull();
+    expect(nextRunnable(retried, at(300_000))).toBe("seal");
+  });
+});
+
+describe("waiting has a deadline (review fix 2)", () => {
+  const waitingOutcome: StageOutcome = {
+    kind: "waiting",
+    output: { debate_id: "d1" },
+    retryInMs: POLL_MS,
+  };
+  const polling = row("debate", {
+    status: "running",
+    attempt: 1,
+    startedAt: NOW,
+    leaseUntil: at(MAX_WAIT_MS + LEASE_MS),
+  });
+
+  it("is 15 minutes from the start of the attempt", () => {
+    expect(MAX_WAIT_MS).toBe(15 * 60_000);
+  });
+
+  it("keeps waiting up to the deadline", () => {
+    expect(applyOutcome(polling, waitingOutcome, at(MAX_WAIT_MS)).status).toBe("waiting");
+  });
+
+  it("fails a stage still waiting past it as wait_timeout, non-retryably, keeping its output", () => {
+    const failed = applyOutcome(polling, waitingOutcome, at(MAX_WAIT_MS + 1));
+    expect(failed).toMatchObject({
+      status: "error",
+      attempt: 1,
+      output: { debate_id: "d1" },
+      leaseUntil: EPOCH,
+      finishedAt: at(MAX_WAIT_MS + 1),
+    });
+    expect(failed.error).toMatch(/^wait_timeout/);
+  });
+
+  it("a continued wait keeps the attempt's start (and repairs a missing one)", () => {
+    expect(claimStep(row("debate", { status: "waiting", attempt: 1 }), NOW).startedAt).toEqual(NOW);
+  });
+
+  it("a running row without a start is an illegal state", () => {
+    const broken = row("debate", { status: "running", attempt: 1, startedAt: null });
+    expect(() => applyOutcome(broken, { kind: "ok", output: {} }, NOW)).toThrow(RangeError);
   });
 });
 

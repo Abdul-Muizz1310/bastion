@@ -30,6 +30,14 @@ export const POLL_MS = 3_000;
 export const MAX_ATTEMPTS = 3;
 /** Backoff after a retryable error, per attempt already spent (5 s, then 10 s). */
 export const RETRY_DELAY_MS = 5_000;
+/**
+ * After a stage overruns its budget its handler may still be running in the invocation that claimed
+ * it, which the platform ends at claim + maxDuration (300 s = LEASE_MS + this grace). Until then the
+ * stage is not runnable again, so it can never run twice at once (review fix 1).
+ */
+export const TIMEOUT_GRACE_MS = 30_000;
+/** How long one attempt may keep answering `waiting` before it fails as `wait_timeout`. */
+export const MAX_WAIT_MS = 15 * 60_000;
 const ERROR_MAX_CHARS = 1_000;
 const EPOCH = new Date(0);
 
@@ -70,6 +78,8 @@ export type StageContext = {
   requestId: string;
   outputs: Partial<Record<Stage, Json>>;
   now: Date;
+  /** Aborted when the stage's budget runs out: pass it to every downstream call. */
+  signal: AbortSignal;
 };
 
 export type StageHandler = (ctx: StageContext) => Promise<StageOutcome>;
@@ -174,7 +184,7 @@ export function claimStep(row: StepRow, now: Date): StepRow {
     status: "running",
     attempt: continuing ? row.attempt : row.attempt + 1,
     leaseUntil: new Date(now.getTime() + LEASE_MS),
-    startedAt: continuing ? row.startedAt : now,
+    startedAt: continuing ? (row.startedAt ?? now) : now,
     finishedAt: null,
   };
 }
@@ -190,6 +200,9 @@ export function applyOutcome(row: StepRow, outcome: StageOutcome, now: Date): St
   if (row.status !== "running") {
     throw new RangeError(`applyOutcome: ${row.stage} is ${row.status}, not running`);
   }
+  if (row.startedAt === null) {
+    throw new RangeError(`applyOutcome: running ${row.stage} has no start`);
+  }
   const released = { ...row, leaseUntil: EPOCH };
   switch (outcome.kind) {
     case "ok":
@@ -204,6 +217,15 @@ export function applyOutcome(row: StepRow, outcome: StageOutcome, now: Date): St
       };
     case "waiting":
       assertDelay(outcome.retryInMs);
+      if (now.getTime() - row.startedAt.getTime() > MAX_WAIT_MS) {
+        return {
+          ...released,
+          status: "error",
+          output: outcome.output,
+          finishedAt: now,
+          error: `wait_timeout: still waiting ${MAX_WAIT_MS / 60_000} min after the attempt started`,
+        };
+      }
       return {
         ...released,
         status: "waiting",
@@ -228,6 +250,21 @@ export function applyOutcome(row: StepRow, outcome: StageOutcome, now: Date): St
     default:
       return assertNever(outcome, "stage outcome");
   }
+}
+
+/**
+ * A stage that outlived its budget (pure): a retryable `stage_timeout`, never runnable again before
+ * claim + maxDuration (the lease's end + TIMEOUT_GRACE_MS) — also when it is terminal, so that a
+ * visitor's retry keeps the same floor.
+ */
+export function applyTimeout(row: StepRow, now: Date, budgetMs: number = STAGE_BUDGET_MS): StepRow {
+  const next = applyOutcome(
+    row,
+    { kind: "error", error: `stage_timeout: exceeded ${budgetMs} ms`, retryable: true },
+    now,
+  );
+  const floor = row.leaseUntil.getTime() + TIMEOUT_GRACE_MS;
+  return { ...next, notBefore: new Date(Math.max(next.notBefore.getTime(), floor)) };
 }
 
 /** The dossier's status, read off its steps (it drives `dossiers.status`). */
@@ -257,7 +294,8 @@ export function stageOutputs(
 
 /**
  * "Retry from this stage" (spec §6.4): only an `error` stage, and only while nothing after it is ok.
- * The row starts over — pending, attempt 0 — but keeps its output, so a stored job id is reused.
+ * The row starts over — pending, attempt 0 — but keeps its output, so a stored job id is reused,
+ * and keeps any later not_before (a timed-out stage's floor), so a retry never makes it run sooner.
  */
 export function retryStep(steps: readonly StepRow[], stage: Stage, now: Date): RetryDecision {
   const rows = ordered(steps);
@@ -274,7 +312,7 @@ export function retryStep(steps: readonly StepRow[], stage: Stage, now: Date): R
       status: "pending",
       attempt: 0,
       leaseUntil: EPOCH,
-      notBefore: now,
+      notBefore: new Date(Math.max(now.getTime(), row.notBefore.getTime())),
       startedAt: null,
       finishedAt: null,
       error: null,
