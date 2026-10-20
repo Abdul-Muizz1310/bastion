@@ -1,0 +1,650 @@
+{
+  "schema": "inkthread.reading/1",
+  "document_id": "d5152b39-8bbc-4141-ac06-9d5e70f98f99",
+  "doc_sha256": "31a66e827c4549e500a5d3b0f1e757ec04fc72f2d04e14475ad279cdb546cb6f",
+  "inkgrid_version": "0.2.0",
+  "verification": {
+    "ok": false,
+    "engine": "pdfium 156.0.8076.0 (pypdfium2 5.14.0)",
+    "checked": 15,
+    "disagreements": 39,
+    "defects": [
+      {
+        "code": "lost",
+        "page": 4,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 4,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 9,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 11,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 11,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 12,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 12,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 12,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 12,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 12,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 12,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 12,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 12,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 12,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 12,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 12,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 12,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 12,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 13,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 13,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 13,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 13,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 13,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 13,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 13,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 13,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 13,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 13,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 13,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 13,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 14,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 14,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 14,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 14,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 14,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 14,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 14,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 14,
+        "message": "no word holds 1 ink characters: '-'"
+      },
+      {
+        "code": "lost",
+        "page": 14,
+        "message": "no word holds 1 ink characters: '-'"
+      }
+    ]
+  },
+  "tables": [
+    {
+      "id": "b8",
+      "page": 1,
+      "bbox": [
+        50.88,
+        378.97,
+        581.64,
+        718.22
+      ],
+      "header_rows": 2,
+      "rows": [
+        [
+          "Patent application filing fees",
+          "Patent application filing fees",
+          "Patent application filing fees",
+          "Patent application filing fees",
+          "Patent application filing fees",
+          "Patent application filing fees"
+        ],
+        [
+          "Fee code",
+          "37 CFR §",
+          "Description",
+          "Fee",
+          "Small entity fee",
+          "Micro entity fee"
+        ],
+        [
+          "1011/2011/3011",
+          "1.16(a)",
+          "Basic filing fee - Utility (paper filing also requires non-electronic filing fee under 1.16(t))",
+          "350.00",
+          "140.00",
+          "70.00"
+        ],
+        [
+          "4011†",
+          "1.16(a)",
+          "Basic filing fee - Utility (electronic filing for small entities)",
+          "n/a",
+          "70.00",
+          "n/a"
+        ],
+        [
+          "1012/2012/3012",
+          "1.16(b)",
+          "Basic filing fee - Design",
+          "300.00",
+          "120.00",
+          "60.00"
+        ],
+        [
+          "1017/2017/3017",
+          "1.16(b)",
+          "Basic filing fee - Design CPA",
+          "300.00",
+          "120.00",
+          "60.00"
+        ],
+        [
+          "1013/2013/3013",
+          "1.16(c)",
+          "Basic filing fee - Plant",
+          "240.00",
+          "96.00",
+          "48.00"
+        ],
+        [
+          "1005/2005/3005",
+          "1.16(d)",
+          "Provisional application filing fee",
+          "325.00",
+          "130.00",
+          "65.00"
+        ],
+        [
+          "1014/2014/3014",
+          "1.16(e)",
+          "Basic filing fee - Reissue",
+          "350.00",
+          "140.00",
+          "70.00"
+        ],
+        [
+          "1019/2019/3019",
+          "1.16(e)",
+          "Basic filing fee - Reissue (Design CPA)",
+          "350.00",
+          "140.00",
+          "70.00"
+        ],
+        [
+          "1051/2051/3051",
+          "1.16(f)",
+          "Surcharge - Late filing fee, search fee, examination fee, inventor’s oath or declaration, or application filed without at least one claim or by reference",
+          "170.00",
+          "68.00",
+          "34.00"
+        ],
+        [
+          "1052/2052/3052",
+          "1.16(g)",
+          "Surcharge - Late provisional filing fee or cover sheet",
+          "65.00",
+          "26.00",
+          "13.00"
+        ],
+        [
+          "1201/2201/3201",
+          "1.16(h)",
+          "Each independent claim in excess of three",
+          "600.00",
+          "240.00",
+          "120.00"
+        ],
+        [
+          "1204/2204/3204",
+          "1.16(h)",
+          "Each reissue independent claim in excess of three",
+          "600.00",
+          "240.00",
+          "120.00"
+        ],
+        [
+          "1202/2202/3202",
+          "1.16(i)",
+          "Each claim in excess of 20",
+          "200.00",
+          "80.00",
+          "40.00"
+        ],
+        [
+          "1205/2205/3205",
+          "1.16(i)",
+          "Each reissue claim in excess of 20",
+          "200.00",
+          "80.00",
+          "40.00"
+        ],
+        [
+          "1203/2203/3203",
+          "1.16(j)",
+          "Multiple dependent claim",
+          "925.00",
+          "370.00",
+          "185.00"
+        ]
+      ],
+      "markdown": "| Patent application filing fees |  |  |  |  |  |\n| --- | --- | --- | --- | --- | --- |\n| Fee code | 37 CFR § | Description | Fee | Small entity fee | Micro entity fee |\n| 1011/2011/3011 | 1.16(a) | Basic filing fee - Utility (paper filing also requires non-electronic filing fee under 1.16(t)) | 350.00 | 140.00 | 70.00 |\n| 4011† | 1.16(a) | Basic filing fee - Utility (electronic filing for small entities) | n/a | 70.00 | n/a |\n| 1012/2012/3012 | 1.16(b) | Basic filing fee - Design | 300.00 | 120.00 | 60.00 |\n| 1017/2017/3017 | 1.16(b) | Basic filing fee - Design CPA | 300.00 | 120.00 | 60.00 |\n| 1013/2013/3013 | 1.16(c) | Basic filing fee - Plant | 240.00 | 96.00 | 48.00 |\n| 1005/2005/3005 | 1.16(d) | Provisional application filing fee | 325.00 | 130.00 | 65.00 |\n| 1014/2014/3014 | 1.16(e) | Basic filing fee - Reissue | 350.00 | 140.00 | 70.00 |\n| 1019/2019/3019 | 1.16(e) | Basic filing fee - Reissue (Design CPA) | 350.00 | 140.00 | 70.00 |\n| 1051/2051/3051 | 1.16(f) | Surcharge - Late filing fee, search fee, examination fee, inventor’s oath or declaration, or application filed without at least one claim or by reference | 170.00 | 68.00 | 34.00 |\n| 1052/2052/3052 | 1.16(g) | Surcharge - Late provisional filing fee or cover sheet | 65.00 | 26.00 | 13.00 |\n| 1201/2201/3201 | 1.16(h) | Each independent claim in excess of three | 600.00 | 240.00 | 120.00 |\n| 1204/2204/3204 | 1.16(h) | Each reissue independent claim in excess of three | 600.00 | 240.00 | 120.00 |\n| 1202/2202/3202 | 1.16(i) | Each claim in excess of 20 | 200.00 | 80.00 | 40.00 |\n| 1205/2205/3205 | 1.16(i) | Each reissue claim in excess of 20 | 200.00 | 80.00 | 40.00 |\n| 1203/2203/3203 | 1.16(j) | Multiple dependent claim | 925.00 | 370.00 | 185.00 |",
+      "node_id": "p:4109c48ee22fb618"
+    },
+    {
+      "id": "b10",
+      "page": 2,
+      "bbox": [
+        50.88,
+        49.88,
+        581.64,
+        733.1
+      ],
+      "header_rows": 2,
+      "rows": [
+        [
+          "Patent application filing fees",
+          "Patent application filing fees",
+          "Patent application filing fees",
+          "Patent application filing fees",
+          "Patent application filing fees",
+          "Patent application filing fees"
+        ],
+        [
+          "Fee code",
+          "37 CFR §",
+          "Description",
+          "Fee",
+          "Small entity fee",
+          "Micro entity fee"
+        ],
+        [
+          "1081/2081/3081",
+          "1.16(s)",
+          "Utility application size fee - for each additional 50 sheets that exceeds 100 sheets",
+          "450.00",
+          "180.00",
+          "90.00"
+        ],
+        [
+          "1082/2082/3082",
+          "1.16(s)",
+          "Design application size fee - for each additional 50 sheets that exceeds 100 sheets",
+          "450.00",
+          "180.00",
+          "90.00"
+        ],
+        [
+          "1083/2083/3083",
+          "1.16(s)",
+          "Plant application size fee - for each additional 50 sheets that exceeds 100 sheets",
+          "450.00",
+          "180.00",
+          "90.00"
+        ],
+        [
+          "1084/2084/3084",
+          "1.16(s)",
+          "Reissue application size fee - for each additional 50 sheets that exceeds 100 sheets",
+          "450.00",
+          "180.00",
+          "90.00"
+        ],
+        [
+          "1085/2085/3085",
+          "1.16(s)",
+          "Provisional application size fee - for each additional 50 sheets that exceeds 100 sheets",
+          "450.00",
+          "180.00",
+          "90.00"
+        ],
+        [
+          "1090/2090/3090",
+          "1.16(t)",
+          "Non-electronic filing fee — Utility (additional fee for applications filed in paper)",
+          "400.00",
+          "200.00",
+          "200.00"
+        ],
+        [
+          "1054/2054/3054",
+          "1.16(u)",
+          "Non-DOCX filing surcharge",
+          "430.00",
+          "172.00",
+          "86.00"
+        ],
+        [
+          "1053/2053/3053",
+          "1.17(i)(1)",
+          "Non-English translation",
+          "150.00",
+          "60.00",
+          "30.00"
+        ],
+        [
+          "1055/2055/3055",
+          "1.17(w)(1)",
+          "Filing an application or presentation of benefit claim more than six years after earliest benefit date",
+          "2,700.00",
+          "1,080.00",
+          "540.00"
+        ],
+        [
+          "1056/2056/3056",
+          "1.17(w)(2)",
+          "Filing an application or presentation of benefit claim more than nine years after earliest benefit date",
+          "4,000.00",
+          "1,600.00",
+          "800.00"
+        ],
+        [
+          "1091/2091/3091",
+          "1.21(o)(1)",
+          "Submission of sequence listings of 300MB to 800MB",
+          "1,140.00",
+          "456.00",
+          "228.00"
+        ],
+        [
+          "1092/2092/3092",
+          "1.21(o)(2)",
+          "Submission of sequence listings of more than 800MB",
+          "11,290.00",
+          "4,516.00",
+          "2,258.00"
+        ],
+        [
+          "† The 4000 series fee code may be used via Patent Center",
+          "† The 4000 series fee code may be used via Patent Center",
+          "† The 4000 series fee code may be used via Patent Center",
+          "† The 4000 series fee code may be used via Patent Center",
+          "† The 4000 series fee code may be used via Patent Center",
+          "† The 4000 series fee code may be used via Patent Center"
+        ],
+        [
+          "Patent search fees",
+          "Patent search fees",
+          "Patent search fees",
+          "Patent search fees",
+          "Patent search fees",
+          "Patent search fees"
+        ],
+        [
+          "Fee code",
+          "37 CFR §",
+          "Description",
+          "Fee",
+          "Small entity fee",
+          "Micro entity fee"
+        ],
+        [
+          "1111/2111/3111",
+          "1.16(k)",
+          "Utility search fee",
+          "770.00",
+          "308.00",
+          "154.00"
+        ],
+        [
+          "1112/2112/3112",
+          "1.16(l)",
+          "Design search fee or Design CPA search fee",
+          "300.00",
+          "120.00",
+          "60.00"
+        ],
+        [
+          "1113/2113/3113",
+          "1.16(m)",
+          "Plant search fee",
+          "485.00",
+          "194.00",
+          "97.00"
+        ],
+        [
+          "1114/2114/3114",
+          "1.16(n)",
+          "Reissue search fee or Reissue (Design CPA) search fee",
+          "770.00",
+          "308.00",
+          "154.00"
+        ],
+        [
+          "Patent examination fees",
+          "Patent examination fees",
+          "Patent examination fees",
+          "Patent examination fees",
+          "Patent examination fees",
+          "Patent examination fees"
+        ],
+        [
+          "Fee code",
+          "37 CFR §",
+          "Description",
+          "Fee",
+          "Small entity fee",
+          "Micro entity fee"
+        ],
+        [
+          "1311/2311/3311",
+          "1.16(o)",
+          "Utility examination fee",
+          "880.00",
+          "352.00",
+          "176.00"
+        ],
+        [
+          "1312/2312/3312",
+          "1.16(p)",
+          "Design examination fee or Design CPA examination fee",
+          "700.00",
+          "280.00",
+          "140.00"
+        ],
+        [
+          "1313/2313/3313",
+          "1.16(q)",
+          "Plant examination fee",
+          "725.00",
+          "290.00",
+          "145.00"
+        ],
+        [
+          "1314/2314/3314",
+          "1.16(r)",
+          "Reissue examination fee or Reissue (Design CPA) examination fee",
+          "2,550.00",
+          "1,020.00",
+          "510.00"
+        ],
+        [
+          "Patent issue and publication fees",
+          "Patent issue and publication fees",
+          "Patent issue and publication fees",
+          "Patent issue and publication fees",
+          "Patent issue and publication fees",
+          "Patent issue and publication fees"
+        ],
+        [
+          "Fee code",
+          "37 CFR §",
+          "Description",
+          "Fee",
+          "Small entity fee",
+          "Micro entity fee"
+        ],
+        [
+          "1501/2501/3501",
+          "1.18(a)",
+          "Utility issue fee",
+          "1,290.00",
+          "516.00",
+          "258.00"
+        ],
+        [
+          "1511/2511/3511",
+          "1.18(a)",
+          "Reissue issue fee",
+          "1,290.00",
+          "516.00",
+          "258.00"
+        ],
+        [
+          "1502/2502/3502",
+          "1.18(b)(1)",
+          "Design issue fee",
+          "1,300.00",
+          "520.00",
+          "260.00"
+        ],
+        [
+          "1509/2509/3509",
+          "1.18(b)(1)",
+          "Hague design issue fee***",
+          "1,300.00",
+          "520.00",
+          "260.00"
+        ],
+        [
+          "1503/2503/3503",
+          "1.18(c)",
+          "Plant issue fee",
+          "905.00",
+          "362.00",
+          "181.00"
+        ]
+      ],
+      "markdown": "| Patent application filing fees |  |  |  |  |  |\n| --- | --- | --- | --- | --- | --- |\n| Fee code | 37 CFR § | Description | Fee | Small entity fee | Micro entity fee |\n| 1081/2081/3081 | 1.16(s) | Utility application size fee - for each additional 50 sheets that exceeds 100 sheets | 450.00 | 180.00 | 90.00 |\n| 1082/2082/3082 | 1.16(s) | Design application size fee - for each additional 50 sheets that exceeds 100 sheets | 450.00 | 180.00 | 90.00 |\n| 1083/2083/3083 | 1.16(s) | Plant application size fee - for each additional 50 sheets that exceeds 100 sheets | 450.00 | 180.00 | 90.00 |\n| 1084/2084/3084 | 1.16(s) | Reissue application size fee - for each additional 50 sheets that exceeds 100 sheets | 450.00 | 180.00 | 90.00 |\n| 1085/2085/3085 | 1.16(s) | Provisional application size fee - for each additional 50 sheets that exceeds 100 sheets | 450.00 | 180.00 | 90.00 |\n| 1090/2090/3090 | 1.16(t) | Non-electronic filing fee — Utility (additional fee for applications filed in paper) | 400.00 | 200.00 | 200.00 |\n| 1054/2054/3054 | 1.16(u) | Non-DOCX filing surcharge | 430.00 | 172.00 | 86.00 |\n| 1053/2053/3053 | 1.17(i)(1) | Non-English translation | 150.00 | 60.00 | 30.00 |\n| 1055/2055/3055 | 1.17(w)(1) | Filing an application or presentation of benefit claim more than six years after earliest benefit date | 2,700.00 | 1,080.00 | 540.00 |\n| 1056/2056/3056 | 1.17(w)(2) | Filing an application or presentation of benefit claim more than nine years after earliest benefit date | 4,000.00 | 1,600.00 | 800.00 |\n| 1091/2091/3091 | 1.21(o)(1) | Submission of sequence listings of 300MB to 800MB | 1,140.00 | 456.00 | 228.00 |\n| 1092/2092/3092 | 1.21(o)(2) | Submission of sequence listings of more than 800MB | 11,290.00 | 4,516.00 | 2,258.00 |\n| † The 4000 series fee code may be used via Patent Center |  |  |  |  |  |\n| Patent search fees |  |  |  |  |  |\n| Fee code | 37 CFR § | Description | Fee | Small entity fee | Micro entity fee |\n| 1111/2111/3111 | 1.16(k) | Utility search fee | 770.00 | 308.00 | 154.00 |\n| 1112/2112/3112 | 1.16(l) | Design search fee or Design CPA search fee | 300.00 | 120.00 | 60.00 |\n| 1113/2113/3113 | 1.16(m) | Plant search fee | 485.00 | 194.00 | 97.00 |\n| 1114/2114/3114 | 1.16(n) | Reissue search fee or Reissue (Design CPA) search fee | 770.00 | 308.00 | 154.00 |\n| Patent examination fees |  |  |  |  |  |\n| Fee code | 37 CFR § | Description | Fee | Small entity fee | Micro entity fee |\n| 1311/2311/3311 | 1.16(o) | Utility examination fee | 880.00 | 352.00 | 176.00 |\n| 1312/2312/3312 | 1.16(p) | Design examination fee or Design CPA examination fee | 700.00 | 280.00 | 140.00 |\n| 1313/2313/3313 | 1.16(q) | Plant examination fee | 725.00 | 290.00 | 145.00 |\n| 1314/2314/3314 | 1.16(r) | Reissue examination fee or Reissue (Design CPA) examination fee | 2,550.00 | 1,020.00 | 510.00 |\n| Patent issue and publication fees |  |  |  |  |  |\n| Fee code | 37 CFR § | Description | Fee | Small entity fee | Micro entity fee |\n| 1501/2501/3501 | 1.18(a) | Utility issue fee | 1,290.00 | 516.00 | 258.00 |\n| 1511/2511/3511 | 1.18(a) | Reissue issue fee | 1,290.00 | 516.00 | 258.00 |\n| 1502/2502/3502 | 1.18(b)(1) | Design issue fee | 1,300.00 | 520.00 | 260.00 |\n| 1509/2509/3509 | 1.18(b)(1) | Hague design issue fee*** | 1,300.00 | 520.00 | 260.00 |\n| 1503/2503/3503 | 1.18(c) | Plant issue fee | 905.00 | 362.00 | 181.00 |",
+      "node_id": "p:139618b4cdc6784d"
+    }
+  ],
+  "findings": []
+}

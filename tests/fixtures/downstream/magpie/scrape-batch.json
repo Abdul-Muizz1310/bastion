@@ -1,0 +1,51 @@
+{
+  "runs": [
+    {
+      "source": "hackernews",
+      "scraped_at": "2026-10-20T09:15:00.120034Z",
+      "run_id": "5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b",
+      "items": [
+        {
+          "stable_id": "stable-0",
+          "url": "https://example.com/hackernews/0",
+          "title": "Item 0 from hackernews",
+          "content_text": "Item 0 from hackernews",
+          "content_hash": "f1a0d0c0ffbccc62d74672bd1d6f9ddbb1df5ad9715f915f37706399bbe49f8a",
+          "fetched_at": "2026-10-20T09:15:02.733412Z",
+          "html_snapshot_url": null
+        },
+        {
+          "stable_id": "stable-1",
+          "url": "https://example.com/hackernews/1",
+          "title": "Item 1 from hackernews",
+          "content_text": "Item 1 from hackernews",
+          "content_hash": "8838a24499880b5d6a122fa2a0512b57100ad660bb25cbf171bc18b348fa26cb",
+          "fetched_at": "2026-10-20T09:15:02.733412Z",
+          "html_snapshot_url": null
+        }
+      ]
+    },
+    {
+      "source": "lobsters",
+      "scraped_at": "2026-10-20T09:15:00.120034Z",
+      "run_id": "7a8b9c0d-1e2f-4a3b-9c4d-5e6f7a8b9c0d",
+      "items": [
+        {
+          "stable_id": "stable-0",
+          "url": "https://example.com/lobsters/0",
+          "title": "Item 0 from lobsters",
+          "content_text": "Item 0 from lobsters",
+          "content_hash": "f2838222500980d2a00f40c9d9cd37db52760874a4d19fb8c93ae0ad7e2b4a29",
+          "fetched_at": "2026-10-20T09:15:02.733412Z",
+          "html_snapshot_url": null
+        }
+      ]
+    }
+  ],
+  "failed": [
+    {
+      "source": "arxiv-cs",
+      "error": "Unknown source: arxiv-cs"
+    }
+  ]
+}

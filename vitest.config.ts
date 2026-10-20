@@ -24,6 +24,7 @@ export default defineConfig({
         branches: 75,
         // Per-module floor (plan "Coverage"): the security core is held higher than the rest.
         "src/platform/**": { lines: 90 },
+        "src/capabilities/**": { lines: 90 },
       },
     },
   },

@@ -1,0 +1,26 @@
+[
+  {
+    "name": "hackernews",
+    "description": "Scrape Hacker News front page",
+    "last_run_at": "2026-10-19T18:00:04.512331Z",
+    "last_status": "ok",
+    "item_count": 90,
+    "config_sha": "8f83419391affd4eb9663dd5d2ac1cb48fbcd3d54e2d4393f325b9aa225462ee"
+  },
+  {
+    "name": "arxiv-cs",
+    "description": "Scrape arXiv CS recent submissions",
+    "last_run_at": "2026-10-19T08:00:02.118204Z",
+    "last_status": "error",
+    "item_count": 0,
+    "config_sha": "e14ce568d6561c96e49724c4b3541a542aaa003603e9e17f3ce9e51a63cd6a64"
+  },
+  {
+    "name": "lobsters",
+    "description": "",
+    "last_run_at": null,
+    "last_status": null,
+    "item_count": 0,
+    "config_sha": ""
+  }
+]

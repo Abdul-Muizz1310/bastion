@@ -1,0 +1,49 @@
+{
+  "document": {
+    "id": "7c8d9e0f-1a2b-4c3d-9e4f-5a6b7c8d9e0f",
+    "sha256": "b527d9154e604887559b7ea69bfcc064ea58bde8f7facfbc02d8ea589a0b00f1",
+    "file_name": "contract.pdf",
+    "title": null,
+    "page_count": 4,
+    "kind": "upload",
+    "status": "queued",
+    "created_at": "2026-10-20T10:00:00.100000Z",
+    "expires_at": "2026-10-21T10:00:00.100000Z",
+    "stats": null,
+    "latest_job": {
+      "id": "8d9e0f1a-2b3c-4d4e-8f5a-6b7c8d9e0f1a",
+      "document_id": "7c8d9e0f-1a2b-4c3d-9e4f-5a6b7c8d9e0f",
+      "status": "queued",
+      "stage": null,
+      "created_at": "2026-10-20T10:00:00.120000Z",
+      "started_at": null,
+      "finished_at": null,
+      "error": null,
+      "llm": {
+        "requests": 0,
+        "cached": 0,
+        "failed": 0,
+        "rejected": 0
+      },
+      "stages": []
+    }
+  },
+  "job": {
+    "id": "8d9e0f1a-2b3c-4d4e-8f5a-6b7c8d9e0f1a",
+    "document_id": "7c8d9e0f-1a2b-4c3d-9e4f-5a6b7c8d9e0f",
+    "status": "queued",
+    "stage": null,
+    "created_at": "2026-10-20T10:00:00.120000Z",
+    "started_at": null,
+    "finished_at": null,
+    "error": null,
+    "llm": {
+      "requests": 0,
+      "cached": 0,
+      "failed": 0,
+      "rejected": 0
+    },
+    "stages": []
+  },
+  "deduplicated": false
+}

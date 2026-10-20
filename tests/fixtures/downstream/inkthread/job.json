@@ -1,0 +1,66 @@
+{
+  "id": "49932edf-fd77-44b0-8ac2-b69933f8d536",
+  "document_id": "d5152b39-8bbc-4141-ac06-9d5e70f98f99",
+  "status": "succeeded",
+  "stage": "finalize",
+  "created_at": "2026-10-19T21:15:43.539772Z",
+  "started_at": "2026-10-19T21:15:43.606188Z",
+  "finished_at": "2026-10-19T21:17:33.453595Z",
+  "error": null,
+  "llm": {
+    "requests": 0,
+    "cached": 3,
+    "failed": 0,
+    "rejected": 0
+  },
+  "stages": [
+    {
+      "name": "read",
+      "status": "completed",
+      "ms": 104899,
+      "reason": null
+    },
+    {
+      "name": "structure",
+      "status": "completed",
+      "ms": 584,
+      "reason": null
+    },
+    {
+      "name": "classify_rules",
+      "status": "completed",
+      "ms": 115,
+      "reason": null
+    },
+    {
+      "name": "classify_agent",
+      "status": "completed",
+      "ms": 102,
+      "reason": null
+    },
+    {
+      "name": "link_rules",
+      "status": "completed",
+      "ms": 1806,
+      "reason": null
+    },
+    {
+      "name": "relate_agent",
+      "status": "completed",
+      "ms": 88,
+      "reason": null
+    },
+    {
+      "name": "verify_agent",
+      "status": "completed",
+      "ms": 52,
+      "reason": null
+    },
+    {
+      "name": "finalize",
+      "status": "completed",
+      "ms": 354,
+      "reason": null
+    }
+  ]
+}

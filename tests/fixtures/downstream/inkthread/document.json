@@ -1,0 +1,87 @@
+{
+  "id": "d5152b39-8bbc-4141-ac06-9d5e70f98f99",
+  "sha256": "31a66e827c4549e500a5d3b0f1e757ec04fc72f2d04e14475ad279cdb546cb6f",
+  "file_name": "uspto-fee-schedule.pdf",
+  "title": null,
+  "page_count": 15,
+  "kind": "sample",
+  "status": "ready",
+  "created_at": "2026-10-14T19:11:26.817797Z",
+  "expires_at": null,
+  "stats": {
+    "nodes": 46,
+    "edges": 63,
+    "tiers": {
+      "A": 127,
+      "B": 11,
+      "C": 0,
+      "D": 0
+    }
+  },
+  "latest_job": {
+    "id": "49932edf-fd77-44b0-8ac2-b69933f8d536",
+    "document_id": "d5152b39-8bbc-4141-ac06-9d5e70f98f99",
+    "status": "succeeded",
+    "stage": "finalize",
+    "created_at": "2026-10-19T21:15:43.539772Z",
+    "started_at": "2026-10-19T21:15:43.606188Z",
+    "finished_at": "2026-10-19T21:17:33.453595Z",
+    "error": null,
+    "llm": {
+      "requests": 0,
+      "cached": 3,
+      "failed": 0,
+      "rejected": 0
+    },
+    "stages": [
+      {
+        "name": "read",
+        "status": "completed",
+        "ms": 104899,
+        "reason": null
+      },
+      {
+        "name": "structure",
+        "status": "completed",
+        "ms": 584,
+        "reason": null
+      },
+      {
+        "name": "classify_rules",
+        "status": "completed",
+        "ms": 115,
+        "reason": null
+      },
+      {
+        "name": "classify_agent",
+        "status": "completed",
+        "ms": 102,
+        "reason": null
+      },
+      {
+        "name": "link_rules",
+        "status": "completed",
+        "ms": 1806,
+        "reason": null
+      },
+      {
+        "name": "relate_agent",
+        "status": "completed",
+        "ms": 88,
+        "reason": null
+      },
+      {
+        "name": "verify_agent",
+        "status": "completed",
+        "ms": 52,
+        "reason": null
+      },
+      {
+        "name": "finalize",
+        "status": "completed",
+        "ms": 354,
+        "reason": null
+      }
+    ]
+  }
+}

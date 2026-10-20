@@ -1,0 +1,178 @@
+{
+  "items": [
+    {
+      "id": "d5152b39-8bbc-4141-ac06-9d5e70f98f99",
+      "sha256": "31a66e827c4549e500a5d3b0f1e757ec04fc72f2d04e14475ad279cdb546cb6f",
+      "file_name": "uspto-fee-schedule.pdf",
+      "title": null,
+      "page_count": 15,
+      "kind": "sample",
+      "status": "ready",
+      "created_at": "2026-10-14T19:11:26.817797Z",
+      "expires_at": null,
+      "stats": {
+        "nodes": 46,
+        "edges": 63,
+        "tiers": {
+          "A": 127,
+          "B": 11,
+          "C": 0,
+          "D": 0
+        }
+      },
+      "latest_job": {
+        "id": "49932edf-fd77-44b0-8ac2-b69933f8d536",
+        "document_id": "d5152b39-8bbc-4141-ac06-9d5e70f98f99",
+        "status": "succeeded",
+        "stage": "finalize",
+        "created_at": "2026-10-19T21:15:43.539772Z",
+        "started_at": "2026-10-19T21:15:43.606188Z",
+        "finished_at": "2026-10-19T21:17:33.453595Z",
+        "error": null,
+        "llm": {
+          "requests": 0,
+          "cached": 3,
+          "failed": 0,
+          "rejected": 0
+        },
+        "stages": [
+          {
+            "name": "read",
+            "status": "completed",
+            "ms": 104899,
+            "reason": null
+          },
+          {
+            "name": "structure",
+            "status": "completed",
+            "ms": 584,
+            "reason": null
+          },
+          {
+            "name": "classify_rules",
+            "status": "completed",
+            "ms": 115,
+            "reason": null
+          },
+          {
+            "name": "classify_agent",
+            "status": "completed",
+            "ms": 102,
+            "reason": null
+          },
+          {
+            "name": "link_rules",
+            "status": "completed",
+            "ms": 1806,
+            "reason": null
+          },
+          {
+            "name": "relate_agent",
+            "status": "completed",
+            "ms": 88,
+            "reason": null
+          },
+          {
+            "name": "verify_agent",
+            "status": "completed",
+            "ms": 52,
+            "reason": null
+          },
+          {
+            "name": "finalize",
+            "status": "completed",
+            "ms": 354,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "6557e211-a357-4ea6-8882-1cd6f86f6cf6",
+      "sha256": "7576edb531d9848825814ee88e28b1795d3a84b435b4b797d3670eafdc4a89f1",
+      "file_name": "nist-ai-100-1.pdf",
+      "title": "Artificial Intelligence Risk Management\nFramework (AI RMF 1.0)",
+      "page_count": 48,
+      "kind": "sample",
+      "status": "ready",
+      "created_at": "2026-10-14T19:11:34.151931Z",
+      "expires_at": null,
+      "stats": {
+        "nodes": 371,
+        "edges": 539,
+        "tiers": {
+          "A": 972,
+          "B": 50,
+          "C": 62,
+          "D": 0
+        }
+      },
+      "latest_job": {
+        "id": "6c39875d-2260-4bfc-9c09-90dd69f2fc93",
+        "document_id": "6557e211-a357-4ea6-8882-1cd6f86f6cf6",
+        "status": "succeeded",
+        "stage": "finalize",
+        "created_at": "2026-10-19T21:15:44.650709Z",
+        "started_at": "2026-10-19T21:17:33.482021Z",
+        "finished_at": "2026-10-19T21:19:09.808723Z",
+        "error": null,
+        "llm": {
+          "requests": 0,
+          "cached": 6,
+          "failed": 0,
+          "rejected": 0
+        },
+        "stages": [
+          {
+            "name": "read",
+            "status": "completed",
+            "ms": 88408,
+            "reason": null
+          },
+          {
+            "name": "structure",
+            "status": "completed",
+            "ms": 383,
+            "reason": null
+          },
+          {
+            "name": "classify_rules",
+            "status": "completed",
+            "ms": 1051,
+            "reason": null
+          },
+          {
+            "name": "classify_agent",
+            "status": "completed",
+            "ms": 171,
+            "reason": null
+          },
+          {
+            "name": "link_rules",
+            "status": "completed",
+            "ms": 869,
+            "reason": null
+          },
+          {
+            "name": "relate_agent",
+            "status": "completed",
+            "ms": 182,
+            "reason": null
+          },
+          {
+            "name": "verify_agent",
+            "status": "skipped",
+            "ms": 66,
+            "reason": "replay_miss"
+          },
+          {
+            "name": "finalize",
+            "status": "completed",
+            "ms": 1463,
+            "reason": null
+          }
+        ]
+      }
+    }
+  ]
+}

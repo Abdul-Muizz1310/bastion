@@ -1,0 +1,36 @@
+{
+  "items": [
+    {
+      "id": "889d7f2b-33c0-432a-b956-8a360f7b9497",
+      "claim": "The USPTO basic filing fee for a utility patent is 350 dollars.",
+      "status": "done",
+      "verdict": "TRUE",
+      "confidence": 0.82,
+      "rounds": [
+        {
+          "side": "proponent",
+          "round": 1,
+          "argument": "The fee schedule lists 350.00 for the basic utility filing fee [cert:2b9f6a1e-4c3d-4e5f-9a7b-8c6d5e4f3a2b].",
+          "evidence": [],
+          "citations": [
+            {
+              "type": "cert",
+              "ref": "2b9f6a1e-4c3d-4e5f-9a7b-8c6d5e4f3a2b",
+              "title": "USPTO fee schedule"
+            }
+          ]
+        },
+        {
+          "side": "skeptic",
+          "round": 1,
+          "argument": "The small and micro entity fees are lower, so the claim holds only for large entities.",
+          "evidence": [],
+          "citations": []
+        }
+      ],
+      "transcript_md": "# Debate\n\n**Claim:** The USPTO basic filing fee for a utility patent is 350 dollars.\n",
+      "created_at": "2026-10-20T07:02:11.390211Z"
+    }
+  ],
+  "next_cursor": "MjAyNi0xMC0yMFQwNzowMjoxMS4zOTAyMTErMDA6MDB8ODg5ZDdmMmItMzNjMC00MzJhLWI5NTYtOGEzNjBmN2I5NDk3"
+}

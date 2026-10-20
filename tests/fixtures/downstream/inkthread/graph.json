@@ -1,0 +1,1144 @@
+{
+  "edges": [
+    {
+      "id": "e:50f5012a7ef25293",
+      "type": "contains",
+      "basis": "explicit",
+      "flags": [],
+      "label": null,
+      "anchor": null,
+      "family": "structure",
+      "method": "R-SEC-contains",
+      "source": "d:31a66e827c4549e5",
+      "target": "s:b4481d18490e770e",
+      "made_by": {
+        "id": "R-SEC-contains",
+        "actor": "rule",
+        "model": null,
+        "request_key": null
+      },
+      "verdict": null,
+      "evidence": null,
+      "confidence": {
+        "tier": "A",
+        "score": 0.95,
+        "reasons": [
+          {
+            "code": "explicit_rule",
+            "detail": null,
+            "severity": "info"
+          }
+        ]
+      },
+      "evidence_on": "source"
+    },
+    {
+      "id": "e:d9da247393533c43",
+      "type": "contains",
+      "basis": "explicit",
+      "flags": [],
+      "label": null,
+      "anchor": null,
+      "family": "structure",
+      "method": "R-SEC-contains",
+      "source": "s:b4481d18490e770e",
+      "target": "p:c95bca1f83faa250",
+      "made_by": {
+        "id": "R-SEC-contains",
+        "actor": "rule",
+        "model": null,
+        "request_key": null
+      },
+      "verdict": null,
+      "evidence": null,
+      "confidence": {
+        "tier": "A",
+        "score": 0.95,
+        "reasons": [
+          {
+            "code": "explicit_rule",
+            "detail": null,
+            "severity": "info"
+          }
+        ]
+      },
+      "evidence_on": "source"
+    },
+    {
+      "id": "e:c227266c0361142e",
+      "type": "contains",
+      "basis": "explicit",
+      "flags": [],
+      "label": null,
+      "anchor": null,
+      "family": "structure",
+      "method": "R-SEC-contains",
+      "source": "s:b4481d18490e770e",
+      "target": "p:54a551b7d68fe9a8",
+      "made_by": {
+        "id": "R-SEC-contains",
+        "actor": "rule",
+        "model": null,
+        "request_key": null
+      },
+      "verdict": null,
+      "evidence": null,
+      "confidence": {
+        "tier": "A",
+        "score": 0.95,
+        "reasons": [
+          {
+            "code": "explicit_rule",
+            "detail": null,
+            "severity": "info"
+          }
+        ]
+      },
+      "evidence_on": "source"
+    },
+    {
+      "id": "e:5f48e7cd4ebf07b9",
+      "type": "cites_external",
+      "basis": "explicit",
+      "flags": [],
+      "label": "37 CFR 1.27",
+      "anchor": null,
+      "family": "references",
+      "method": "R-CITE-cfr",
+      "source": "p:c95bca1f83faa250",
+      "target": "x:49cb66e4d5148c33",
+      "made_by": {
+        "id": "R-CITE-cfr",
+        "actor": "rule",
+        "model": null,
+        "request_key": null
+      },
+      "verdict": null,
+      "evidence": {
+        "end": 84,
+        "quote": "37 CFR 1.27",
+        "start": 73
+      },
+      "confidence": {
+        "tier": "A",
+        "score": 0.95,
+        "reasons": [
+          {
+            "code": "explicit_rule",
+            "detail": null,
+            "severity": "info"
+          }
+        ]
+      },
+      "evidence_on": "source"
+    },
+    {
+      "id": "e:493f184838df5a66",
+      "type": "cites_external",
+      "basis": "explicit",
+      "flags": [],
+      "label": "37 CFR 1.29",
+      "anchor": null,
+      "family": "references",
+      "method": "R-CITE-cfr",
+      "source": "p:c95bca1f83faa250",
+      "target": "x:469fe93ebab08ac9",
+      "made_by": {
+        "id": "R-CITE-cfr",
+        "actor": "rule",
+        "model": null,
+        "request_key": null
+      },
+      "verdict": null,
+      "evidence": {
+        "end": 121,
+        "quote": "37 CFR 1.29",
+        "start": 110
+      },
+      "confidence": {
+        "tier": "A",
+        "score": 0.95,
+        "reasons": [
+          {
+            "code": "explicit_rule",
+            "detail": null,
+            "severity": "info"
+          }
+        ]
+      },
+      "evidence_on": "source"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "d:31a66e827c4549e5",
+      "kind": "document",
+      "text": "",
+      "depth": 0,
+      "flags": [],
+      "label": "uspto-fee-schedule.pdf",
+      "order": 0,
+      "roles": [],
+      "table": null,
+      "marker": null,
+      "source": {
+        "keys": [],
+        "blocks": []
+      },
+      "made_by": {
+        "id": "R-SEC-title",
+        "actor": "rule",
+        "model": null,
+        "request_key": null
+      },
+      "regions": [],
+      "section": null,
+      "confidence": {
+        "tier": "A",
+        "score": 1.0,
+        "reasons": [
+          {
+            "code": "verified_text",
+            "detail": null,
+            "severity": "info"
+          }
+        ]
+      },
+      "unresolved": [],
+      "hidden_spans": [],
+      "label_truncated": false
+    },
+    {
+      "id": "s:b4481d18490e770e",
+      "kind": "section",
+      "text": "Patent fees",
+      "depth": 1,
+      "flags": [],
+      "label": "Patent fees",
+      "order": 6,
+      "roles": [],
+      "table": null,
+      "marker": null,
+      "source": {
+        "keys": [
+          "k8a708c9b46ef86d9"
+        ],
+        "blocks": [
+          "b6"
+        ]
+      },
+      "made_by": {
+        "id": "inkgrid",
+        "actor": "inkgrid",
+        "model": null,
+        "request_key": null
+      },
+      "regions": [
+        {
+          "bbox": [
+            50.4,
+            215.29,
+            106.91,
+            231.95
+          ],
+          "page": 1
+        }
+      ],
+      "section": "d:31a66e827c4549e5",
+      "confidence": {
+        "tier": "A",
+        "score": 1.0,
+        "reasons": [
+          {
+            "code": "verified_text",
+            "detail": null,
+            "severity": "info"
+          }
+        ]
+      },
+      "unresolved": [],
+      "hidden_spans": [],
+      "label_truncated": false
+    },
+    {
+      "id": "p:c95bca1f83faa250",
+      "kind": "paragraph",
+      "text": "The fees subject to reduction upon establishment of small entity status (37 CFR 1.27) or micro entity status (37 CFR 1.29) are shown in separate columns. Except for provisional applications, each application for a patent requires the appropriate search fee and examination fee in addition to the appropriate fee(s) in the “Patent application filing fees” section below. This means each fee listed as a “Basic filing fee” in the “Patent application filing fees” section should be accompanied by the appropriate search fee listed in the “Patent search fees” section as well as the appropriate examination fee listed in the “Patent examination fees” section. The $400/$200 non-electronic filing fee (fee codes 1090/2090/3090 or 1690/2690/3690) must be paid in addition to the filing, search and examination fees, in each original nonprovisional utility application filed in paper with the USPTO. The only way to avoid payment of the non-electronic filing fee is by filing your nonprovisional utility application via Patent Center. The nonelectronic filing fee does not apply to reissue, design, plant, or provisional applications.",
+      "depth": 2,
+      "flags": [],
+      "label": "The fees subject to reduction upon establishment of small entity status (37 CFR",
+      "order": 7,
+      "roles": [
+        {
+          "role": "obligation",
+          "basis": "explicit",
+          "made_by": {
+            "id": "R-ROLE-obligation",
+            "actor": "rule",
+            "model": null,
+            "request_key": null
+          },
+          "verdict": null,
+          "evidence": {
+            "end": 745,
+            "quote": "must",
+            "start": 741
+          },
+          "confidence": {
+            "tier": "A",
+            "score": 0.95,
+            "reasons": [
+              {
+                "code": "explicit_rule",
+                "detail": null,
+                "severity": "info"
+              }
+            ]
+          }
+        },
+        {
+          "role": "condition",
+          "basis": "explicit",
+          "made_by": {
+            "id": "R-ROLE-condition",
+            "actor": "rule",
+            "model": null,
+            "request_key": null
+          },
+          "verdict": null,
+          "evidence": {
+            "end": 19,
+            "quote": "subject to",
+            "start": 9
+          },
+          "confidence": {
+            "tier": "A",
+            "score": 0.95,
+            "reasons": [
+              {
+                "code": "explicit_rule",
+                "detail": null,
+                "severity": "info"
+              }
+            ]
+          }
+        },
+        {
+          "role": "exception",
+          "basis": "explicit",
+          "made_by": {
+            "id": "R-ROLE-exception",
+            "actor": "rule",
+            "model": null,
+            "request_key": null
+          },
+          "verdict": null,
+          "evidence": {
+            "end": 160,
+            "quote": "Except",
+            "start": 154
+          },
+          "confidence": {
+            "tier": "A",
+            "score": 0.95,
+            "reasons": [
+              {
+                "code": "explicit_rule",
+                "detail": null,
+                "severity": "info"
+              }
+            ]
+          }
+        },
+        {
+          "role": "quantitative",
+          "basis": "explicit",
+          "made_by": {
+            "id": "R-ROLE-quantitative",
+            "actor": "rule",
+            "model": null,
+            "request_key": null
+          },
+          "verdict": null,
+          "evidence": {
+            "end": 664,
+            "quote": "$400",
+            "start": 660
+          },
+          "confidence": {
+            "tier": "A",
+            "score": 0.95,
+            "reasons": [
+              {
+                "code": "explicit_rule",
+                "detail": null,
+                "severity": "info"
+              }
+            ]
+          }
+        },
+        {
+          "role": "scope",
+          "basis": "explicit",
+          "made_by": {
+            "id": "R-ROLE-scope",
+            "actor": "rule",
+            "model": null,
+            "request_key": null
+          },
+          "verdict": null,
+          "evidence": {
+            "end": 1074,
+            "quote": "apply to",
+            "start": 1066
+          },
+          "confidence": {
+            "tier": "A",
+            "score": 0.95,
+            "reasons": [
+              {
+                "code": "explicit_rule",
+                "detail": null,
+                "severity": "info"
+              }
+            ]
+          }
+        },
+        {
+          "role": "convention",
+          "basis": "explicit",
+          "made_by": {
+            "id": "R-ROLE-convention",
+            "actor": "rule",
+            "model": null,
+            "request_key": null
+          },
+          "verdict": null,
+          "evidence": {
+            "end": 135,
+            "quote": "are shown in",
+            "start": 123
+          },
+          "confidence": {
+            "tier": "A",
+            "score": 0.95,
+            "reasons": [
+              {
+                "code": "explicit_rule",
+                "detail": null,
+                "severity": "info"
+              }
+            ]
+          }
+        },
+        {
+          "role": "external_pointer",
+          "basis": "explicit",
+          "made_by": {
+            "id": "R-ROLE-external_pointer",
+            "actor": "rule",
+            "model": null,
+            "request_key": null
+          },
+          "verdict": null,
+          "evidence": {
+            "end": 84,
+            "quote": "37 CFR 1.27",
+            "start": 73
+          },
+          "confidence": {
+            "tier": "A",
+            "score": 0.95,
+            "reasons": [
+              {
+                "code": "explicit_rule",
+                "detail": null,
+                "severity": "info"
+              }
+            ]
+          }
+        }
+      ],
+      "table": null,
+      "marker": null,
+      "source": {
+        "keys": [
+          "k9c6e2aa09037c92e"
+        ],
+        "blocks": [
+          "b7"
+        ]
+      },
+      "made_by": {
+        "id": "inkgrid",
+        "actor": "inkgrid",
+        "model": null,
+        "request_key": null
+      },
+      "regions": [
+        {
+          "bbox": [
+            50.39,
+            242.62,
+            579.64,
+            368.18
+          ],
+          "page": 1
+        }
+      ],
+      "section": "s:b4481d18490e770e",
+      "confidence": {
+        "tier": "A",
+        "score": 1.0,
+        "reasons": [
+          {
+            "code": "verified_text",
+            "detail": null,
+            "severity": "info"
+          }
+        ]
+      },
+      "unresolved": [],
+      "hidden_spans": [],
+      "label_truncated": true
+    },
+    {
+      "id": "p:54a551b7d68fe9a8",
+      "kind": "table",
+      "text": "Patent penalty fines\nFee code Statutory authority Description Penalty amount\n9301 35 U.S.C. 41(j) Penalty for false small entity assertion Variable – not less than three times the amount an entity failed to pay under false assertion\n9302 35 U.S.C. 123(f) Penalty for false micro entity certification Variable – not less than three times the amount an entity failed to pay under false certification",
+      "depth": 2,
+      "flags": [],
+      "label": "Patent penalty fines\nFee code Statutory authority Description Penalty amount",
+      "order": 35,
+      "roles": [
+        {
+          "role": "quantitative",
+          "basis": "explicit",
+          "made_by": {
+            "id": "R-ROLE-quantitative",
+            "actor": "rule",
+            "model": null,
+            "request_key": null
+          },
+          "verdict": null,
+          "evidence": {
+            "end": 81,
+            "quote": "9301",
+            "start": 77
+          },
+          "confidence": {
+            "tier": "A",
+            "score": 0.95,
+            "reasons": [
+              {
+                "code": "explicit_rule",
+                "detail": null,
+                "severity": "info"
+              }
+            ]
+          }
+        }
+      ],
+      "table": {
+        "cells": [
+          {
+            "col": 0,
+            "row": 0,
+            "bbox": [
+              50.86,
+              492.93,
+              581.64,
+              510.54
+            ],
+            "page": 10,
+            "text": "Patent penalty fines",
+            "carried": false,
+            "markers": [],
+            "col_span": 4,
+            "row_span": 1,
+            "is_header": true,
+            "row_labels": [],
+            "header_path": []
+          },
+          {
+            "col": 0,
+            "row": 1,
+            "bbox": [
+              50.86,
+              510.54,
+              140.4,
+              536.24
+            ],
+            "page": 10,
+            "text": "Fee code",
+            "carried": false,
+            "markers": [],
+            "col_span": 1,
+            "row_span": 1,
+            "is_header": true,
+            "row_labels": [],
+            "header_path": []
+          },
+          {
+            "col": 1,
+            "row": 1,
+            "bbox": [
+              140.4,
+              510.54,
+              243.84,
+              536.24
+            ],
+            "page": 10,
+            "text": "Statutory authority",
+            "carried": false,
+            "markers": [],
+            "col_span": 1,
+            "row_span": 1,
+            "is_header": true,
+            "row_labels": [],
+            "header_path": []
+          },
+          {
+            "col": 2,
+            "row": 1,
+            "bbox": [
+              243.84,
+              510.54,
+              432.96,
+              536.24
+            ],
+            "page": 10,
+            "text": "Description",
+            "carried": false,
+            "markers": [],
+            "col_span": 1,
+            "row_span": 1,
+            "is_header": true,
+            "row_labels": [],
+            "header_path": []
+          },
+          {
+            "col": 3,
+            "row": 1,
+            "bbox": [
+              432.96,
+              510.54,
+              581.64,
+              536.24
+            ],
+            "page": 10,
+            "text": "Penalty amount",
+            "carried": false,
+            "markers": [],
+            "col_span": 1,
+            "row_span": 1,
+            "is_header": true,
+            "row_labels": [],
+            "header_path": []
+          },
+          {
+            "col": 0,
+            "row": 2,
+            "bbox": [
+              50.86,
+              536.24,
+              140.4,
+              586.14
+            ],
+            "page": 10,
+            "text": "9301",
+            "carried": false,
+            "markers": [],
+            "col_span": 1,
+            "row_span": 1,
+            "is_header": false,
+            "row_labels": [
+              "Patent penalty fines"
+            ],
+            "header_path": [
+              "Patent penalty fines",
+              "Fee code"
+            ]
+          },
+          {
+            "col": 1,
+            "row": 2,
+            "bbox": [
+              140.4,
+              536.24,
+              243.84,
+              586.14
+            ],
+            "page": 10,
+            "text": "35 U.S.C. 41(j)",
+            "carried": false,
+            "markers": [],
+            "col_span": 1,
+            "row_span": 1,
+            "is_header": false,
+            "row_labels": [
+              "Patent penalty fines"
+            ],
+            "header_path": [
+              "Patent penalty fines",
+              "Statutory authority"
+            ]
+          },
+          {
+            "col": 2,
+            "row": 2,
+            "bbox": [
+              243.84,
+              536.24,
+              432.96,
+              586.14
+            ],
+            "page": 10,
+            "text": "Penalty for false small entity assertion",
+            "carried": false,
+            "markers": [],
+            "col_span": 1,
+            "row_span": 1,
+            "is_header": false,
+            "row_labels": [
+              "Patent penalty fines",
+              "35 U.S.C. 41(j)"
+            ],
+            "header_path": [
+              "Patent penalty fines",
+              "Description"
+            ]
+          },
+          {
+            "col": 3,
+            "row": 2,
+            "bbox": [
+              432.96,
+              536.24,
+              581.64,
+              586.14
+            ],
+            "page": 10,
+            "text": "Variable – not less than three times the amount an entity failed to pay under false assertion",
+            "carried": false,
+            "markers": [],
+            "col_span": 1,
+            "row_span": 1,
+            "is_header": false,
+            "row_labels": [
+              "Patent penalty fines",
+              "35 U.S.C. 41(j)",
+              "Penalty for false small entity assertion"
+            ],
+            "header_path": [
+              "Patent penalty fines",
+              "Penalty amount"
+            ]
+          },
+          {
+            "col": 0,
+            "row": 3,
+            "bbox": [
+              50.86,
+              586.14,
+              140.4,
+              636.17
+            ],
+            "page": 10,
+            "text": "9302",
+            "carried": false,
+            "markers": [],
+            "col_span": 1,
+            "row_span": 1,
+            "is_header": false,
+            "row_labels": [
+              "Patent penalty fines"
+            ],
+            "header_path": [
+              "Patent penalty fines",
+              "Fee code"
+            ]
+          },
+          {
+            "col": 1,
+            "row": 3,
+            "bbox": [
+              140.4,
+              586.14,
+              243.84,
+              636.17
+            ],
+            "page": 10,
+            "text": "35 U.S.C. 123(f)",
+            "carried": false,
+            "markers": [],
+            "col_span": 1,
+            "row_span": 1,
+            "is_header": false,
+            "row_labels": [
+              "Patent penalty fines"
+            ],
+            "header_path": [
+              "Patent penalty fines",
+              "Statutory authority"
+            ]
+          },
+          {
+            "col": 2,
+            "row": 3,
+            "bbox": [
+              243.84,
+              586.14,
+              432.96,
+              636.17
+            ],
+            "page": 10,
+            "text": "Penalty for false micro entity certification",
+            "carried": false,
+            "markers": [],
+            "col_span": 1,
+            "row_span": 1,
+            "is_header": false,
+            "row_labels": [
+              "Patent penalty fines",
+              "35 U.S.C. 123(f)"
+            ],
+            "header_path": [
+              "Patent penalty fines",
+              "Description"
+            ]
+          },
+          {
+            "col": 3,
+            "row": 3,
+            "bbox": [
+              432.96,
+              586.14,
+              581.64,
+              636.17
+            ],
+            "page": 10,
+            "text": "Variable – not less than three times the amount an entity failed to pay under false certification",
+            "carried": false,
+            "markers": [],
+            "col_span": 1,
+            "row_span": 1,
+            "is_header": false,
+            "row_labels": [
+              "Patent penalty fines",
+              "35 U.S.C. 123(f)",
+              "Penalty for false micro entity certification"
+            ],
+            "header_path": [
+              "Patent penalty fines",
+              "Penalty amount"
+            ]
+          }
+        ],
+        "n_cols": 4,
+        "n_rows": 4,
+        "source": "lattice",
+        "banner_rows": [
+          0
+        ],
+        "header_rows": 2
+      },
+      "marker": null,
+      "source": {
+        "keys": [
+          "k4908929aee76f806"
+        ],
+        "blocks": [
+          "b35"
+        ]
+      },
+      "made_by": {
+        "id": "inkgrid",
+        "actor": "inkgrid",
+        "model": null,
+        "request_key": null
+      },
+      "regions": [
+        {
+          "bbox": [
+            50.86,
+            492.13,
+            581.64,
+            636.17
+          ],
+          "page": 10
+        }
+      ],
+      "section": "s:b4481d18490e770e",
+      "confidence": {
+        "tier": "A",
+        "score": 1.0,
+        "reasons": [
+          {
+            "code": "verified_text",
+            "detail": null,
+            "severity": "info"
+          }
+        ]
+      },
+      "unresolved": [],
+      "hidden_spans": [],
+      "label_truncated": true
+    },
+    {
+      "id": "x:49cb66e4d5148c33",
+      "kind": "external",
+      "text": "37 CFR 1.27",
+      "depth": 0,
+      "flags": [],
+      "label": "37 CFR 1.27",
+      "order": 55,
+      "roles": [],
+      "table": null,
+      "marker": null,
+      "source": {
+        "keys": [],
+        "blocks": []
+      },
+      "made_by": {
+        "id": "R-CITE-cfr",
+        "actor": "rule",
+        "model": null,
+        "request_key": null
+      },
+      "regions": [],
+      "section": null,
+      "confidence": {
+        "tier": "A",
+        "score": 1.0,
+        "reasons": [
+          {
+            "code": "verified_text",
+            "detail": null,
+            "severity": "info"
+          }
+        ]
+      },
+      "unresolved": [],
+      "hidden_spans": [],
+      "label_truncated": false
+    },
+    {
+      "id": "x:469fe93ebab08ac9",
+      "kind": "external",
+      "text": "37 CFR 1.29",
+      "depth": 0,
+      "flags": [],
+      "label": "37 CFR 1.29",
+      "order": 56,
+      "roles": [],
+      "table": null,
+      "marker": null,
+      "source": {
+        "keys": [],
+        "blocks": []
+      },
+      "made_by": {
+        "id": "R-CITE-cfr",
+        "actor": "rule",
+        "model": null,
+        "request_key": null
+      },
+      "regions": [],
+      "section": null,
+      "confidence": {
+        "tier": "A",
+        "score": 1.0,
+        "reasons": [
+          {
+            "code": "verified_text",
+            "detail": null,
+            "severity": "info"
+          }
+        ]
+      },
+      "unresolved": [],
+      "hidden_spans": [],
+      "label_truncated": false
+    }
+  ],
+  "stats": {
+    "roles": {
+      "claim": 0,
+      "scope": 1,
+      "method": 0,
+      "example": 0,
+      "summary": 0,
+      "temporal": 3,
+      "condition": 1,
+      "exception": 1,
+      "procedure": 0,
+      "convention": 1,
+      "definition": 0,
+      "obligation": 2,
+      "permission": 0,
+      "computation": 0,
+      "prohibition": 0,
+      "quantitative": 18,
+      "administrative": 1,
+      "external_pointer": 1
+    },
+    "tiers": {
+      "A": 127,
+      "B": 11,
+      "C": 0,
+      "D": 0
+    },
+    "edges_by_type": {
+      "defines": 0,
+      "governs": 1,
+      "contains": 26,
+      "continues": 6,
+      "overrides": 0,
+      "qualifies": 3,
+      "refers_to": 8,
+      "uses_term": 0,
+      "cites_note": 0,
+      "illustrates": 0,
+      "cites_external": 19
+    },
+    "nodes_by_kind": {
+      "note": 0,
+      "term": 0,
+      "table": 17,
+      "section": 3,
+      "document": 1,
+      "external": 19,
+      "list_item": 0,
+      "paragraph": 6,
+      "definition": 0
+    }
+  },
+  "schema": "inkthread.graph/1",
+  "document": {
+    "pages": [
+      {
+        "width": 612.0,
+        "height": 792.0,
+        "number": 1
+      },
+      {
+        "width": 612.0,
+        "height": 792.0,
+        "number": 2
+      },
+      {
+        "width": 612.0,
+        "height": 792.0,
+        "number": 3
+      },
+      {
+        "width": 612.0,
+        "height": 792.0,
+        "number": 4
+      },
+      {
+        "width": 612.0,
+        "height": 792.0,
+        "number": 5
+      },
+      {
+        "width": 612.0,
+        "height": 792.0,
+        "number": 6
+      },
+      {
+        "width": 612.0,
+        "height": 792.0,
+        "number": 7
+      },
+      {
+        "width": 612.0,
+        "height": 792.0,
+        "number": 8
+      },
+      {
+        "width": 612.0,
+        "height": 792.0,
+        "number": 9
+      },
+      {
+        "width": 612.0,
+        "height": 792.0,
+        "number": 10
+      },
+      {
+        "width": 612.0,
+        "height": 792.0,
+        "number": 11
+      },
+      {
+        "width": 612.0,
+        "height": 792.0,
+        "number": 12
+      },
+      {
+        "width": 612.0,
+        "height": 792.0,
+        "number": 13
+      },
+      {
+        "width": 612.0,
+        "height": 792.0,
+        "number": 14
+      },
+      {
+        "width": 612.0,
+        "height": 792.0,
+        "number": 15
+      }
+    ],
+    "title": null,
+    "sha256": "31a66e827c4549e500a5d3b0f1e757ec04fc72f2d04e14475ad279cdb546cb6f",
+    "file_name": "uspto-fee-schedule.pdf",
+    "page_count": 15,
+    "title_node": null
+  },
+  "findings": [],
+  "set_aside": [
+    {
+      "bbox": [
+        217.68,
+        48.58,
+        412.99,
+        80.69
+      ],
+      "kind": "furniture",
+      "page": 1,
+      "text": "USPTO fee schedule",
+      "block": "b1",
+      "reason": "R-SET-furniture"
+    },
+    {
+      "bbox": [
+        270.6,
+        35.11,
+        360.22,
+        49.88
+      ],
+      "kind": "furniture",
+      "page": 2,
+      "text": "USPTO fee schedule",
+      "block": "b9",
+      "reason": "R-SET-furniture"
+    }
+  ],
+  "provenance": {
+    "models": {
+      "producer": "nvidia/nemotron-3-super-120b-a12b:free > google/gemma-4-26b-a4b-it:free",
+      "verifier": "google/gemma-4-31b-it:free > google/gemma-4-26b-a4b-it:free"
+    },
+    "ops_head": "2dd4f72bbe1782ee54daaadd7c88b2aaf6905a3ffbe6673b09d5518a71f713db",
+    "rejected": [],
+    "ops_count": 225,
+    "graph_hash": "0cb34ee971ca076e074f6b2338edc5ab8e104744313547223792b07b39237be5",
+    "prompts_hash": "7e8107c76e9bd8f795757c8a7f6b7ab8e4e6f8ee6b05143753ab265ddbcc0e5c",
+    "inkgrid_version": "0.2.0",
+    "pipeline_version": "1.0.0"
+  }
+}

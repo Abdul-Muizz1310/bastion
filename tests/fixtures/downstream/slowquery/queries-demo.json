@@ -1,0 +1,26 @@
+[
+  {
+    "id": "abcdef1234567890",
+    "fingerprint": "select * from orders where user_id = ? order by created_at desc",
+    "first_seen": "2026-10-20T09:00:00.000000Z",
+    "last_seen": "2026-10-20T09:15:02.511000Z",
+    "call_count": 7,
+    "total_ms": 4120,
+    "p50_ms": 1.5,
+    "p95_ms": 2.5,
+    "p99_ms": 3.5,
+    "max_ms": 4.5,
+    "suggestions": [
+      {
+        "id": 7,
+        "fingerprint_id": "abcdef1234567890",
+        "rule": null,
+        "kind": "index",
+        "source": "rules",
+        "sql": "CREATE INDEX IF NOT EXISTS ix_orders_created_at ON orders(created_at);",
+        "rationale": "Sort node on ORDER BY created_at with significant cost.",
+        "applied_at": null
+      }
+    ]
+  }
+]
