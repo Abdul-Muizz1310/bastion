@@ -1,8 +1,11 @@
 import type { Stage, StageHandler } from "./stages";
+import { gather } from "./stages/gather";
+import { read } from "./stages/read";
+import { wake } from "./stages/wake";
 
 /**
- * The stage handlers the advance route runs (spec 21 §6.1). Every stage is a stub until its task
- * lands — wake/gather/read (Task 6), seal/debate (Task 7), measure/envelope/record (Task 8) — and a
+ * The stage handlers the advance route runs (spec 21 §6.1). wake, gather and read are real (Task 6); the rest are stubs until their task
+ * lands — seal/debate (Task 7), measure/envelope/record (Task 8) — and a
  * stub fails the dossier non-retryably rather than pretend the stage happened.
  */
 
@@ -13,9 +16,9 @@ const notImplemented: StageHandler = async () => ({
 });
 
 export const HANDLERS: Readonly<Record<Stage, StageHandler>> = {
-  wake: notImplemented,
-  gather: notImplemented,
-  read: notImplemented,
+  wake,
+  gather,
+  read,
   seal: notImplemented,
   debate: notImplemented,
   measure: notImplemented,

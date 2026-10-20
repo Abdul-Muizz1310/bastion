@@ -30,7 +30,16 @@ describe("HANDLERS", () => {
     expect(Object.keys(HANDLERS).sort()).toEqual([...STAGES].sort());
   });
 
-  it.each([...STAGES])(
+  it("wires the real wake, gather and read stages", async () => {
+    const { gather } = await import("@/dossier/stages/gather");
+    const { read } = await import("@/dossier/stages/read");
+    const { wake } = await import("@/dossier/stages/wake");
+    expect(HANDLERS.wake).toBe(wake);
+    expect(HANDLERS.gather).toBe(gather);
+    expect(HANDLERS.read).toBe(read);
+  });
+
+  it.each(STAGES.filter((s) => !["wake", "gather", "read"].includes(s)))(
     "%s is a stub that fails non-retryably as not_implemented",
     async (stage) => {
       const outcome = await HANDLERS[stage]({
