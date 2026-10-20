@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { magpie } from "@/capabilities/magpie";
+import { budgetsLeft } from "@/platform/budget";
 import {
   base,
   call,
   expectInvalidInput,
   expectMissingFieldRejected,
   expectParses,
+  fetchMock,
   fixture,
   json,
   sent,
@@ -167,6 +169,45 @@ describe("magpie.scrapeBatch", () => {
       body: { sources: ["hackernews", "lobsters", "arxiv-cs"], max_items_per_source: 5 },
     });
     expect(data).toMatchObject({ failed: [{ source: "arxiv-cs" }] });
+  });
+
+  describe("spends one scrape unit per source (Ruling L)", () => {
+    const three = { sources: ["hackernews", "lobsters", "arxiv-cs"] };
+    const scrapeLeft = async () => (await budgetsLeft()).scrape.left;
+    /** The in-process counter is shared by this file's tests: leave exactly `n` units for today. */
+    const leave = async (n: number) => {
+      const { limit, left } = (await budgetsLeft()).scrape;
+      vi.stubEnv("BUDGET_SCRAPE", String(limit - left + n));
+    };
+
+    it("counts the sources", () => {
+      expect(magpie.scrapeBatch.budgetUnits?.(three)).toBe(3);
+    });
+
+    it("reserves 3 units for 3 sources", async () => {
+      await leave(5);
+      await expectParses(magpie.scrapeBatch, three, batch);
+      expect(await scrapeLeft()).toBe(2);
+    });
+
+    it("gives all 3 back on a 4xx", async () => {
+      await leave(5);
+      const result = await call(
+        magpie.scrapeBatch,
+        three,
+        json({ detail: "sources must not contain duplicates" }, 422),
+      );
+      expect(result).toMatchObject({ ok: false, error: "downstream_error", status: 422 });
+      expect(await scrapeLeft()).toBe(5);
+    });
+
+    it("refuses a batch larger than what is left, without fetching or reserving any", async () => {
+      await leave(2);
+      const result = await call(magpie.scrapeBatch, three);
+      expect(result).toMatchObject({ ok: false, error: "budget_exhausted", status: 429 });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(await scrapeLeft()).toBe(2);
+    });
   });
 
   it("refuses a batch answer without its failures list", async () => {

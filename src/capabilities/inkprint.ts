@@ -21,8 +21,9 @@ import {
  * `schemas/batch.py`, `schemas/envelope.py`, and the leak-scan job record
  * (`repositories/leak_repo.py::_job_to_record`, results from `save_results`).
  *
- * Ruling I: inkprint answers 413/422 (size, body) and 404 (unknown certificate for a leak scan)
- * before it signs, embeds or queries a corpus, so a 4xx releases the `certify`/`leakscan` budget.
+ * Ruling I: inkprint answers 413/422 (size, body) and 404 (unknown certificate for a leak scan, or
+ * parent for a diff) before it signs, embeds or queries a corpus, so a 4xx releases the
+ * `certify`/`leakscan` budget.
  */
 
 /** inkprint's `max_text_bytes` for `POST /certificates` (core/config.py). */
@@ -258,7 +259,10 @@ const diff: Capability<z.infer<typeof diffInput>, DiffResult> = {
   input: diffInput,
   output: diffResponse,
   grant: "editor",
-  cost: "free",
+  // Ruling M: every diff embeds the new text (`_compute_embedding_or_zero`), the same spend as a
+  // certificate, so it counts one unit against the certify budget.
+  cost: "quota",
+  budget: "certify",
 };
 
 const leakScan: Capability<z.infer<typeof leakScanInput>, LeakScan> = {

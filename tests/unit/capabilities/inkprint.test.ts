@@ -7,6 +7,7 @@ import {
   expectInvalidInput,
   expectMissingFieldRejected,
   expectParses,
+  fetchMock,
   fixture,
   fixtureBytes,
   json,
@@ -190,6 +191,16 @@ describe("inkprint.diff", () => {
   it("POSTs /diff against a parent certificate", async () => {
     await expectParses(inkprint.diff, { parent_id: CERT, text: "changed" }, diffed);
     expect(sent()).toMatchObject({ url: `${base("inkprint")}/diff`, body: { parent_id: CERT } });
+  });
+
+  it("spends one certify unit: every diff buys an embedding (Ruling M)", async () => {
+    const { limit, left } = (await budgetsLeft()).certify;
+    vi.stubEnv("BUDGET_CERTIFY", String(limit - left + 1));
+    await expectParses(inkprint.diff, { parent_id: CERT, text: "changed" }, diffed);
+    expect((await budgetsLeft()).certify.left).toBe(0);
+    const refused = await call(inkprint.diff, { parent_id: CERT, text: "again" });
+    expect(refused).toMatchObject({ ok: false, error: "budget_exhausted", status: 429 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a diff without its verdict", async () => {

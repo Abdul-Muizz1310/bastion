@@ -161,6 +161,8 @@ const scrapeBatch: Capability<z.infer<typeof scrapeBatchInput>, ScrapeBatch> = {
   grant: "editor",
   cost: "quota",
   budget: "scrape",
+  // Ruling L: magpie scrapes each source (and may heal each underflow), so each one is a unit.
+  budgetUnits: (i) => i.sources.length,
   timeoutMs: SCRAPE_TIMEOUT_MS,
 };
 

@@ -22,7 +22,8 @@ const TABLE: Row[] = [
   ["inkprint.certificate", "GET", "viewer", "free"],
   ["inkprint.verify", "POST", "viewer", "free"],
   ["inkprint.verifyBatch", "POST", "viewer", "free"],
-  ["inkprint.diff", "POST", "editor", "free"],
+  // Ruling M: every diff buys an embedding, counted against the certify budget.
+  ["inkprint.diff", "POST", "editor", "quota", "certify"],
   ["inkprint.leakScan", "POST", "editor", "quota", "leakscan"],
   ["inkprint.leakScanStatus", "GET", "viewer", "free"],
   ["inkprint.envelope", "POST", "editor", "free"],
