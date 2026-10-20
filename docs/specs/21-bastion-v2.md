@@ -687,6 +687,58 @@ with the gateway stubbed, and for each workbench; an env-gated live smoke that r
 Each backend gets contract-v2 conformance tests (wrong `aud`, wrong `iss`, expired beyond leeway, within
 leeway, frontend key with the wrong role, no key configured ⇒ fail closed).
 
+### 10.1 End to end (Task 15)
+
+Playwright drives a real Chrome against `next build && next start`, never a dev server, with every
+downstream replaced by **one local stub** (`tests/e2e/fixtures/upstream.ts`). No test reaches a
+production host or database.
+
+**The harness.**
+- The stub is an HTTPS server (bastion refuses a non-https `<SERVICE>_BACKEND_URL`) with a certificate
+  made for the run; the app trusts it through `NODE_EXTRA_CA_CERTS`. It answers every capability path
+  of §4 from the recorded fixtures (`tests/fixtures/downstream/`) and the issuer-signed ones
+  (`tests/fixtures/receipts/`). It keeps the little state a flow needs: a debate is running on its
+  first read and done after; an upload's job, a leak scan the same; feathers users are created,
+  soft-deleted and then answer 404.
+- Two apps share one build: **main** (generous budgets, every service live) and **limits**
+  (`BUDGET_DEBATE=0`; feathers-demo's `/health` hangs until a test wakes it). Each reaches the stub
+  under its own prefix, so a test can ask the stub what one app called.
+- The run gets its own throwaway Ed25519 key, `IRON_SESSION_PASSWORD` and blank Upstash settings, so
+  budgets and limits are in-process. `DATABASE_URL` must name a local, migrated Postgres; the
+  configuration refuses any other host.
+- Before any test, the golden dossier — signed by inkprint's and paper-trail's own code — is written to
+  the database with its audit events at their exact ids. A database whose ids are taken by other events
+  is refused, never silently mis-seeded.
+
+**Cases.**
+1. Home: the map draws 8 product nodes, each a link to `/tools/<id>` whose name holds its state in
+   words; once the poll answers every service reads live. Keyboard: Tab reaches a node, Enter opens its
+   workbench.
+2. Each of the 8 workbenches: its main action, clicked in the browser, hands back its receipt with a
+   copy button and an audit link — magpie's scrape, inkgrid's reading of an uploaded PDF, inkthread's
+   why (reached by keyboard: Tab into the graph, an arrow key, Enter) with the element boxed on its page,
+   inkprint's certificate and its verification (and a failed one once the text is altered), paper-trail's
+   debate with its transcript hash recomputed and its Ed25519 signature verified, slowquery's plan and
+   `CREATE INDEX`, feathers' soft-delete proof ending in a 404, bastion's token preview and audited call.
+3. A dossier composed in the browser runs to its receipt; "verify everything" shows all 7 checks in
+   words. Against the stub the signature checks fail (the stub cannot sign as inkprint) while bastion's
+   own receipts pass — verification never passes what it could not prove.
+4. The golden dossier: "verify everything" answers 7 of 7 pass; the receipts bundle downloads.
+5. The handoff: a dossier composed through the API, with no page open to nudge it, crosses a stage
+   that takes 12 s — longer than the runner's 10 s handoff — and still reaches `succeeded` by its own
+   `after()` chain.
+6. Budget spent (limits): the compose page says no debates are left and holds the submit; the API
+   answers 429 `budget_exhausted`, and the stub never sees a debate from that app.
+7. Asleep (limits): the map shows feathers asleep; its workbench gate reads asleep after the 90 s wake
+   and offers "wake again", which, once the service answers, reaches live and loads the users.
+8. The open log: `/audit`, a request's trail, `/time-travel` and `/platform` render from the real
+   database and the stub's health.
+
+**Live smoke** (`tests/e2e/live/`, skipped unless `BASTION_LIVE_SMOKE=1` and `PLAYWRIGHT_BASE_URL` are
+set; never in CI): one rapid dossier against the deployment named by `PLAYWRIGHT_BASE_URL`, followed
+over SSE without opening its page (nothing nudges it), which must succeed through a single-invocation
+stage longer than 10 s and then pass every verification check in the browser. It spends one debate.
+
 ## 11. Sub-projects and order
 
 0. **Known gaps** (parallel, per repo): live models for paper-trail and magpie, the hidden nightly failure,

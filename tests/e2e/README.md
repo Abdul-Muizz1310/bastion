@@ -1,46 +1,58 @@
-# E2E tests
+# End-to-end tests
 
-Scaffolded in Block 13. Not run by the default `pnpm test` (unit suite only).
+Playwright drives a real Chrome against `next build && next start` (spec 21 §10.1). Every downstream
+service is one local stub; nothing reaches a production host or database. CI runs this suite in the
+`e2e` job.
 
-## Activate
-
-`@playwright/test` is a committed devDependency, so `pnpm install` already provides
-the runner. You only need the browser binaries:
-
-```bash
-pnpm exec playwright install chromium
-```
-
-## Run
+## Run it
 
 ```bash
-# Terminal 1 — server (no sign-in: the specs browse as an anonymous visitor)
-pnpm build && pnpm start
-
-# Terminal 2 — tests
+pnpm exec playwright install chromium        # once
+pnpm build
+export DATABASE_URL=postgresql://postgres:pg@localhost:5433/bastion_e2e   # a local Postgres
+node scripts/migrate.mjs --force
 pnpm test:e2e
 ```
 
-Or against a deployed preview:
+`DATABASE_URL` must name a local host; the config refuses anything else. Use a fresh database: the
+golden dossier's audit events are written at fixed ids, and a database whose ids are taken by
+other events is refused (re-running on the same e2e database is fine). `openssl` must be on the
+`PATH` (it makes the stub's certificate).
+
+## What starts, in order
+
+1. **The stub** (`fixtures/upstream.ts`, `https://localhost:8543`), run by Node straight from
+   TypeScript. It answers every capability path from `tests/fixtures/downstream/` and the
+   issuer-signed `tests/fixtures/receipts/`, under `/<tenant>/<service>/…`.
+2. **main** (`:3100`): every service live, budgets generous.
+3. **limits** (`:3101`): `BUDGET_DEBATE=0`, and feathers-demo's `/health` hangs until a test calls
+   the stub's `POST /__control/wake`.
+4. **The seed** (`fixtures/seed.ts`): the golden dossier and its audit events, checked against what
+   inkprint signed before anything is written.
+
+Each app gets a throwaway Ed25519 key and `IRON_SESSION_PASSWORD` (made once into `.e2e/`, which git
+ignores), blank Upstash settings (budgets and limits count in-process), and
+`NODE_EXTRA_CA_CERTS` pointing at the stub's certificate.
+
+## The specs
+
+| Spec | Proves |
+|---|---|
+| `home.spec.ts` | 8 map nodes, each a workbench link whose name holds its state in words; Tab reaches the map, Enter opens a node |
+| `workbenches.spec.ts` | each of the 8 workbenches' main action, clicked (inkthread by keyboard), hands back its receipt with copy button and audit link |
+| `dossier.spec.ts` | compose → run → receipt → verify (7 checks in words; the stub's unsigned receipts fail); the golden dossier verifies 7/7; a dossier with no page open crosses a 12 s stage on its own `after()` chain |
+| `limits.spec.ts` | no debates left: the submit is held, the API answers 429 and paper-trail is never called; an asleep service reads asleep, then live after "wake again" |
+| `pages.spec.ts` | `/audit` filters, a request's trail, `/time-travel`, `/platform` |
+| `metadata.spec.ts` | spec 20's head tags and metadata routes |
+| `live/dossier.spec.ts` | the live smoke (below) |
+
+## The live smoke
 
 ```bash
-PLAYWRIGHT_BASE_URL=https://bastion-six.vercel.app pnpm test:e2e
+BASTION_LIVE_SMOKE=1 PLAYWRIGHT_BASE_URL=https://bastion-six.vercel.app pnpm test:e2e
 ```
 
-## What's covered
-
-- `metadata.spec.ts` — the home page's head tags (title, Open Graph, Twitter card, icons, manifest) and every metadata route answering anonymously with its content type (spec 20).
-
-The v1 sign-in specs (`auth-flow`, `rbac`) were removed with sign-in itself (bastion v2, plan Task 1);
-the v2 flows are rebuilt in plan Task 15.
-
-## What's not covered yet
-
-- **Full dossier run** — POST `/api/dossiers` kicks off a real pipeline that calls magpie/inkprint/paper-trail/slowquery backends. Running this in CI needs either: (a) live deployments of all four + a seeded Neon test branch, or (b) MSW-style mocks at the gateway boundary. Both are infrastructure work beyond the scope of this block. Recommended next step: add a `PLAYWRIGHT_MOCK_GATEWAY=true` env path that intercepts `/api/proxy/*` with canned responses, then write `dossier-flow.spec.ts`.
-- **Audit trace flow** — depends on a dossier existing in the DB, same shape as above.
-- **Admin happy path on `/time-travel`** — the admin demo button now exists, so the page is reachable end-to-end, but asserting that dragging the slider changes the entity list needs events seeded at known timestamps. Until that fixture exists, the wiring is covered at unit level (`tests/unit/features/time-travel/**`, `tests/unit/app/(app)/time-travel/page.test.tsx`) and the DB guarantee it rests on is covered by `tests/integration/db/append-only.test.ts`.
-
-## Tiers
-
-`pnpm test` (unit) and `pnpm test:integration` (real Postgres) both run in CI ahead of
-these specs; see `.github/workflows/ci.yml`.
+With `PLAYWRIGHT_BASE_URL` set there is no stub and no seed: only `metadata.spec.ts` runs, plus the
+live smoke when `BASTION_LIVE_SMOKE=1`. The smoke spends one debate on that deployment: it composes
+one rapid dossier, follows it only over SSE (nothing nudges it), requires a stage that ran longer
+than the 10 s handoff, and then passes every verification check in the browser. It never runs in CI.

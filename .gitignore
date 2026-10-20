@@ -45,3 +45,8 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+
+# e2e (Playwright): the run's generated TLS files and secrets, results and report
+/.e2e/
+/test-results/
+/playwright-report/
