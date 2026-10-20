@@ -7,6 +7,7 @@ import sitemap from "@/app/sitemap";
 import { SITE } from "@/lib/site/config";
 import { defineSite } from "@/lib/site/define";
 import { robotsFile } from "@/lib/site/metadata";
+import { PRODUCTS } from "@/platform/registry/products";
 import { pngSize } from "./image-headers";
 
 describe("20-site: manifest (case 5)", () => {
@@ -51,9 +52,24 @@ describe("20-site: robots and sitemap (case 6)", () => {
     expect(robotsFile(site).rules).toEqual([{ userAgent: "*", allow: "/" }]);
   });
 
-  it("lists the sitemap routes, as absolute URLs, once each — the home page, now public", () => {
+  it("lists every public page as an absolute URL, once each: the map, the workbenches, compose, the open log, the registry", () => {
+    const origin = "https://bastion-six.vercel.app";
     const urls = sitemap().map((entry) => entry.url);
-    expect(urls).toEqual(["https://bastion-six.vercel.app/"]);
+    expect(urls).toEqual([
+      `${origin}/`,
+      `${origin}/tools`,
+      ...PRODUCTS.map((p) => `${origin}/tools/${p.id}`),
+      `${origin}/dossier`,
+      `${origin}/audit`,
+      `${origin}/time-travel`,
+      `${origin}/platform`,
+    ]);
     expect(new Set(urls).size).toBe(urls.length);
+  });
+
+  it("lists no page per id and no machine endpoint: dossiers, request trails and /api/ stay out", () => {
+    for (const { url } of sitemap()) {
+      expect(url).not.toMatch(/\/d\/|\/audit\/.|\/api\//);
+    }
   });
 });

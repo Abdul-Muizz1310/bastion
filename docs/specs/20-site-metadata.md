@@ -1,5 +1,11 @@
 # Spec 20 — Site metadata, icons, manifest and share card
 
+> **Amended by 21-bastion-v2 (2026-10-20): bastion has no sign-in.** Every page is public, so
+> nothing below redirects to `/login` and `proxy.ts` only sets headers. What changed: robots.txt
+> disallows `/api/` only; the sitemap lists the public pages (below); the share card reads
+> `8 products · 1 signed receipt` over `tools that hand you a receipt.`; page titles follow the v2
+> routes (`tests/unit/app/page-titles.test.ts`); the e2e case runs against the stub (spec 21 §10.1).
+
 ## Purpose
 
 Give bastion what a browser tab, a search result, a home-screen install and a link preview see:
@@ -87,7 +93,9 @@ with a faint accent glow. `src/app/icon.svg` is the source. The rasters are rend
 - `robots.txt`: allow `/`, disallow only the machine endpoints `/api/` and `/auth/`, point at the
   sitemap. Link-preview bots such as Twitterbot obey robots.txt, so a page is never disallowed
   there.
-- `sitemap.xml`: the absolute URL of `/login`, the only page an anonymous visitor can read.
+- `sitemap.xml`: the absolute URL of every public page (spec 21 §3), once each: `/`, `/tools`,
+  each `/tools/<product>` in the registry's order, `/dossier`, `/audit`, `/time-travel` and
+  `/platform`. A page per id (`/d/<id>`, `/audit/<requestId>`) is reached from those, not listed.
 
 ### The share card
 
@@ -134,9 +142,9 @@ answers 401.
 ### Manifest, robots, sitemap (`tests/unit/lib/site/routes.test.ts`)
 
 5. The manifest's fields, and every icon it lists exists in `public/` at its declared size.
-6. robots.txt allows `/`, disallows `/api/` and `/auth/`, and names the sitemap on the origin; a
-   site with nothing to disallow gets a bare allow rule; the sitemap lists `/login` as an
-   absolute URL, once.
+6. robots.txt allows `/`, disallows `/api/`, and names the sitemap on the origin; a site with
+   nothing to disallow gets a bare allow rule; the sitemap lists every public page above as an
+   absolute URL, once, and no page per id or machine endpoint.
 
 ### Icons (`tests/unit/lib/site/icons.test.ts`)
 

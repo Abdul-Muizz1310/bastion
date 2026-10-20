@@ -21,6 +21,25 @@ export const SITE = defineSite({
     headline: "tools that hand you a receipt.",
     highlight: "receipt",
   },
-  // No sign-in (spec 21 §2): every page is public; robots.txt blocks only machine endpoints.
-  routes: { sitemap: ["/"], disallow: ["/api/"] },
+  // No sign-in (spec 21 §2): every page is public; robots.txt blocks only machine endpoints. The
+  // sitemap lists each public page once (spec 20); the workbenches follow the registry's order.
+  routes: {
+    sitemap: [
+      "/",
+      "/tools",
+      "/tools/bastion",
+      "/tools/feathers",
+      "/tools/inkgrid",
+      "/tools/inkthread",
+      "/tools/inkprint",
+      "/tools/magpie",
+      "/tools/paper-trail",
+      "/tools/slowquery",
+      "/dossier",
+      "/audit",
+      "/time-travel",
+      "/platform",
+    ],
+    disallow: ["/api/"],
+  },
 });
