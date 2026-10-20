@@ -377,6 +377,13 @@ A dossier is rows, not a promise. `dossier_steps` holds one row per stage with `
 - Chaining: after a stage finishes, `after()` calls `advance` again with an internal HMAC header. The
   dossier page also calls `advance` whenever the stage it shows has an expired lease, so a run never stalls
   for good, and a crashed invocation is retried when its lease expires (max 3 attempts per stage).
+- The chain is registered **before** the stage runs, as a promise handed to `after()` that settles once
+  the stage is recorded (Task 15). Each handoff lets go of the next invocation after 10 s, so a stage
+  longer than that runs with its caller already gone; Next runs a *function* given to `after()` only when
+  the response closes, and a close that already happened never fires again — a chain registered after
+  such a stage would be dropped and the dossier would wait for a page to nudge it. A promise is kept alive
+  with `waitUntil` and needs no close. Every path settles it: with the next delay, or with nothing to
+  chain (finished, failed, unknown dossier, an error).
 - Progress reaches the page through the existing SSE route (polling `dossier_events`, `maxDuration` 300).
 
 ### 6.3 Data model (migration on the `shadow-admin` branch)

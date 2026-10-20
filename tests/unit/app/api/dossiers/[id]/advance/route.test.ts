@@ -6,16 +6,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * visitor; the runner's own chained calls carry the internal HMAC header and are not limited.
  */
 
-const { check, createRateLimiter, advance, afterCallbacks, chainAdvance } = vi.hoisted(() => {
-  const check = vi.fn();
-  return {
-    check,
-    createRateLimiter: vi.fn(() => ({ check })),
-    advance: vi.fn(),
-    afterCallbacks: [] as Array<() => unknown>,
-    chainAdvance: vi.fn(),
-  };
-});
+const { check, createRateLimiter, advance, afterCallbacks, afterKinds, chainAdvance } = vi.hoisted(
+  () => {
+    const check = vi.fn();
+    return {
+      check,
+      createRateLimiter: vi.fn(() => ({ check })),
+      advance: vi.fn(),
+      afterCallbacks: [] as Array<() => unknown>,
+      afterKinds: [] as Array<"function" | "promise">,
+      chainAdvance: vi.fn(),
+    };
+  },
+);
 
 vi.mock("@/platform/ratelimit", () => ({ createRateLimiter }));
 vi.mock("@/dossier/runner", async (orig) => ({
@@ -28,8 +31,10 @@ vi.mock("@/dossier/chain", async (orig) => ({
 }));
 vi.mock("next/server", async (orig) => ({
   ...(await orig<typeof import("next/server")>()),
-  after: (cb: () => unknown) => {
-    afterCallbacks.push(cb);
+  // after() takes a function (run once the response closes) or a promise (kept alive at once).
+  after: (task: (() => unknown) | Promise<unknown>) => {
+    afterCallbacks.push(typeof task === "function" ? task : () => task);
+    afterKinds.push(typeof task === "function" ? "function" : "promise");
   },
 }));
 
@@ -72,6 +77,7 @@ beforeEach(() => {
   advance.mockReset().mockResolvedValue(result());
   chainAdvance.mockReset().mockResolvedValue(undefined);
   afterCallbacks.length = 0;
+  afterKinds.length = 0;
 });
 
 afterEach(() => {
@@ -100,6 +106,7 @@ describe("POST /api/dossiers/[id]/advance", () => {
     expect(res.status).toBe(429);
     expect(res.headers.get("retry-after")).toBe("12");
     expect(advance).not.toHaveBeenCalled();
+    expect(afterCallbacks).toHaveLength(0);
   });
 
   it("lets the runner's own chained call through the limiter with its HMAC header", async () => {
@@ -119,7 +126,8 @@ describe("POST /api/dossiers/[id]/advance", () => {
     const res = await post();
     expect(res.status).toBe(404);
     expect((await res.json()).error).toBe("unknown_dossier");
-    expect(afterCallbacks).toHaveLength(0);
+    await runAfter();
+    expect(chainAdvance).not.toHaveBeenCalled();
   });
 
   it("runs one stage with the default handlers and answers the result, uncached", async () => {
@@ -138,9 +146,21 @@ describe("POST /api/dossiers/[id]/advance", () => {
   it("schedules the next advance with after() when a stage finished and more remain", async () => {
     await post();
     expect(afterCallbacks).toHaveLength(1);
-    expect(chainAdvance).not.toHaveBeenCalled();
     await runAfter();
     expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 0);
+  });
+
+  it("registers the chain before the stage runs, as a promise a disconnect cannot drop", async () => {
+    // Task 15: the handoff lets go after 10 s; a stage longer than that runs with its caller gone,
+    // and Next runs a *function* given to after() only on a close that has then already happened.
+    advance.mockImplementation(async () => {
+      expect(afterKinds).toEqual(["promise"]);
+      return result();
+    });
+    await post();
+    expect(afterKinds).toEqual(["promise"]);
+    await runAfter();
+    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0);
   });
 
   it("re-advances a waiting stage once its 3 s poll is due", async () => {
@@ -160,7 +180,8 @@ describe("POST /api/dossiers/[id]/advance", () => {
       advance.mockResolvedValueOnce(r);
       await post();
     }
-    expect(afterCallbacks).toHaveLength(0);
+    await runAfter();
+    expect(chainAdvance).not.toHaveBeenCalled();
   });
 
   it("answers 500 (logged) when the runner fails unexpectedly", async () => {
@@ -170,5 +191,7 @@ describe("POST /api/dossiers/[id]/advance", () => {
     expect(res.status).toBe(500);
     expect((await res.json()).error).toBe("advance_failed");
     expect(error).toHaveBeenCalled();
+    await runAfter();
+    expect(chainAdvance).not.toHaveBeenCalled();
   });
 });

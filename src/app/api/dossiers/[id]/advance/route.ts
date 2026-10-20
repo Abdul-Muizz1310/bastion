@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { after, type NextRequest } from "next/server";
-import { ADVANCE_HEADER, chainAdvance, chainDelayMs, isAdvanceToken } from "@/dossier/chain";
+import {
+  ADVANCE_HEADER,
+  chainAdvance,
+  chainDelayMs,
+  deferChain,
+  isAdvanceToken,
+} from "@/dossier/chain";
 import { HANDLERS } from "@/dossier/handlers";
 import { advance, UnknownDossierError } from "@/dossier/runner";
 import { errorResponse } from "@/platform/gateway/http";
@@ -14,7 +20,9 @@ import { visitorFromRequest } from "@/platform/visitor";
  * limited to 60 a minute, while the runner's own chained calls carry the internal HMAC header.
  *
  * Chaining: when a stage finished and the next is due within 10 s, `after()` sleeps until it is
- * due and POSTs this route again — see `@/dossier/chain`.
+ * due and POSTs this route again — see `@/dossier/chain`. The chain is registered before the stage
+ * runs (`deferChain`): the previous invocation lets go of this one after 10 s, and Next drops a
+ * function given to `after()` once the caller is gone, so a long stage would otherwise end the run.
  */
 
 export const dynamic = "force-dynamic";
@@ -40,10 +48,13 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
     }
   }
 
+  // Registered now, decided once the stage is recorded: every path below decides exactly once.
+  const decide = deferChain(req.nextUrl.origin, id, (task) => after(task), chainAdvance);
   let result: Awaited<ReturnType<typeof advance>>;
   try {
     result = await advance(id, HANDLERS);
   } catch (err) {
+    decide(null);
     if (err instanceof UnknownDossierError) {
       return errorResponse(404, { error: "unknown_dossier", requestId });
     }
@@ -51,11 +62,7 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
     return errorResponse(500, { error: "advance_failed", requestId });
   }
 
-  const delayMs = chainDelayMs(result, new Date());
-  if (delayMs !== null) {
-    const origin = req.nextUrl.origin;
-    after(() => chainAdvance(origin, id, delayMs));
-  }
+  decide(chainDelayMs(result, new Date()));
   return Response.json(result, {
     headers: { "cache-control": "no-store", "x-request-id": requestId },
   });

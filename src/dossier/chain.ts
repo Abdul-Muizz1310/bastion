@@ -54,6 +54,32 @@ export function chainDelayMs(result: AdvanceResult, now: Date): number | null {
   return delay > CHAIN_WAIT_MAX_MS ? null : Math.max(0, delay);
 }
 
+/**
+ * Registers a chain whose delay is decided later (spec 21 §6.2, Task 15). `schedule` — the route's
+ * `after` — receives, at once, a promise that settles after `decide` is called: it chains with the
+ * decided delay, or does nothing for null. The route calls this before running its stage because a
+ * stage can outlast the 10 s handoff, leaving the invocation with no caller: Next runs a *function*
+ * given to `after()` only when the response closes, and a close that already happened never fires
+ * again, so a function registered after such a stage is silently dropped. A promise is kept alive
+ * with `waitUntil` and needs no close. Only the first decision counts; `chain` is `chainAdvance`,
+ * which never rejects.
+ */
+export function deferChain(
+  origin: string,
+  dossierId: string,
+  schedule: (task: Promise<void>) => void,
+  chain: (origin: string, dossierId: string, delayMs: number) => Promise<void>,
+): (delayMs: number | null) => void {
+  let decide: (delayMs: number | null) => void = () => {};
+  const decided = new Promise<number | null>((resolve) => {
+    decide = resolve;
+  });
+  schedule(
+    decided.then((delayMs) => (delayMs === null ? undefined : chain(origin, dossierId, delayMs))),
+  );
+  return decide;
+}
+
 export async function chainAdvance(
   origin: string,
   dossierId: string,

@@ -5,6 +5,7 @@ import {
   CHAIN_WAIT_MAX_MS,
   chainAdvance,
   chainDelayMs,
+  deferChain,
   isAdvanceToken,
 } from "@/dossier/chain";
 import type { AdvanceResult } from "@/dossier/runner";
@@ -161,5 +162,51 @@ describe("chainAdvance", () => {
     });
     await chainAdvance("https://bastion.test", ID, 0, { fetch, sleep: async () => {} });
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Task 15 (spec 21 §6.2): the chain is registered before the stage runs. Next runs a function given
+ * to after() only when the response closes, and when the previous invocation let go at 10 s that
+ * close has already happened; a promise given to after() is kept alive with waitUntil instead.
+ */
+describe("deferChain", () => {
+  const ORIGIN = "https://bastion.test";
+
+  function setup() {
+    const scheduled: unknown[] = [];
+    const chain = vi.fn(async (_origin: string, _id: string, _delayMs: number) => {});
+    const decide = deferChain(ORIGIN, ID, (task) => scheduled.push(task), chain);
+    return { scheduled, chain, decide };
+  }
+
+  it("hands the scheduler one promise at once, before anything is decided", () => {
+    const { scheduled, chain } = setup();
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0]).toBeInstanceOf(Promise);
+    expect(chain).not.toHaveBeenCalled();
+  });
+
+  it("chains with the decided delay once decided", async () => {
+    const { scheduled, chain, decide } = setup();
+    decide(3_000);
+    await scheduled[0];
+    expect(chain).toHaveBeenCalledExactlyOnceWith(ORIGIN, ID, 3_000);
+  });
+
+  it("settles without chaining when there is nothing to chain", async () => {
+    const { scheduled, chain, decide } = setup();
+    decide(null);
+    await expect(scheduled[0]).resolves.toBeUndefined();
+    expect(chain).not.toHaveBeenCalled();
+  });
+
+  it("counts only the first decision", async () => {
+    const { scheduled, chain, decide } = setup();
+    decide(0);
+    decide(null);
+    decide(5_000);
+    await scheduled[0];
+    expect(chain).toHaveBeenCalledExactlyOnceWith(ORIGIN, ID, 0);
   });
 });
