@@ -101,6 +101,7 @@ export function dossierVerifier(deps: VerifyDeps) {
       transcripts,
       perf,
       documents: docs,
+      evidence,
       key: inkprintKey,
     });
     const checks = [

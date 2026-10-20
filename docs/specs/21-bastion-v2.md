@@ -180,13 +180,24 @@ where each check is `{name, state, detail, items?}` and `state` is one of:
 Signatures are always checked against the key the issuer publishes now, never one carried by the
 dossier. What the page shows is bound to what is verified: the dossier's claim, verdict and confidence,
 and each evidence row's certificate and excerpt. A receipt the dossier row implies but does not hold is a
-`fail` (Ruling Y): an `envelope_id` with no envelope receipt, a succeeded dossier with no perf or audit
-receipt, a verdict with no transcript, a certified evidence row with no certificate receipt. A check with
-nothing to verify and nothing implied is omitted.
+`fail` (Rulings Y and AA):
+
+- an `envelope_id` with no envelope receipt;
+- certified evidence with no envelope receipt, whatever `envelope_id` says (`unavailable` while the
+  dossier is still pending or running);
+- a succeeded dossier with no perf, audit or transcript receipt;
+- a verdict with no transcript;
+- a certified evidence row with no certificate receipt.
+
+A check with nothing to verify and nothing implied is omitted.
+
+A dossier with no `dossier_steps` rows predates the v2 runner and its receipts (Ruling Z). It answers
+`200 {dossierId, legacy: true, note: "this dossier predates verifiable receipts", checks: []}` and runs
+no rule; every other dossier answers `legacy: false`.
 
 | Check | What it does |
 |---|---|
-| certificates | Driven by the evidence rows. Each certified row needs its receipt, and the excerpt the page shows must be the start of the certified text as stored. The text, canonicalised exactly as inkprint does (`canonicalize`), must hash to the receipt's fingerprint, and inkprint's Ed25519 signature over it must verify against `inkprint.publicKey`. `inkprint.verifyBatch` is asked **by id only**: no text, so nothing is re-embedded. It only confirms inkprint still holds the certificate intact. Its own text comparison is fuzzy (simhash, embedding) and is never relied on. |
+| certificates | Driven by the evidence rows. Each certified row needs its receipt, and no two rows may name one certificate. The excerpt the page shows must **equal** what seal stored: the text's first 400 UTF-16 code units after the UTF-8 round trip Postgres applies, so an astral character cut at 400 reads U+FFFD. A shorter prefix, which could drop a qualifier, fails. The text, canonicalised exactly as inkprint does (`canonicalize`), must hash to the receipt's fingerprint, and inkprint's Ed25519 signature over it must verify against `inkprint.publicKey`. `inkprint.verifyBatch` is asked **by id only**: no text, so nothing is re-embedded. It only confirms inkprint still holds the certificate intact. Its own text comparison is fuzzy (simhash, embedding) and is never relied on. |
 | transcript | Re-fetch `transcript.json`. The stored copy must hash to the receipt and equal the live copy. The receipt's Ed25519 signature must verify against `paper-trail.receiptKey`. The transcript the page shows must carry the dossier's claim, verdict and confidence (`toFixed(2)`): the one the envelope names, else the latest. |
 | envelope | The manifest must hash to the receipt. The bundle must hash to the manifest's `c2pa.hash.data`. The signed bundle must name exactly the stored certificates, transcript (hash and signature), perf hash, request id and graph hashes. `dossiers.envelope_id` must name it. The signature must verify against `inkprint.publicKey`. |
 | perf | The stored payload must parse strictly and recompute to its hash. A succeeded dossier must hold one. |

@@ -126,6 +126,8 @@ describe("verifyDossier", () => {
     const checks = await verify(UNFINISHED, CTX);
     expect(checks.map((c) => [c.name, c.state])).toEqual([
       ["certificates", "pass"],
+      // Ruling AA: certified evidence implies an envelope; a running dossier has none yet.
+      ["envelope", "unavailable"],
       ["perf", "pass"],
     ]);
     expect(deps.receiptKey).not.toHaveBeenCalled();

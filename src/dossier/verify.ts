@@ -8,6 +8,7 @@ import { verifyEd25519 } from "@/platform/ed25519";
 import type { GatewayResult, RawBody } from "@/platform/gateway/result";
 import { isServiceId, type ServiceId } from "@/platform/registry/products";
 import { sha256Hex } from "@/platform/sha256";
+import { storedExcerptOf } from "./excerpt";
 import {
   envelopeBundleJson,
   inkprintCanonicalText,
@@ -210,11 +211,14 @@ function heldIntact(id: string, answer: GatewayResult<VerifyBatchResult> | null)
 
 function certificateItem(
   id: string,
-  row: CertifiedRow | undefined,
+  rows: readonly CertifiedRow[],
   r: StoredReceipt | undefined,
   i: CertificateInputs,
 ): CheckItem {
   const item = (v: Verdict): CheckItem => ({ ref: id, ...v });
+  // inkprint issues a fresh uuid per certified item, so two rows naming one id were tampered with.
+  if (rows.length > 1) return item(FAIL(`${rows.length} evidence rows name this one certificate`));
+  const row = rows[0];
   if (r === undefined) {
     return item(
       FAIL(`evidence ${row?.stableId ?? "?"} names it, but no certificate receipt is stored`),
@@ -223,9 +227,10 @@ function certificateItem(
   if (row === undefined) return item(FAIL("a certificate receipt that no evidence row shows"));
   const text = storedText(r);
   if (text === null) return item(FAIL("the receipt holds no certified text"));
-  // The page shows the excerpt: it must be the start of the certified text, as stored.
-  if (row.excerpt !== null && !text.startsWith(row.excerpt)) {
-    return item(FAIL("the excerpt the page shows is not the certified text"));
+  // The page shows the excerpt: exactly what seal stored for this text, not merely a prefix of it
+  // (a shorter prefix can drop a qualifier and change the meaning).
+  if (row.excerpt !== storedExcerptOf(text)) {
+    return item(FAIL("the excerpt the page shows is not the start of the certified text"));
   }
   const canonical = form(() => inkprintCanonicalText(text));
   if (canonical === null) return item(FAIL("the stored text has no form inkprint could certify"));
@@ -262,19 +267,18 @@ function certificateItem(
 
 export function certificatesCheck(i: CertificateInputs): Check | null {
   const rows = i.evidence.filter((e) => e.certificateId !== null);
-  const ids = certificateIds(rows, i.receipts);
-  if (ids.length === 0) return null;
-  const items = ids.map((id) =>
+  const items = certificateIds(rows, i.receipts).map((id) =>
     certificateItem(
       id,
-      rows.find((e) => e.certificateId === id),
+      rows.filter((e) => e.certificateId === id),
       i.receipts.find((r) => r.ref === id),
       i,
     ),
   );
-  const unnamed = i.receipts.filter((r) => r.ref === null);
-  for (const r of unnamed)
+  for (const r of i.receipts.filter((x) => x.ref === null)) {
     items.push({ ref: `receipt ${r.id}`, ...FAIL("the receipt names no certificate") });
+  }
+  if (items.length === 0) return null;
   return fromItems(
     "certificates",
     items,
@@ -406,12 +410,16 @@ function shownDebate(i: TranscriptInputs): string | null {
 
 export function transcriptCheck(i: TranscriptInputs): Check | null {
   if (i.items.length === 0) {
-    return i.dossier.verdict === null
-      ? null
-      : {
-          name: "transcript",
-          ...FAIL("the dossier shows a verdict but holds no transcript receipt"),
-        };
+    if (i.dossier.verdict !== null) {
+      return {
+        name: "transcript",
+        ...FAIL("the dossier shows a verdict but holds no transcript receipt"),
+      };
+    }
+    // Ruling AA: a succeeded dossier debated, so it must hold the debate's transcript.
+    return i.dossier.status === "succeeded"
+      ? { name: "transcript", ...FAIL("the dossier succeeded but holds no transcript receipt") }
+      : null;
   }
   const shown = shownDebate(i);
   const checked = i.items.map((x) =>
@@ -456,9 +464,28 @@ export type EnvelopeInputs = {
   transcripts: readonly StoredReceipt[];
   perf: StoredReceipt | null;
   documents: readonly DossierDocument[];
+  /** The evidence rows: certified ones imply an envelope that binds them (Ruling AA). */
+  evidence: readonly CertifiedRow[];
   /** inkprint's `/public-key.pem`, fetched now. */
   key: GatewayResult<RawBody> | null;
 };
+
+/** No envelope receipt: what the dossier row and its evidence imply about that. */
+function missingEnvelope(i: EnvelopeInputs): Verdict | null {
+  const { envelopeId, status } = i.dossier;
+  if (envelopeId !== null) {
+    return FAIL(`the dossier names envelope ${envelopeId} but holds no envelope receipt`);
+  }
+  if (!i.evidence.some((e) => e.certificateId !== null)) return null;
+  // Ruling AA: certified evidence is bound by an envelope, whatever envelope_id says. A dossier
+  // still running may not have reached the envelope stage yet: unchecked, never a pass.
+  return status === "pending" || status === "running"
+    ? {
+        state: "unavailable",
+        detail: "the dossier is still running; no envelope binds its certificates yet",
+      }
+    : FAIL("certified evidence, but no envelope receipt binds it");
+}
 
 const sameSet = (a: readonly string[], b: readonly string[]) =>
   a.length === b.length && [...a].sort().join("\n") === [...b].sort().join("\n");
@@ -536,11 +563,8 @@ export function envelopeCheck(i: EnvelopeInputs): Check | null {
   const r = i.envelope;
   const done = (v: Verdict): Check => ({ name: "envelope", ...v });
   if (r === null) {
-    return i.dossier.envelopeId === null
-      ? null
-      : done(
-          FAIL(`the dossier names envelope ${i.dossier.envelopeId} but holds no envelope receipt`),
-        );
+    const missing = missingEnvelope(i);
+    return missing === null ? null : done(missing);
   }
   const parsed = envelopePayload.safeParse(r.payload);
   if (!parsed.success) return done(FAIL("the stored envelope is not an inkprint envelope"));

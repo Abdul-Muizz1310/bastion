@@ -35,11 +35,12 @@ import {
   saveEnvelopeReceipt,
   saveReceiptOnce,
 } from "@/dossier/receipts";
+import { initialSteps } from "@/dossier/stages";
 import { envelopeStage } from "@/dossier/stages/envelope";
 import { recordStage } from "@/dossier/stages/record";
 import type { Check } from "@/dossier/verify";
 import { getDb } from "@/lib/db/client";
-import { dossierDocuments, dossiers, events, receipts } from "@/lib/db/schema";
+import { dossierDocuments, dossierSteps, dossiers, events, receipts } from "@/lib/db/schema";
 import { requestEvents } from "@/platform/audit/request-events";
 import { appendEvent } from "@/platform/audit/write";
 import type { Json } from "@/platform/canonical-json";
@@ -187,6 +188,8 @@ async function seed(): Promise<void> {
     status: "running",
     requestId,
   });
+  // A v2 dossier: the runner's step rows exist (Ruling Z treats a dossier without them as legacy).
+  await db.insert(dossierSteps).values(initialSteps(id, new Date()));
   await db.insert(dossierDocuments).values({
     dossierId: id,
     documentId: DOC,
@@ -454,6 +457,37 @@ describe.skipIf(!LOCAL)("verify everything, composed, against Postgres", () => {
     );
     const { checks } = await verify();
     expect(states(checks).documents).toBe("unavailable");
+  });
+
+  it("a dossier from before verifiable receipts (no step rows) answers legacy (Ruling Z)", async () => {
+    const legacyId = randomUUID();
+    await getDb()
+      .insert(dossiers)
+      .values({
+        id: legacyId,
+        claim: "a v1 dossier",
+        sources: [],
+        mode: "rapid",
+        status: "succeeded",
+        verdict: "TRUE",
+        confidence: "0.90",
+        requestId: `it-verify-legacy-${legacyId}`,
+      });
+    try {
+      const res = await verifyRoute(
+        new NextRequest(`https://bastion.test/api/dossiers/${legacyId}/verify`, { method: "POST" }),
+        { params: Promise.resolve({ id: legacyId }) },
+      );
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        dossierId: legacyId,
+        legacy: true,
+        note: "this dossier predates verifiable receipts",
+        checks: [],
+      });
+    } finally {
+      await getDb().delete(dossiers).where(eq(dossiers.id, legacyId));
+    }
   });
 
   it("404 for a dossier that does not exist", async () => {

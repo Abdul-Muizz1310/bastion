@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
-import { findDossier } from "@/dossier/store";
+import { findDossier, loadSteps } from "@/dossier/store";
 import type { Check } from "@/dossier/verify";
 import { verifyDossier } from "@/dossier/verify-live";
 import { SYSTEM_ACTOR } from "@/platform/audit/event";
@@ -21,11 +21,16 @@ import { clientAddress, visitorFromRequest } from "@/platform/visitor";
  * part of the dossier's trace; its slice of the log is what the audit digests cover). The visitor's
  * address is still forwarded. The result is not stored: one `dossier.verified` audit event, as the
  * visitor, records who verified and each check's state.
+ *
+ * Ruling Z: a dossier with no `dossier_steps` rows predates the v2 runner and its receipts, so no
+ * implied-receipt rule applies to it: it answers `legacy: true` with no checks and says so.
  */
 
 export const dynamic = "force-dynamic";
 // Each issuer gets one bounded call (30 s by default), all in parallel.
 export const maxDuration = 120;
+
+const LEGACY_NOTE = "this dossier predates verifiable receipts";
 
 const verifyLimiter = createRateLimiter({ max: 5, windowMs: 60_000 });
 
@@ -51,14 +56,18 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
   const dossier = await findDossier(id);
   if (dossier === null) return errorResponse(404, { error: "unknown_dossier", requestId });
 
+  let legacy: boolean;
   let checks: Check[];
   try {
+    legacy = (await loadSteps(dossier.id)).length === 0;
     // The whole row: the checks bind what the page shows to what they verify.
-    checks = await verifyDossier(dossier, {
-      actor: SYSTEM_ACTOR,
-      requestId,
-      clientIp: clientAddress(req),
-    });
+    checks = legacy
+      ? []
+      : await verifyDossier(dossier, {
+          actor: SYSTEM_ACTOR,
+          requestId,
+          clientIp: clientAddress(req),
+        });
   } catch (err) {
     console.error("verify failed", { dossierId: dossier.id, requestId, err });
     return errorResponse(500, { error: "verify_failed", requestId });
@@ -71,10 +80,12 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
     entityId: dossier.id,
     service: "bastion",
     requestId,
-    metadata: { checks: states(checks) },
+    metadata: legacy ? { legacy: true, checks: {} } : { checks: states(checks) },
   });
   return Response.json(
-    { dossierId: dossier.id, checks },
+    legacy
+      ? { dossierId: dossier.id, legacy: true, note: LEGACY_NOTE, checks: [] }
+      : { dossierId: dossier.id, legacy: false, checks },
     { headers: { "cache-control": "no-store", "x-request-id": requestId } },
   );
 }

@@ -14,13 +14,14 @@ const m = vi.hoisted(() => {
     check,
     createRateLimiter: vi.fn(() => ({ check })),
     findDossier: vi.fn(),
+    loadSteps: vi.fn(),
     verifyDossier: vi.fn(),
     appendEvent: vi.fn(),
   };
 });
 
 vi.mock("@/platform/ratelimit", () => ({ createRateLimiter: m.createRateLimiter }));
-vi.mock("@/dossier/store", () => ({ findDossier: m.findDossier }));
+vi.mock("@/dossier/store", () => ({ findDossier: m.findDossier, loadSteps: m.loadSteps }));
 vi.mock("@/dossier/verify-live", () => ({ verifyDossier: m.verifyDossier }));
 vi.mock("@/platform/audit/write", () => ({ appendEvent: m.appendEvent }));
 
@@ -58,6 +59,7 @@ beforeEach(() => {
   vi.stubEnv("IRON_SESSION_PASSWORD", "x".repeat(32));
   m.check.mockReset().mockResolvedValue({ success: true, limit: 10, remaining: 9 });
   m.findDossier.mockReset().mockResolvedValue(ROW);
+  m.loadSteps.mockReset().mockResolvedValue([{ stage: "wake", status: "ok" }]);
   m.verifyDossier.mockReset().mockResolvedValue(CHECKS);
   m.appendEvent.mockReset().mockResolvedValue(1);
 });
@@ -81,7 +83,7 @@ describe("POST /api/dossiers/[id]/verify", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
     const requestId = res.headers.get("x-request-id");
     expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(await res.json()).toEqual({ dossierId: ID, checks: CHECKS });
+    expect(await res.json()).toEqual({ dossierId: ID, legacy: false, checks: CHECKS });
   });
 
   it("verifies as the system actor (Ruling W), under a fresh request id (not the dossier's)", async () => {
@@ -119,6 +121,34 @@ describe("POST /api/dossiers/[id]/verify", () => {
     expect(await res.json()).toMatchObject({ error: "rate_limited", retryAfterS: 42 });
     expect(m.findDossier).not.toHaveBeenCalled();
     expect(m.verifyDossier).not.toHaveBeenCalled();
+  });
+
+  describe("a dossier from before verifiable receipts (no dossier_steps rows; Ruling Z)", () => {
+    it("answers legacy with no checks and an honest note, without running any rule", async () => {
+      m.loadSteps.mockResolvedValue([]);
+      const res = await post();
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        dossierId: ID,
+        legacy: true,
+        note: "this dossier predates verifiable receipts",
+        checks: [],
+      });
+      expect(m.loadSteps).toHaveBeenCalledWith(ID);
+      expect(m.verifyDossier).not.toHaveBeenCalled();
+    });
+
+    it("still records the verification, as legacy", async () => {
+      m.loadSteps.mockResolvedValue([]);
+      await post();
+      expect(m.appendEvent).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          action: "dossier.verified",
+          entityId: ID,
+          metadata: { legacy: true, checks: {} },
+        }),
+      );
+    });
   });
 
   it("answers 404 for an unknown dossier, and audits nothing", async () => {

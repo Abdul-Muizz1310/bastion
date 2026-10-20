@@ -1,6 +1,7 @@
 import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { type EvidenceItem, evidenceItems, receipts } from "@/lib/db/schema";
+import { EXCERPT_CHARS, excerptOf } from "./excerpt";
 import type { Candidate } from "./select-evidence";
 
 /**
@@ -10,7 +11,7 @@ import type { Candidate } from "./select-evidence";
  * hands it back to inkprint, and the evidence row keeps only a 400-character excerpt.
  */
 
-export const EXCERPT_CHARS = 400;
+export { EXCERPT_CHARS };
 
 export type SealedRecord = {
   candidate: Candidate;
@@ -62,7 +63,7 @@ export async function saveSealed(
           kind: r.candidate.kind,
           product: r.candidate.product,
           locator: r.candidate.locator,
-          excerpt: r.candidate.text.slice(0, EXCERPT_CHARS),
+          excerpt: excerptOf(r.candidate.text),
           inkprintHash: r.inkprintHash,
         })),
       )
