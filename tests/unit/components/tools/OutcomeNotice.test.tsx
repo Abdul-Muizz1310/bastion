@@ -41,6 +41,12 @@ describe("OutcomeNotice", () => {
     expect(text).not.toMatch(/fail|error/i);
   });
 
+  it("says bastion is waking a sleeping product again, rather than asking for a control that is gone", () => {
+    const text = textOf(render({ ok: false, kind: "asleep", requestId: RID }));
+    expect(text).toMatch(/waking it again/);
+    expect(text).not.toMatch(/wake it above/i);
+  });
+
   it("shows the product's own answer with its status and reason", () => {
     const text = textOf(
       render({ ok: false, kind: "downstream_error", status: 404, detail: "unknown source", requestId: RID }),

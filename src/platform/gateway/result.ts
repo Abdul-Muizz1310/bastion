@@ -1,4 +1,4 @@
-import { z } from "zod";
+import "server-only";
 
 /**
  * What every gateway call returns (spec 21 §4): a typed union, never a thrown downstream failure.
@@ -38,23 +38,4 @@ export const GATEWAY_ERROR_STATUS: Readonly<Record<GatewayError, number>> = {
   invalid_input: 422,
 };
 
-/**
- * `raw` capabilities skip JSON: the upstream bytes and content type pass through as a `RawBody`,
- * which the capability's `output` schema (normally `rawBodySchema`) still parses. The content type
- * must be one the raw kind declares, or the call is `invalid_response`.
- */
-export type RawKind = "png" | "zip" | "pem";
-
-export const RAW_CONTENT_TYPES: Readonly<Record<RawKind, readonly string[]>> = {
-  png: ["image/png"],
-  zip: ["application/zip", "application/x-zip-compressed"],
-  // A PEM public key: inkprint serves `text/plain; charset=utf-8`; the PEM type is also accepted.
-  pem: ["text/plain", "application/x-pem-file"],
-};
-
-export const rawBodySchema = z.object({
-  contentType: z.string().min(1),
-  bytes: z.instanceof(Uint8Array),
-});
-
-export type RawBody = z.infer<typeof rawBodySchema>;
+export { RAW_CONTENT_TYPES, type RawBody, type RawKind, rawBodySchema } from "../raw-body";

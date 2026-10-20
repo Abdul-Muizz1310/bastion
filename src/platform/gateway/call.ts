@@ -1,3 +1,4 @@
+import "server-only";
 import { randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import { z } from "zod";
@@ -80,7 +81,10 @@ export type CallContext = {
   clientIp?: string;
 };
 
+/** Every call but a free read: what spends, writes or reaches an LLM. */
 export const VISITOR_CALLS_PER_MIN = 30;
+/** Free GETs — polls, page images, the fleet — get their own, larger bucket (Ruling AG). */
+export const READ_CALLS_PER_MIN = 120;
 export const DEFAULT_TIMEOUT_MS = 30_000;
 
 const RATE_WINDOW_MS = 60_000;
@@ -324,10 +328,17 @@ function limiter(max: number): ReturnType<typeof createRateLimiter> {
   return found;
 }
 
-/** Seconds to wait when a limit is hit, else null. System work (the runner) is not rate-limited. */
+/**
+ * Seconds to wait when a limit is hit, else null. System work (the runner) is not rate-limited.
+ * Ruling AG: a visitor has two buckets — free GETs 120 a minute, every other call 30 — so
+ * following a debate or paging through a document never starves the actions that spend.
+ */
 async function rateLimited<I, O>(cap: Capability<I, O>, ctx: CallContext): Promise<number | null> {
   if (ctx.actor === SYSTEM_ACTOR) return null;
-  const visitor = await limiter(VISITOR_CALLS_PER_MIN).check(`gateway:${ctx.actor}`);
+  const freeRead = cap.method === "GET" && cap.cost === "free";
+  const visitor = freeRead
+    ? await limiter(READ_CALLS_PER_MIN).check(`gateway:read:${ctx.actor}`)
+    : await limiter(VISITOR_CALLS_PER_MIN).check(`gateway:${ctx.actor}`);
   if (!visitor.success) return visitor.retryAfter ?? DEFAULT_RETRY_AFTER_S;
   if (cap.perVisitorPerMin !== undefined) {
     const own = await limiter(cap.perVisitorPerMin).check(`gateway:${cap.id}:${ctx.actor}`);

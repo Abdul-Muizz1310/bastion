@@ -103,6 +103,8 @@ spent nothing) → mint a contract-v2 token (§7) → call with `X-Request-Id` a
 `X-Forwarded-For` → parse the response with the capability's schema → append an audit event
 (`gateway.call`, with service, capability, status, latency; never the body) → return a typed result union
 (`ok` · `asleep` · `rate_limited` · `budget_exhausted` · `downstream_error` · `invalid_response`).
+A visitor has two rate-limit buckets (Ruling AG): free GETs 120 a minute, every other call 30; both
+are audited the same way.
 
 **Visitors.** No cookie and no account: the actor is `v_` + the first 10 base32 characters of
 `HMAC-SHA256(VISITOR_SALT, ip ‖ UTC date)`. It changes daily, cannot be reversed to an address, and is the
@@ -133,9 +135,10 @@ health request open for up to 90 s and reports **waking → live**.
 ### 5.1 How a workbench behaves
 
 `/tools` lists the eight workbenches (each with its live health from the shared status poll, what it
-operates and the receipt it hands back) and links each to `/tools/<id>`; an unknown id is a 404.
-`/tools/[product]` is rendered per request: the product's name, tagline, the §5 row, then the
-workbench. Every action is a call to `/api/tools/<capability>` (or `/api/uploads`), so it is
+operates and the receipt it hands back) and links each to `/tools/<id>`. Each `/tools/<id>` is its
+own route module that imports only its own workbench, so a page ships one workbench's code (Ruling
+AH); `/tools/[product]` answers any other id with a 404. A page is rendered per request: the
+product's name, tagline, the §5 row, then the workbench. Every action is a call to `/api/tools/<capability>` (or `/api/uploads`), so it is
 rate-limited, budgeted and audited by the gateway; the browser parses every answer with the
 capability's own output schema (`src/capabilities/*`), never a copy of it.
 
@@ -146,7 +149,9 @@ product's services, in parallel. Each service reads *checking* until its wake re
 that fails (no answer, a non-2xx, a body that does not parse) makes the service *unknown*, never a
 guessed state; a 429 says when to retry. Actions stay disabled until every service is live; any
 other end offers a retry. bastion has no service of its own: its gate is live at once. Only phase
-changes are announced to assistive tech, not every second.
+changes are announced to assistive tech, not every second. A call that later meets an asleep
+service closes the gate again: every service goes back to waking and the actions stay disabled
+until the wake route says live (review fix 2).
 
 **Budgets.** The page renders with today's budgets (`budgetsLeft()`; unavailable ⇒ none shown) and
 re-reads `GET /api/platform/budgets` after every budgeted action. A budgeted action shows its meter
@@ -154,8 +159,9 @@ and is disabled when fewer units are left than it spends (feathers' soft-delete 
 when the budgets cannot be read the action stays enabled and says so, because the gateway still
 enforces them.
 
-**Results and receipts.** Every result panel shows the data and its receipt (`ReceiptCard`) with a
-copy button (the receipt as plain text) and the request id linking to `/audit/<requestId>`. A
+**Results and receipts.** Every action's result shows the data and its receipt (`ReceiptCard`) with a
+copy button (the receipt as plain text) and the request id linking to `/audit/<requestId>`; list
+reads (sources, items, users, recent debates) link their request id to the audit trail. A
 failure is said for what it is: *asleep*, *rate limited* (with the wait), *budget spent* (resets
 00:00 UTC) are never shown as the product failing; a downstream 4xx shows the product's own status
 and reason; an answer in an unexpected shape says so; bastion unreachable says so.
@@ -192,7 +198,8 @@ and reason; an answer in an unexpected shape says so; bastion unreachable says s
 - *feathers*: `feathers.yaml` as feathers-demo's contract-v2 branch holds it (embedded at build
   time), the contract read from it (each endpoint and its role gate), the users (`feathers.users`),
   create (budget `feathers.write`), and the soft-delete proof: create a user → delete it → read it,
-  which must answer 404.
+  which must answer 404. The proof runs on the server (`POST /api/platform/feathers-proof`), which
+  makes up its own user and deletes only that one; `feathers.deleteUser` is not a tool (review fix 1).
 - *bastion*: the token inspector — `GET /api/platform/token-preview?capability=<id>` returns the
   header and the claims bastion would mint for that capability as this visitor, never a signed
   token — with the JWKS; and a free call whose receipt is its audit trail.
@@ -206,17 +213,30 @@ and reason; an answer in an unexpected shape says so; bastion unreachable says s
   60 a minute per visitor; never signs anything.
 - `GET /api/platform/transcript-check?id=<uuid>` — `{debateId, transcriptHash, hash: {state, form},
   signature: {state, detail}}` under one `x-request-id`; the transcript unavailable ⇒ its gateway
-  error; the key unavailable ⇒ the signature reads `unavailable`, never a pass.
+  error; the key unavailable ⇒ the signature reads `unavailable`, never a pass; a transcript of
+  another debate than the one asked fails both.
+- `POST /api/platform/feathers-proof` — JSON only (415 otherwise), 3 a minute per visitor, refused
+  (429 `budget_exhausted`) before any call when fewer than 2 `feathers.write` units are left; creates
+  `proof-<hex>@example.com`, deletes that id, reads it back, all as the visitor under one request
+  id; answers `{verdict: honoured | leaked | incomplete, user, steps: [{step, ok, status, kind,
+  detail}], requestId}`.
 
 Invariants and cases:
 1. No action is enabled before its gate is live, nor a budgeted one with too few units left.
 2. A failed wake request never crashes the page and never shows a guessed state.
-3. Every success shows a receipt with a copy button and a link to `/audit/<requestId>`.
+3. Every action result shows a receipt with a copy button and a link to `/audit/<requestId>`; list
+   reads link their request id to the audit trail.
 4. asleep, rate_limited and budget_exhausted are named as such, never as the product failing.
 5. A poll stops at its terminal state, its deadline, or when the visitor leaves; it never overlaps.
 6. The graph layout is the same for the same graph; with reduced motion nothing moves at all.
-7. A box outside its page is clamped to it; an inverted or non-finite box is not drawn.
-8. The token preview carries no signature; the transcript check never passes what it could not check.
+7. A box outside its page is clamped to it; an inverted or non-finite box is not drawn; when the
+   page's render is not the page's shape (more than 2 % off — a rotated page) no box is drawn and
+   the page says why.
+8. The token preview carries no signature, and its iat, exp and jti are labelled illustrative; the
+   transcript check never passes what it could not check.
+9. No visitor can delete a feathers user other than the one their own proof created.
+10. A reading whose table claims more header rows than rows is refused (`invalid_response`); an
+    error while rendering a page shows bastion's own error page, never the error's message.
 
 ## 6. Dossier v2
 

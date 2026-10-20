@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Capability } from "@/platform/gateway/call";
-import type { RawBody } from "@/platform/gateway/result";
+import type { RawBody } from "@/platform/raw-body";
 import { hex64, integer, isoDateTime, noInput, pathSegment, pngBody, seg, uuid } from "./shared";
 
 /**
@@ -358,15 +358,20 @@ const reading = z.object({
   inkgrid_version: z.string(),
   verification,
   tables: z.array(
-    z.object({
-      id: z.string().min(1),
-      node_id: z.string().nullable(),
-      page,
-      bbox,
-      header_rows: z.number().int().min(0),
-      rows: z.array(z.array(z.string())).min(1),
-      markdown: z.string().min(1),
-    }),
+    z
+      .object({
+        id: z.string().min(1),
+        node_id: z.string().nullable(),
+        page,
+        bbox,
+        header_rows: z.number().int().min(0),
+        rows: z.array(z.array(z.string())).min(1),
+        markdown: z.string().min(1),
+      })
+      // A table cannot have more header rows than rows; one that claims to could not be drawn.
+      .refine((t) => t.header_rows <= t.rows.length, {
+        message: "header_rows must not exceed the rows",
+      }),
   ),
   findings: z.array(
     z.object({ code: z.string().min(1), severity: z.string().min(1), page: page.nullable() }),

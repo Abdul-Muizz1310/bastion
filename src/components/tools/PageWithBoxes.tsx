@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { type Bbox, type PageSize, pageImagePath, regionRect } from "./page-boxes";
+import { useCallback, useState } from "react";
+import { aspectMismatch, type Bbox, type PageSize, pageImagePath, regionRect } from "./page-boxes";
 
 /**
  * A PDF page with an element's boxes drawn on it (spec 21 §5, §5.1 invariant 7): inkthread's
  * rendered page (`inkthread.page`, through the gateway) at the page's aspect ratio, and over it an
  * SVG whose viewBox is the page in PDF points — the coordinate system inkthread's bboxes use — so
- * the boxes scale with the image at any width. A box that cannot be drawn honestly is left out.
+ * the boxes scale with the image at any width. A box that cannot be drawn honestly is left out,
+ * and when the render is not the page's shape (a rotated page) no box is drawn at all.
  */
 
 export type PageBox = { key: string; bbox: Bbox; tone: "self" | "related" };
@@ -23,6 +24,7 @@ export function PageWithBoxes({
   size,
   boxes,
   label,
+  imageSize,
 }: {
   documentId: string;
   page: number;
@@ -30,13 +32,24 @@ export function PageWithBoxes({
   boxes: readonly PageBox[];
   /** What the boxes mark, for the image's description. */
   label: string;
+  /** The image's natural size once it has loaded (tests seed it). */
+  imageSize?: { width: number; height: number };
 }) {
   const src = pageImagePath(documentId, page);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const drawn = boxes.flatMap((box) => {
-    const rect = regionRect(box.bbox, size);
-    return rect === null ? [] : [{ ...box, rect }];
-  });
+  const [measured, setMeasured] = useState(imageSize ?? null);
+  const measure = useCallback((img: HTMLImageElement | null) => {
+    if (img?.complete && img.naturalWidth > 0) {
+      setMeasured({ width: img.naturalWidth, height: img.naturalHeight });
+    }
+  }, []);
+  const rotated = measured !== null && aspectMismatch(measured, size);
+  const drawn = rotated
+    ? []
+    : boxes.flatMap((box) => {
+        const rect = regionRect(box.bbox, size);
+        return rect === null ? [] : [{ ...box, rect }];
+      });
 
   return (
     <figure className="space-y-2">
@@ -58,6 +71,8 @@ export function PageWithBoxes({
             height={Math.round(size.height)}
             loading="lazy"
             decoding="async"
+            ref={measure}
+            onLoad={(e) => measure(e.currentTarget)}
             onError={() => setFailedSrc(src)}
             className="absolute inset-0 block h-full w-full select-none"
             draggable={false}
@@ -86,8 +101,18 @@ export function PageWithBoxes({
         </svg>
       </div>
       <figcaption className="font-mono text-[11px] text-fg-muted">
-        page {page} · {drawn.length} {drawn.length === 1 ? "box" : "boxes"} in PDF points (top-left
-        origin), drawn over inkthread’s render
+        {rotated && measured ? (
+          <span className="text-warning">
+            page {page} is rotated in the PDF: its render is {measured.width} × {measured.height} px
+            while the page is {size.width} × {size.height} pt, so its boxes would land in the wrong
+            place — they are not drawn.
+          </span>
+        ) : (
+          <>
+            page {page} · {drawn.length} {drawn.length === 1 ? "box" : "boxes"} in PDF points
+            (top-left origin), drawn over inkthread’s render
+          </>
+        )}
       </figcaption>
     </figure>
   );

@@ -9,7 +9,7 @@ vi.mock("next/link", () => ({
 
 import type { FeathersUser } from "@/capabilities/feathers";
 import { FeathersWorkbench } from "@/features/tools/feathers/FeathersWorkbench";
-import type { Proof } from "@/features/tools/feathers/soft-delete";
+import type { ProofAnswer } from "@/features/tools/feathers/proof-answer";
 import { fixture } from "../../../capabilities/harness";
 import { budgetsWith, buttonNamed, isDisabled, Seeded } from "../../../components/tools/gate-fixtures";
 import { textOf } from "../../../helpers/html";
@@ -23,16 +23,14 @@ import { auditHrefs, copyButtons, ok } from "../outcomes";
 const users = fixture("feathers-demo", "users.json") as FeathersUser[];
 const created = fixture("feathers-demo", "user-created.json") as FeathersUser;
 
-const proof: Proof = {
+const proof: ProofAnswer = {
   verdict: "honoured",
   user: created,
+  requestId: "rid-proof",
   steps: [
-    { step: "create", outcome: ok(created, "rid-create", 201) },
-    { step: "delete", outcome: ok(null, "rid-delete", 204) },
-    {
-      step: "read",
-      outcome: { ok: false, kind: "downstream_error", status: 404, detail: "User not found", requestId: "rid-read" },
-    },
+    { step: "create", ok: true, status: 201, kind: null, detail: null },
+    { step: "delete", ok: true, status: 204, kind: null, detail: null },
+    { step: "read", ok: false, status: 404, kind: "downstream_error", detail: "User not found" },
   ],
 };
 
@@ -66,10 +64,11 @@ describe("FeathersWorkbench", () => {
     expect(text).toMatch(/DELETE\s*\/users\/\{id\}\s*users\.delete\s*admin/);
   });
 
-  it("lists the users with a receipt", () => {
+  it("lists the users with their audit link, without claiming an order the API does not keep", () => {
     const html = render({ users: ok(users, "rid-users") });
     for (const u of users) expect(textOf(html)).toContain(u.email);
     expect(auditHrefs(html)).toContain("/audit/rid-users");
+    expect(textOf(html)).not.toMatch(/newest/);
   });
 
   it("shows the 404 after the soft delete, and says it proves soft delete is honoured", () => {
@@ -78,14 +77,17 @@ describe("FeathersWorkbench", () => {
     expect(text).toMatch(/read\s.*404/);
     expect(text).toMatch(/soft delete honoured/i);
     expect(text).toMatch(/proves soft delete is honoured/);
-    for (const rid of ["rid-create", "rid-delete", "rid-read"]) {
-      expect(auditHrefs(html)).toContain(`/audit/${rid}`);
-    }
+    expect(auditHrefs(html)).toContain("/audit/rid-proof");
+    expect(text).not.toMatch(/still in the table/);
     expect(copyButtons(html)).toContain("copy the feathers soft-delete proof receipt");
   });
 
   it("calls a user still readable after its delete a leak", () => {
-    const leaked: Proof = { ...proof, verdict: "leaked", steps: [...proof.steps.slice(0, 2), { step: "read", outcome: ok(created, "rid-read") }] };
+    const leaked: ProofAnswer = {
+      ...proof,
+      verdict: "leaked",
+      steps: [...proof.steps.slice(0, 2), { step: "read", ok: true, status: 200, kind: null, detail: null }],
+    };
     expect(textOf(render({ proof: leaked }))).toMatch(/still readable/);
   });
 });

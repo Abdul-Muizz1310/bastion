@@ -66,9 +66,19 @@ describe("BastionWorkbench", () => {
   });
 
   it("shows a call's receipt: its audit event", () => {
-    const html = render({ call: ok([], RID), called: "magpie.sources" });
+    const html = render({ call: ok({ capability: "magpie.sources", data: [] }, RID) });
     expect(textOf(html)).toMatch(/bastion gateway call/);
     expect(auditHrefs(html)).toContain(`/audit/${RID}`);
     expect(copyButtons(html)).toContain("copy the bastion gateway call receipt");
+  });
+
+  it("names the capability that was called, not whatever the picker shows now", () => {
+    const html = render({
+      call: ok({ capability: "paper-trail.receiptKey", data: {} }, RID),
+      choice: "magpie.sources",
+    });
+    const receipt = /<article[\s\S]*?<\/article>/.exec(html)?.[0] ?? "";
+    expect(textOf(receipt)).toContain("paper-trail.receiptKey");
+    expect(textOf(receipt)).not.toContain("magpie.sources");
   });
 });

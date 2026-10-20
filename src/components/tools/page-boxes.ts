@@ -36,6 +36,21 @@ export function regionRect(bbox: Bbox, page: PageSize): Rect | null {
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
+/** The render may differ from the page's shape by this much and still be the same page. */
+export const ASPECT_TOLERANCE = 0.02;
+
+/**
+ * Whether the rendered image is not the page's shape (review fix 11): a page rotated in the PDF is
+ * rendered turned while its bboxes stay unrotated, so boxes drawn over it would land in the wrong
+ * place. An image that cannot be measured counts as a mismatch.
+ */
+export function aspectMismatch(image: { width: number; height: number }, page: PageSize): boolean {
+  assertPage(page);
+  if (!(image.width > 0 && image.height > 0)) return true;
+  const ratio = image.width / image.height / (page.width / page.height);
+  return !Number.isFinite(ratio) || Math.abs(ratio - 1) > ASPECT_TOLERANCE;
+}
+
 export function regionsOnPage<R extends Region>(regions: readonly R[], page: number): R[] {
   return regions.filter((r) => r.page === page);
 }

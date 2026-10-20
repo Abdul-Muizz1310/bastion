@@ -14,8 +14,9 @@ import { newSigningEnv, type SigningEnv, stubSigningEnv, VISITOR } from "./keys-
  * and the network are the seams.
  */
 
-const { check, capCheck, appendEvent, limiterConfigs } = vi.hoisted(() => ({
+const { check, readCheck, capCheck, appendEvent, limiterConfigs } = vi.hoisted(() => ({
   check: vi.fn(),
+  readCheck: vi.fn(),
   capCheck: vi.fn(),
   appendEvent: vi.fn(),
   limiterConfigs: [] as { max: number; windowMs: number }[],
@@ -24,7 +25,7 @@ const { check, capCheck, appendEvent, limiterConfigs } = vi.hoisted(() => ({
 vi.mock("@/platform/ratelimit", () => ({
   createRateLimiter: (config: { max: number; windowMs: number }) => {
     limiterConfigs.push(config);
-    return { check: config.max === 30 ? check : capCheck };
+    return { check: config.max === 30 ? check : config.max === 120 ? readCheck : capCheck };
   },
 }));
 vi.mock("@/platform/audit/write", () => ({ appendEvent }));
@@ -88,6 +89,7 @@ beforeEach(async () => {
   limiterConfigs.length = 0;
   check.mockReset().mockResolvedValue({ success: true, limit: 30, remaining: 29 });
   capCheck.mockReset().mockResolvedValue({ success: true, limit: 2, remaining: 1 });
+  readCheck.mockReset().mockResolvedValue({ success: true, limit: 120, remaining: 119 });
   appendEvent.mockReset().mockResolvedValue(1);
   fetchMock.mockReset().mockImplementation(async () => Response.json({ verdict: "supported" }));
   vi.stubGlobal("fetch", fetchMock);
@@ -269,6 +271,39 @@ describe("callCapability — pipeline order", () => {
     expect(gateway.VISITOR_CALLS_PER_MIN).toBe(30);
     expect(limiterConfigs).toContainEqual({ max: 30, windowMs: 60_000 });
     expect(check).toHaveBeenCalledWith(`gateway:${VISITOR}`);
+  });
+
+  it("gives free reads their own bucket of 120 a minute (Ruling AG), keyed apart", async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ items: [] }));
+    await gateway.callCapability(items, { name: "hn" }, ctx);
+    expect(gateway.READ_CALLS_PER_MIN).toBe(120);
+    expect(limiterConfigs).toContainEqual({ max: 120, windowMs: 60_000 });
+    expect(readCheck).toHaveBeenCalledWith(`gateway:read:${VISITOR}`);
+    expect(check).not.toHaveBeenCalled();
+  });
+
+  it("refuses a free read over its own bucket, without fetching", async () => {
+    readCheck.mockResolvedValueOnce({ success: false, limit: 120, remaining: 0, retryAfter: 9 });
+    const result = await gateway.callCapability(items, { name: "hn" }, ctx);
+    expect(result).toMatchObject({ ok: false, error: "rate_limited", retryAfterS: 9 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps every call that is not a free GET in the 30 a minute bucket", async () => {
+    const paidRead = { ...items, cost: "quota" as const, budget: "scrape" as const };
+    const freeWrite = { ...debate, cost: "free" as const, budget: undefined };
+    fetchMock.mockResolvedValueOnce(Response.json({ items: [] }));
+    await gateway.callCapability(paidRead, { name: "hn" }, ctx);
+    await gateway.callCapability(freeWrite, { claim: "c" }, ctx);
+    expect(check).toHaveBeenCalledTimes(2);
+    expect(readCheck).not.toHaveBeenCalled();
+  });
+
+  it("audits a free read like every other call", async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ items: [] }));
+    await gateway.callCapability(items, { name: "hn" }, ctx);
+    expect(appendEvent).toHaveBeenCalledTimes(1);
+    expect(appendEvent.mock.calls[0]?.[0]).toMatchObject({ action: "gateway.call", entityId: "test.items" });
   });
 
   it("applies a capability's own per-visitor limit on top", async () => {

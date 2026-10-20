@@ -1,3 +1,4 @@
+import "server-only";
 import { createPublicKey } from "node:crypto";
 import * as jose from "jose";
 import { ConfigError } from "@/platform/secrets";

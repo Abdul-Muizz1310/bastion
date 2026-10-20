@@ -1,3 +1,4 @@
+import "server-only";
 import * as jose from "jose";
 import { z } from "zod";
 import { actorSchema } from "@/platform/audit/event";

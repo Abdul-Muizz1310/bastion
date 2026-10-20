@@ -1,3 +1,4 @@
+import "server-only";
 import { Redis } from "@upstash/redis";
 import { z } from "zod";
 import { ConfigError } from "@/platform/secrets";

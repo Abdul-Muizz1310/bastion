@@ -24,23 +24,62 @@ vi.mock("@/platform/budget", async (orig) => ({
   budgetsLeft: () => budgetsLeft(),
 }));
 
-import WorkbenchPage, { generateMetadata } from "@/app/tools/[product]/page";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import UnknownWorkbench, { generateMetadata } from "@/app/tools/[product]/page";
+import * as bastionPage from "@/app/tools/bastion/page";
+import * as feathersPage from "@/app/tools/feathers/page";
+import * as inkgridPage from "@/app/tools/inkgrid/page";
+import * as inkprintPage from "@/app/tools/inkprint/page";
+import * as inkthreadPage from "@/app/tools/inkthread/page";
+import * as magpiePage from "@/app/tools/magpie/page";
+import * as paperTrailPage from "@/app/tools/paper-trail/page";
+import * as slowqueryPage from "@/app/tools/slowquery/page";
 import { WORKBENCH_ORDER, WORKBENCHES } from "@/features/tools/catalog";
 import { PRODUCTS } from "@/platform/registry/products";
 import { links, textOf } from "../../helpers/html";
 
-/** `/tools/[product]` (spec 21 §5.1): one live workbench per product, rendered per request. */
+/**
+ * `/tools/<product>` (spec 21 §5.1): one live workbench per product, rendered per request. Each is
+ * its own route module importing only its own workbench, so a page ships one workbench's code
+ * (Ruling AH); `/tools/[product]` answers every other id with a 404.
+ */
+
+type PageModule = {
+  default: (props: { searchParams: Promise<Record<string, string>> }) => Promise<React.ReactElement>;
+  metadata: { title?: unknown };
+};
+
+const PAGES: Record<string, PageModule> = {
+  magpie: magpiePage,
+  inkgrid: inkgridPage,
+  inkthread: inkthreadPage,
+  inkprint: inkprintPage,
+  "paper-trail": paperTrailPage,
+  slowquery: slowqueryPage,
+  feathers: feathersPage,
+  bastion: bastionPage,
+};
+
+const WORKBENCH_MODULE: Record<string, string> = {
+  magpie: "magpie/MagpieWorkbench",
+  inkgrid: "inkgrid/InkgridWorkbench",
+  inkthread: "inkthread/InkthreadWorkbench",
+  inkprint: "inkprint/InkprintWorkbench",
+  "paper-trail": "paper-trail/PaperTrailWorkbench",
+  slowquery: "slowquery/SlowqueryWorkbench",
+  feathers: "feathers/FeathersWorkbench",
+  bastion: "bastion/BastionWorkbench",
+};
 
 const today = Object.fromEntries(
   ["debate", "upload", "leakscan", "scrape", "certify", "feathers.write"].map((k) => [k, { limit: 4, left: 2 }]),
 );
 
 async function render(product: string, search: Record<string, string> = {}): Promise<string> {
-  const page = await WorkbenchPage({
-    params: Promise.resolve({ product }),
-    searchParams: Promise.resolve(search),
-  });
-  return renderToStaticMarkup(page);
+  const module = PAGES[product];
+  if (!module) throw new Error(`no page for ${product}`);
+  return renderToStaticMarkup(await module.default({ searchParams: Promise.resolve(search) }));
 }
 
 beforeEach(() => {
@@ -78,14 +117,28 @@ describe("/tools/[product]", () => {
     expect(current.map((l) => l.href)).toEqual(["/tools"]);
   });
 
-  it("404s a product that does not exist, prototype keys included", async () => {
-    await expect(render("nope")).rejects.toThrow("NEXT_NOT_FOUND");
-    await expect(render("constructor")).rejects.toThrow("NEXT_NOT_FOUND");
+  it("404s any other id, prototype keys included", async () => {
+    for (const product of ["nope", "constructor", "magpie"]) {
+      await expect(UnknownWorkbench({ params: Promise.resolve({ product }) })).rejects.toThrow(
+        "NEXT_NOT_FOUND",
+      );
+    }
+    expect(await generateMetadata()).toEqual({ title: "workbench not found" });
   });
 
-  it("titles each workbench from its product alone", async () => {
-    expect(await generateMetadata({ params: Promise.resolve({ product: "slowquery" }) })).toEqual({
-      title: "slowquery workbench",
-    });
+  it.each(WORKBENCH_ORDER)("titles the %s workbench from its product alone", (id) => {
+    expect(PAGES[id]?.metadata).toEqual({ title: `${id} workbench` });
+  });
+
+  it.each(WORKBENCH_ORDER)("ships only the %s workbench's code: its page imports no other", (id) => {
+    const source = readFileSync(resolve(__dirname, `../../../../src/app/tools/${id}/page.tsx`), "utf8");
+    const imported = [...source.matchAll(/from "@\/features\/tools\/([^"]+Workbench)"/g)].map((m) => m[1]);
+    expect(imported).toEqual([WORKBENCH_MODULE[id]]);
+  });
+
+  it("passes a linked document (?doc=) to inkthread and inkgrid only when it is a UUID", async () => {
+    const doc = "d5152b39-8bbc-4141-ac06-9d5e70f98f99";
+    expect(await render("inkthread", { doc })).toContain(`the document from the link (${doc.slice(0, 8)})`);
+    expect(await render("inkthread", { doc: "../etc" })).not.toContain("the document from the link");
   });
 });

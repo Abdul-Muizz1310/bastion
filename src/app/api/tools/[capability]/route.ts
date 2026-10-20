@@ -15,8 +15,15 @@ export const dynamic = "force-dynamic";
 // The slowest capability (a synchronous scrape) times out at 90 s.
 export const maxDuration = 100;
 
-/** Reached only through their own routes: uploads go through `/api/uploads` (size and type checks). */
-const NOT_TOOLS: ReadonlySet<string> = new Set(["inkthread.upload"]);
+/**
+ * Reached only through their own routes: uploads go through `/api/uploads` (size and type checks),
+ * and a feathers delete only through the soft-delete proof, which deletes the user it created
+ * itself — as a tool it would let any visitor delete any user (review fix 1).
+ */
+const NOT_TOOLS: ReadonlyMap<string, string> = new Map([
+  ["inkthread.upload", "use /api/uploads"],
+  ["feathers.deleteUser", "use /api/platform/feathers-proof"],
+]);
 
 type Verb = "GET" | "POST";
 type Context = { params: Promise<{ capability: string }> };
@@ -67,8 +74,9 @@ async function bodyInput(req: Request): Promise<Input> {
 async function handle(req: Request, ctx: Context, verb: Verb): Promise<Response> {
   const requestId = randomUUID();
   const { capability: id } = await ctx.params;
-  if (NOT_TOOLS.has(id)) {
-    return errorResponse(404, { error: "not_a_tool", detail: "use /api/uploads", requestId });
+  const elsewhere = NOT_TOOLS.get(id);
+  if (elsewhere !== undefined) {
+    return errorResponse(404, { error: "not_a_tool", detail: elsewhere, requestId });
   }
   const cap = capabilityById(id);
   if (cap === undefined) return errorResponse(404, { error: "unknown_capability", requestId });

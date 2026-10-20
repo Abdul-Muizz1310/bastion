@@ -1,11 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRewake } from "@/components/tools/WakeGate";
 import type { ToolOutcome } from "./outcome";
+import { runAction } from "./run-action";
 
 /**
  * One workbench action's state: whether it runs, and what it last came to. A new run aborts the one
- * before it; leaving the page aborts the one in flight, and an aborted run never sets state.
+ * before it; leaving the page aborts the one in flight, and an aborted run never sets state. An
+ * asleep outcome — run or set — puts the wake gate back to waking (review fix 2).
  */
 
 export type ActionState<O> = { busy: boolean; outcome: ToolOutcome<O> | null };
@@ -20,33 +23,29 @@ export function useAction<O>(initial: ToolOutcome<O> | null = null): Action<O> {
   const current = useRef<AbortController | null>(null);
   useEffect(() => () => current.current?.abort(), []);
 
-  const run = useCallback(async (call: (signal: AbortSignal) => Promise<ToolOutcome<O>>) => {
-    current.current?.abort();
-    const controller = new AbortController();
-    current.current = controller;
-    setState((s) => ({ busy: true, outcome: s.outcome }));
-    try {
-      const outcome = await call(controller.signal);
-      if (controller.signal.aborted) return null;
-      setState({ busy: false, outcome });
-      return outcome;
-    } catch {
-      if (controller.signal.aborted) return null;
-      const outcome: ToolOutcome<O> = {
-        ok: false,
-        kind: "unreachable",
-        detail: "the page could not finish the call",
-        requestId: null,
-      };
-      setState({ busy: false, outcome });
-      return outcome;
-    }
-  }, []);
+  const rewake = useRewake();
 
-  const set = useCallback((outcome: ToolOutcome<O> | null) => {
-    current.current?.abort();
-    setState({ busy: false, outcome });
-  }, []);
+  const run = useCallback(
+    async (call: (signal: AbortSignal) => Promise<ToolOutcome<O>>) => {
+      current.current?.abort();
+      const controller = new AbortController();
+      current.current = controller;
+      setState((s) => ({ busy: true, outcome: s.outcome }));
+      const outcome = await runAction(call, controller.signal, { onAsleep: rewake });
+      if (outcome !== null) setState({ busy: false, outcome });
+      return outcome;
+    },
+    [rewake],
+  );
+
+  const set = useCallback(
+    (outcome: ToolOutcome<O> | null) => {
+      current.current?.abort();
+      setState({ busy: false, outcome });
+      if (outcome && !outcome.ok && outcome.kind === "asleep") rewake();
+    },
+    [rewake],
+  );
 
   return { ...state, run, set };
 }

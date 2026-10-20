@@ -111,12 +111,14 @@ describe("which capabilities answer", () => {
     expect(res.headers.get("allow")).toBe("GET");
   });
 
-  it("takes a DELETE capability on POST", async () => {
-    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+  it("refuses feathers.deleteUser: only the server-side proof may delete, and only its own user", async () => {
     const res = await post("feathers.deleteUser", { id: USER });
-    expect(res.status).toBe(204);
-    expect(await res.text()).toBe("");
-    expect(fetchMock.mock.calls[0]?.[1].method).toBe("DELETE");
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({
+      error: "not_a_tool",
+      detail: "use /api/platform/feathers-proof",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

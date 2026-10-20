@@ -88,6 +88,13 @@ describe("GET /api/platform/transcript-check", () => {
     expect(body.signature.state).toBe("unavailable");
   });
 
+  it("fails the check when paper-trail answers for another debate than the one asked", async () => {
+    const other = "6a7b8c9d-0e1f-4a2b-8c3d-4e5f6a7b8c9d";
+    const body = await (await route.GET(req(`?id=${other}`))).json();
+    expect(body.hash.state).toBe("fail");
+    expect(body.signature.state).toBe("fail");
+  });
+
   it.each([
     ["no id", ""],
     ["an id that is not a UUID", "?id=889d7f2b"],

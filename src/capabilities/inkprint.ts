@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Capability } from "@/platform/gateway/call";
-import type { RawBody } from "@/platform/gateway/result";
+import type { RawBody } from "@/platform/raw-body";
 import {
   hex64,
   isoDateTime,

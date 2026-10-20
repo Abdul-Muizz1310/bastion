@@ -69,6 +69,14 @@ export function wakeAnswered(
   return withService(state, service, { phase: "settled", startedAt, answer });
 }
 
+/**
+ * Review fix 2: a call that finds the product asleep after the gate opened puts every service back
+ * to waking — the gate closes again until the wake route says live.
+ */
+export function rewakeAll(state: WakeState, now: number): WakeState {
+  return state.services.reduce((s, service) => wakeStarted(s, service, now), state);
+}
+
 const COLD_START_MS = 1_500;
 
 function rowOf(service: ServiceId, wake: ServiceWake | undefined, now: number): GateRow {

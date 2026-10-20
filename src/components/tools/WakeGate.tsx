@@ -13,7 +13,14 @@ import { ServiceBadge } from "@/components/platform/ServiceBadge";
 import { wakeService } from "@/features/tools/wake";
 import type { ServiceId } from "@/platform/registry/products";
 import { BUTTON_QUIET } from "./styles";
-import { gateView, initialWake, type WakeState, wakeAnswered, wakeStarted } from "./wake-model";
+import {
+  gateView,
+  initialWake,
+  rewakeAll,
+  type WakeState,
+  wakeAnswered,
+  wakeStarted,
+} from "./wake-model";
 
 /**
  * The wake gate around every workbench (spec 21 §5.1, Ruling F). On load it wakes each of the
@@ -23,11 +30,18 @@ import { gateView, initialWake, type WakeState, wakeAnswered, wakeStarted } from
  * to assistive tech, never the ticking seconds.
  */
 
-const ReadyContext = createContext(false);
+type GateControls = { ready: boolean; rewake: () => void };
+
+const GateContext = createContext<GateControls>({ ready: false, rewake: () => {} });
 
 /** Whether the product this workbench operates is live (false outside a gate). */
 export function useWakeReady(): boolean {
-  return useContext(ReadyContext);
+  return useContext(GateContext).ready;
+}
+
+/** Puts the product back to waking — what an action that met an asleep service calls. */
+export function useRewake(): () => void {
+  return useContext(GateContext).rewake;
 }
 
 export function WakeGate({
@@ -78,8 +92,18 @@ export function WakeGate({
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
+  // Review fix 2: a call that met an asleep service closes the gate again and wakes everything —
+  // unless a wake is already in flight, which will answer for it.
+  const wakingRef = useRef(waking);
+  wakingRef.current = waking;
+  const rewake = useCallback(() => {
+    if (wakingRef.current || latest.current.services.length === 0) return;
+    setState((s) => rewakeAll(s, Date.now()));
+    setAttempt((n) => n + 1);
+  }, []);
+
   return (
-    <ReadyContext value={view.ready}>
+    <GateContext value={{ ready: view.ready, rewake }}>
       <div
         data-gate={view.state}
         className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-[var(--radius)] border border-border bg-surface/60 px-4 py-3 md:px-5"
@@ -110,7 +134,7 @@ export function WakeGate({
         </p>
       </div>
       <div className="mt-8">{children}</div>
-    </ReadyContext>
+    </GateContext>
   );
 }
 

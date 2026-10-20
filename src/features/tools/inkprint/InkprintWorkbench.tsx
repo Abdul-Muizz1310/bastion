@@ -24,6 +24,7 @@ import { plural, utc } from "../format";
 import type { ToolOutcome } from "../outcome";
 import { pollTool } from "../poll";
 import { useAction } from "../use-action";
+import { readPublicKey } from "./public-key";
 
 /**
  * inkprint's workbench (spec 21 §5, §5.1): certify text (budget `certify`), verify a certificate —
@@ -533,51 +534,28 @@ function LeakView({ scan, requestId }: { scan: LeakScanStatus; requestId: string
   );
 }
 
-/** The PEM every inkprint signature verifies with — a raw text answer, so read without a schema. */
+/** The PEM every inkprint signature verifies with (raw text; failures named like any call). */
 function PublicKeyPanel() {
   const ready = useWakeReady();
-  const [state, setState] = useState<
-    | { phase: "idle" }
-    | { phase: "busy" }
-    | { phase: "ok"; pem: string; requestId: string }
-    | { phase: "failed"; status: number }
-  >({ phase: "idle" });
-  const load = async () => {
-    setState({ phase: "busy" });
-    try {
-      const res = await fetch("/api/tools/inkprint.publicKey", { cache: "no-store" });
-      const body = await res.text();
-      const requestId = res.headers.get("x-request-id") ?? "";
-      if (res.ok && body.includes("-----BEGIN PUBLIC KEY-----"))
-        setState({ phase: "ok", pem: body, requestId });
-      else setState({ phase: "failed", status: res.status });
-    } catch {
-      setState({ phase: "failed", status: 0 });
-    }
-  };
+  const key = useAction<string>(null);
   return (
     <Panel id="inkprint-key" title="the public key" hint="every signature above verifies with it">
       <button
         type="button"
-        onClick={() => void load()}
-        disabled={!ready || state.phase === "busy"}
+        onClick={() => void key.run((signal) => readPublicKey({ signal }))}
+        disabled={!ready || key.busy}
         className={BUTTON_QUIET}
       >
         show inkprint’s public key
       </button>
-      <div aria-live="polite">
-        {state.phase === "ok" ? (
+      <Outcome state={key} product={P} what="the public key">
+        {(pem, requestId) => (
           <div className="space-y-2">
-            <pre className={MONO_BLOCK}>{state.pem}</pre>
-            {state.requestId ? <AuditLink requestId={state.requestId} /> : null}
+            <pre className={MONO_BLOCK}>{pem}</pre>
+            <AuditLink requestId={requestId} />
           </div>
-        ) : state.phase === "failed" ? (
-          <p className="font-mono text-xs text-warning">
-            inkprint did not hand over its key (
-            {state.status === 0 ? "no answer" : `HTTP ${state.status}`}).
-          </p>
-        ) : null}
-      </div>
+        )}
+      </Outcome>
     </Panel>
   );
 }

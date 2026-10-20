@@ -1,3 +1,4 @@
+import "server-only";
 import type { ReceiptKey, Transcript } from "@/capabilities/paper-trail";
 import { transcriptRenderJson, transcriptSignedJson } from "@/dossier/issuer-forms";
 import { verifyEd25519 } from "@/platform/ed25519";
@@ -56,8 +57,28 @@ function signatureCheck(
     : { state: "fail", alg, detail: "the signature does not verify with paper-trail's key" };
 }
 
-export function checkTranscript(t: Transcript, key: ReceiptKey | null): TranscriptCheck {
+/** `debateId` is the debate asked for: a transcript of any other debate checks nothing. */
+export function checkTranscript(
+  t: Transcript,
+  key: ReceiptKey | null,
+  debateId: string,
+): TranscriptCheck {
   const forms = formsOf(t);
+  if (t.debate_id !== debateId) {
+    return {
+      debateId,
+      claim: t.claim,
+      verdict: t.verdict,
+      confidence: t.confidence,
+      transcriptHash: t.transcript_hash,
+      hash: { state: "fail", form: null },
+      signature: {
+        state: "fail",
+        alg: t.signature_alg,
+        detail: `paper-trail answered with another debate's transcript (${t.debate_id})`,
+      },
+    };
+  }
   return {
     debateId: t.debate_id,
     claim: t.claim,

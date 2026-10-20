@@ -12,25 +12,26 @@ import { BUTTON_QUIET, INPUT, LABEL, MONO_BLOCK } from "@/components/tools/style
 import { ToolReceipt } from "@/components/tools/ToolReceipt";
 import { useWakeReady } from "@/components/tools/WakeGate";
 import { useBudgets } from "../BudgetProvider";
-import { callTool } from "../client";
+import { callTool, postRoute } from "../client";
 import { plural, utc } from "../format";
 import type { ToolOutcome } from "../outcome";
 import { useAction } from "../use-action";
 import { contractOf } from "./contract";
+import { type ProofAnswer, type ProofStepAnswer, proofAnswerSchema } from "./proof-answer";
 import { FEATHERS_YAML, FEATHERS_YAML_SHA256, FEATHERS_YAML_SOURCE } from "./schema";
-import { type Proof, type ProofStep, runSoftDeleteProof } from "./soft-delete";
 
 /**
  * feathers' workbench (spec 21 §5, §5.1): the YAML schema feathers-cli generated feathers-demo from,
  * the contract read from it (each endpoint and its role gate), live CRUD on the generated service
  * (budget `feathers.write`), and the soft-delete proof: create a user → delete it → read it, which
- * must answer 404.
+ * must answer 404. The proof runs on the server (`POST /api/platform/feathers-proof`), which deletes
+ * only the user it created itself; deleting is not a tool.
  */
 
 export type FeathersState = {
   users?: ToolOutcome<FeathersUser[]>;
   created?: ToolOutcome<FeathersUser>;
-  proof?: Proof;
+  proof?: ProofAnswer;
 };
 
 const P = "feathers-demo";
@@ -44,21 +45,16 @@ const GATE_MEANING: Readonly<Record<string, string>> = {
   admin: "an admin token only",
 };
 
-const STEP_CALL: Readonly<Record<ProofStep["step"], string>> = {
+const STEP_CALL: Readonly<Record<ProofStepAnswer["step"], string>> = {
   create: "POST /users",
   delete: "DELETE /users/{id}",
   read: "GET /users/{id}",
 };
 
-function stepAnswer(step: ProofStep): string {
-  const o = step.outcome;
-  if (o.ok) return `${o.status}${step.step === "read" ? " — the user is still readable" : ""}`;
-  if (o.kind === "downstream_error") return `${o.status}${o.detail ? ` — ${o.detail}` : ""}`;
-  return o.kind.replaceAll("_", " ");
-}
-
-function randomTag(): string {
-  return Math.random().toString(36).slice(2, 10);
+function stepAnswer(s: ProofStepAnswer): string {
+  if (s.ok) return `${s.status ?? ""}${s.step === "read" ? " — the user is still readable" : ""}`;
+  if (s.kind === "downstream_error") return `${s.status ?? ""}${s.detail ? ` — ${s.detail}` : ""}`;
+  return (s.kind ?? "failed").replaceAll("_", " ");
 }
 
 export function FeathersWorkbench({ initial = {} }: { initial?: FeathersState }) {
@@ -66,8 +62,11 @@ export function FeathersWorkbench({ initial = {} }: { initial?: FeathersState })
   const { refresh } = useBudgets();
   const users = useAction(initial.users ?? null);
   const created = useAction(initial.created ?? null);
-  const [proof, setProof] = useState<Proof | null>(initial.proof ?? null);
-  const [proving, setProving] = useState<ProofStep[] | null>(null);
+  const proof = useAction<ProofAnswer>(
+    initial.proof
+      ? { ok: true, data: initial.proof, status: 200, requestId: initial.proof.requestId }
+      : null,
+  );
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<(typeof ROLES)[number]>("viewer");
@@ -105,19 +104,9 @@ export function FeathersWorkbench({ initial = {} }: { initial?: FeathersState })
   };
 
   const prove = async () => {
-    setProof(null);
-    setProving([]);
-    const result = await runSoftDeleteProof(
-      {
-        create: (input) => callTool(feathers.createUser, input, {}),
-        remove: (id) => callTool(feathers.deleteUser, { id }, {}),
-        read: (id) => callTool(feathers.user, { id }, {}),
-      },
-      { email: `proof-${randomTag()}@example.com`, full_name: "Soft-delete proof" },
-      (step) => setProving((steps) => [...(steps ?? []), step]),
+    await proof.run((signal) =>
+      postRoute("/api/platform/feathers-proof", {}, proofAnswerSchema, { signal }),
     );
-    setProving(null);
-    setProof(result);
     refresh();
     list();
   };
@@ -212,11 +201,12 @@ export function FeathersWorkbench({ initial = {} }: { initial?: FeathersState })
           units={2}
           label="run the proof: create, delete, read"
           busyLabel="proving…"
-          busy={proving !== null}
+          busy={proof.busy}
           onRun={() => void prove()}
         />
-        {proving !== null ? <ProofSteps steps={proving} /> : null}
-        {proof ? <ProofView proof={proof} /> : null}
+        <Outcome state={proof} product={P} what="the proof">
+          {(answer) => <ProofView proof={answer} />}
+        </Outcome>
       </Panel>
 
       <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -340,7 +330,7 @@ export function FeathersWorkbench({ initial = {} }: { initial?: FeathersState })
                   </ul>
                 )}
                 <p className="flex flex-wrap items-center justify-between gap-3 font-mono text-[11px] text-fg-muted">
-                  <span>{plural(rows.length, "user")} · the newest 20</span>
+                  <span>{plural(rows.length, "user")}</span>
                   <AuditLink requestId={requestId} />
                 </p>
               </div>
@@ -352,21 +342,16 @@ export function FeathersWorkbench({ initial = {} }: { initial?: FeathersState })
   );
 }
 
-function ProofSteps({ steps }: { steps: readonly ProofStep[] }) {
+function ProofSteps({ steps }: { steps: readonly ProofStepAnswer[] }) {
   return (
     <ol className="space-y-1.5 font-mono text-xs">
       {steps.map((s) => (
-        <li key={s.step} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <span>
-            <span className="text-foreground">{s.step}</span>{" "}
-            <span className="text-fg-muted">· {STEP_CALL[s.step]} →</span>{" "}
-            <span
-              className={s.outcome.ok || s.step === "read" ? "text-foreground" : "text-warning"}
-            >
-              {stepAnswer(s)}
-            </span>
+        <li key={s.step}>
+          <span className="text-foreground">{s.step}</span>{" "}
+          <span className="text-fg-muted">· {STEP_CALL[s.step]} →</span>{" "}
+          <span className={s.ok || s.step === "read" ? "text-foreground" : "text-warning"}>
+            {stepAnswer(s)}
           </span>
-          {s.outcome.requestId ? <AuditLink requestId={s.outcome.requestId} /> : null}
         </li>
       ))}
     </ol>
@@ -374,12 +359,12 @@ function ProofSteps({ steps }: { steps: readonly ProofStep[] }) {
 }
 
 const VERDICT: Readonly<
-  Record<Proof["verdict"], { stamp: string; tone: "pass" | "fail" | "neutral"; says: string }>
+  Record<ProofAnswer["verdict"], { stamp: string; tone: "pass" | "fail" | "neutral"; says: string }>
 > = {
   honoured: {
     stamp: "soft delete honoured",
     tone: "pass",
-    says: "The read answers 404 although the row is still in the table: feathers.yaml’s soft_delete: true made the generated repository hide deleted rows from every read. That proves soft delete is honoured.",
+    says: "The read answers 404: the deleted user is hidden from every read, as feathers.yaml’s soft_delete: true promises. That proves soft delete is honoured.",
   },
   leaked: {
     stamp: "deleted user leaked",
@@ -393,28 +378,23 @@ const VERDICT: Readonly<
   },
 };
 
-function ProofView({ proof }: { proof: Proof }) {
+function ProofView({ proof }: { proof: ProofAnswer }) {
   const v = VERDICT[proof.verdict];
-  const read = proof.steps.find((s) => s.step === "read");
-  const last = proof.steps.at(-1);
-  const requestId = read?.outcome.requestId ?? last?.outcome.requestId ?? null;
   return (
     <WithReceipt
       receipt={
-        requestId ? (
-          <ToolReceipt
-            kind="feathers soft-delete proof"
-            serial={proof.user?.id.slice(0, 8)}
-            title={proof.user?.email ?? "no user was created"}
-            stamp={{ text: v.stamp, tone: v.tone }}
-            lines={proof.steps.map((s) => ({
-              label: s.step,
-              value: `${STEP_CALL[s.step]} → ${stepAnswer(s)}`,
-            }))}
-            extra={proof.steps.map((s) => `${s.step} request: ${s.outcome.requestId ?? "none"}`)}
-            requestId={requestId}
-          />
-        ) : null
+        <ToolReceipt
+          kind="feathers soft-delete proof"
+          serial={proof.user?.id.slice(0, 8)}
+          title={proof.user?.email ?? "no user was created"}
+          stamp={{ text: v.stamp, tone: v.tone }}
+          lines={proof.steps.map((s) => ({
+            label: s.step,
+            value: `${STEP_CALL[s.step]} → ${stepAnswer(s)}`,
+          }))}
+          extra={proof.user ? [`user: ${proof.user.id}`] : []}
+          requestId={proof.requestId}
+        />
       }
     >
       <div className="space-y-4">

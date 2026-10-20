@@ -45,13 +45,21 @@ function claimRows(p: TokenPreview): Row[] {
       value: c.cap,
       meaning: "which capability asked — informational, never trusted to authorise",
     },
-    { name: "iat", value: utc(c.iat), meaning: "issued at" },
+    {
+      name: "iat",
+      value: utc(c.iat),
+      meaning: "issued at — illustrative: each call is stamped as it is made",
+    },
     {
       name: "exp",
       value: utc(c.exp),
-      meaning: `expires ${c.exp - c.iat} s after it was issued; backends allow 10 s of clock leeway`,
+      meaning: `illustrative — expires ${c.exp - c.iat} s after it was issued; backends allow 10 s of clock leeway`,
     },
-    { name: "jti", value: c.jti, meaning: "a fresh id per token, so a replay can be spotted" },
+    {
+      name: "jti",
+      value: c.jti,
+      meaning: "illustrative — a fresh id per token, so a replay can be spotted",
+    },
   ];
 }
 
@@ -110,6 +118,9 @@ export function TokenInspector({ preview }: { preview: TokenPreview }) {
         >
           claims · {preview.capability.id}
         </h3>
+        <p className="font-mono text-[11px] text-fg-muted">
+          iat, exp and jti are illustrative of the next call’s token: every call gets its own.
+        </p>
         <Rows rows={claimRows(preview)} />
       </section>
     </div>

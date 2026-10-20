@@ -43,3 +43,21 @@ describe("PageWithBoxes", () => {
     expect(textOf(/<figcaption[\s\S]*<\/figcaption>/.exec(html)?.[0] ?? "")).toMatch(/page 1/);
   });
 });
+
+describe("PageWithBoxes on a rotated page", () => {
+  const rotated = renderToStaticMarkup(
+    <PageWithBoxes
+      documentId={DOC}
+      page={1}
+      size={{ width: 612, height: 792 }}
+      boxes={[{ key: "self", bbox: [50.39, 242.62, 579.64, 368.18], tone: "self" }]}
+      label="paragraph p:c95bca1f"
+      imageSize={{ width: 1584, height: 1224 }}
+    />,
+  );
+
+  it("withholds the boxes rather than drawing them in the wrong place, and says why", () => {
+    expect(rotated.match(/<rect\b[^>]*data-box=/g) ?? []).toHaveLength(0);
+    expect(textOf(rotated)).toMatch(/rotated/);
+  });
+});

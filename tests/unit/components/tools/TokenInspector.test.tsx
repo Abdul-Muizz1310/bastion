@@ -53,6 +53,14 @@ describe("TokenInspector", () => {
     expect(text).toMatch(/60 s after it was issued/);
   });
 
+  it("labels iat, exp and jti as illustrative: the next call's token gets its own", () => {
+    for (const claim of ["iat", "exp", "jti"]) {
+      const row = new RegExp(`<dt[^>]*>${claim}</dt>[\\s\\S]*?</dd>`).exec(html)?.[0] ?? "";
+      expect(textOf(row)).toMatch(/illustrative/);
+    }
+    expect(text).toMatch(/illustrative of the next call’s token/);
+  });
+
   it("links the JWKS that verifies it", () => {
     expect(links(html).some((l) => l.href === "/.well-known/jwks.json")).toBe(true);
   });

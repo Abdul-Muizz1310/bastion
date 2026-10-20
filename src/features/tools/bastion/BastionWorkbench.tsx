@@ -21,11 +21,15 @@ import { type TokenPreview, tokenPreviewSchema } from "./token-preview";
  * every call: its audit event.
  */
 
+/** A call's result, kept with the capability it was made for (not the picker's current value). */
+export type CallResult = { capability: string; data: unknown };
+
 export type BastionState = {
   capability?: string;
   preview?: ToolOutcome<TokenPreview>;
-  call?: ToolOutcome<unknown>;
-  called?: string;
+  call?: ToolOutcome<CallResult>;
+  /** The free read the picker shows. */
+  choice?: string;
 };
 
 const P = "bastion";
@@ -53,7 +57,10 @@ export function BastionWorkbench({ initial = {} }: { initial?: BastionState }) {
   const ready = useWakeReady();
   const ids = useId();
   const [capability, setCapability] = useState(initial.capability ?? "inkprint.certify");
-  const [called, setCalled] = useState(initial.called ?? FREE_CALLS[0] ?? "");
+  const [choice, setChoice] = useState(initial.choice ?? FREE_CALLS[0] ?? "");
+  const [lastCalled, setLastCalled] = useState(
+    initial.call?.ok ? initial.call.data.capability : choice,
+  );
   const preview = useAction(initial.preview ?? null);
   const jwks = useAction<z.infer<typeof jwksSchema>>(null);
   const call = useAction(initial.call ?? null);
@@ -78,11 +85,16 @@ export function BastionWorkbench({ initial = {} }: { initial?: BastionState }) {
   }, []);
 
   const makeCall = () => {
-    const cap = capabilityById(called);
+    const id = choice;
+    const cap = capabilityById(id);
     if (cap === undefined) return;
+    setLastCalled(id);
     // The inspector follows the call: these are the claims bastion mints for it.
-    inspect(called);
-    void call.run((signal) => callTool(cap, {}, { signal }));
+    inspect(id);
+    void call.run(async (signal) => {
+      const outcome = await callTool(cap, {}, { signal });
+      return outcome.ok ? { ...outcome, data: { capability: id, data: outcome.data } } : outcome;
+    });
   };
 
   const kid = preview.outcome?.ok ? preview.outcome.data.header.kid : null;
@@ -133,8 +145,8 @@ export function BastionWorkbench({ initial = {} }: { initial?: BastionState }) {
               </label>
               <select
                 id={`${ids}-call`}
-                value={called}
-                onChange={(e) => setCalled(e.target.value)}
+                value={choice}
+                onChange={(e) => setChoice(e.target.value)}
                 className={INPUT}
               >
                 {FREE_CALLS.map((id) => (
@@ -157,16 +169,15 @@ export function BastionWorkbench({ initial = {} }: { initial?: BastionState }) {
             bastion mints a token like the one above, calls the service, and appends one audit
             event: the capability, the service, the status and the time it took — never the body.
           </p>
-          <Outcome state={call} product={called.split(".")[0] ?? P} what="the call">
-            {(_data, requestId) => (
+          <Outcome state={call} product={lastCalled.split(".")[0] ?? P} what="the call">
+            {(result, requestId) => (
               <ToolReceipt
                 kind="bastion gateway call"
                 serial={requestId.slice(0, 8)}
-                title={called}
+                title={result.capability}
                 stamp={{ text: "audited", tone: "pass" }}
                 lines={[
-                  { label: "capability", value: called },
-                  { label: "service", value: capabilityById(called)?.service ?? "?" },
+                  { label: "service", value: capabilityById(result.capability)?.service ?? "?" },
                   { label: "status", value: call.outcome?.ok ? String(call.outcome.status) : "?" },
                   { label: "request", value: requestId },
                 ]}

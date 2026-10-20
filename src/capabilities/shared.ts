@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { rawBodySchema } from "@/platform/gateway/result";
+import { rawBodySchema } from "@/platform/raw-body";
 
 /**
  * Building blocks of the capability modules: input schemas that make a malformed path impossible,

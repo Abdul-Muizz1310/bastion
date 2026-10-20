@@ -21,7 +21,7 @@ function describe(f: FailedOutcome, product: string): { tone: Tone; title: strin
       return {
         tone: "limit",
         title: `${product} is asleep (it did not answer in time)`,
-        body: "Free Render services sleep after 15 minutes and take about a minute to wake. Wake it above, then try again.",
+        body: "Free Render services sleep after 15 minutes and take about a minute to wake. bastion is waking it again above; the actions come back once it answers.",
       };
     case "rate_limited":
       return {

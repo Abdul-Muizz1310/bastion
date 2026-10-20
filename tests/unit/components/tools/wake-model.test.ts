@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   gateView,
   initialWake,
+  rewakeAll,
   wakeAnswered,
   wakeStarted,
 } from "@/components/tools/wake-model";
@@ -131,5 +132,23 @@ describe("the wake gate", () => {
     expect(waking).toMatch(/waking inkprint/i);
     state = wakeAnswered(state, "inkprint", { kind: "answer", state: "live", latencyMs: 1 }, T0);
     expect(gateView(state, "inkprint", T0).announcement).toMatch(/inkprint is live/i);
+  });
+
+  it("re-gates a live product when a call finds it asleep: every service waking, nothing enabled", () => {
+    let state = initialWake(["inkprint", "magpie"]);
+    for (const s of ["inkprint", "magpie"] as const) {
+      state = wakeStarted(state, s, T0);
+      state = wakeAnswered(state, s, { kind: "answer", state: "live", latencyMs: 9 }, T0);
+    }
+    expect(gateView(state, "x", T0).ready).toBe(true);
+    const again = rewakeAll(state, T0 + 1_000);
+    const view = gateView(again, "x", T0 + 3_000);
+    expect(view.ready).toBe(false);
+    expect(view.rows.map((r) => r.state)).toEqual(["waking", "waking"]);
+    expect(view.rows[0]?.detail).toBe("2 s");
+  });
+
+  it("re-gating a product with no service leaves it live", () => {
+    expect(gateView(rewakeAll(initialWake([]), T0), "bastion", T0).ready).toBe(true);
   });
 });

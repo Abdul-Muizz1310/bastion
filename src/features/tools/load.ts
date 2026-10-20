@@ -1,3 +1,4 @@
+import "server-only";
 import type { Budgets } from "@/features/tools/budgets";
 import { budgetsLeft } from "@/platform/budget";
 

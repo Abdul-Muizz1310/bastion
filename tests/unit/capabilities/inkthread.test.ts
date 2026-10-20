@@ -162,6 +162,24 @@ describe("inkthread.reading (interface I-3)", () => {
     expect(result).toMatchObject({ ok: false, error: "invalid_response" });
   });
 
+  it("refuses a table with more header rows than rows (it could not be drawn)", async () => {
+    const bad = structuredClone(reading) as { tables: { header_rows: number; rows: unknown[] }[] };
+    const first = bad.tables[0];
+    if (!first) throw new Error("the fixture has a table");
+    first.header_rows = first.rows.length + 1;
+    const result = await call(inkthread.reading, { documentId: DOC }, Response.json(bad));
+    expect(result).toMatchObject({ ok: false, error: "invalid_response" });
+  });
+
+  it("accepts a table that is all header rows", async () => {
+    const edge = structuredClone(reading) as { tables: { header_rows: number; rows: unknown[] }[] };
+    const first = edge.tables[0];
+    if (!first) throw new Error("the fixture has a table");
+    first.header_rows = first.rows.length;
+    const result = await call(inkthread.reading, { documentId: DOC }, Response.json(edge));
+    expect(result.ok).toBe(true);
+  });
+
   it("refuses a doc_sha256 that is not 64 hex characters", async () => {
     const result = await call(
       inkthread.reading,

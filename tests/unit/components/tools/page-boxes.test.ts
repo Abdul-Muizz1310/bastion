@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { pageImagePath, regionRect, regionsOnPage } from "@/components/tools/page-boxes";
+import {
+  aspectMismatch,
+  pageImagePath,
+  regionRect,
+  regionsOnPage,
+} from "@/components/tools/page-boxes";
 
 /**
  * Boxes on a page (spec 21 §5.1, invariant 7). inkthread's bboxes are `[x0, top, x1, bottom]` in
@@ -73,5 +78,23 @@ describe("pageImagePath", () => {
   it("refuses a page that is not a positive whole number", () => {
     expect(() => pageImagePath("d5152b39-8bbc-4141-ac06-9d5e70f98f99", 0)).toThrow(RangeError);
     expect(() => pageImagePath("d5152b39-8bbc-4141-ac06-9d5e70f98f99", 1.5)).toThrow(RangeError);
+  });
+});
+
+describe("aspectMismatch", () => {
+  it("accepts an image drawn at the page's aspect ratio, at any scale", () => {
+    expect(aspectMismatch({ width: 1224, height: 1584 }, LETTER)).toBe(false);
+  });
+
+  it("allows 2 % for rounding in the render", () => {
+    expect(aspectMismatch({ width: 1224, height: 1600 }, LETTER)).toBe(false);
+  });
+
+  it("flags a rotated page, whose image is landscape while the page is portrait", () => {
+    expect(aspectMismatch({ width: 1584, height: 1224 }, LETTER)).toBe(true);
+  });
+
+  it("flags an image it cannot measure", () => {
+    expect(aspectMismatch({ width: 0, height: 0 }, LETTER)).toBe(true);
   });
 });

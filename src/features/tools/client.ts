@@ -155,6 +155,28 @@ export async function getRoute<O>(
   );
 }
 
+/** A JSON POST to one of bastion's own routes (the feathers proof). */
+export async function postRoute<O>(
+  path: string,
+  body: unknown,
+  parser: Parser<O>,
+  options: CallOptions = {},
+): Promise<ToolOutcome<O>> {
+  return exchange<O>(
+    {
+      path,
+      init: {
+        method: "POST",
+        headers: { accept: "application/json", "content-type": "application/json" },
+        body: JSON.stringify(body),
+      },
+      parser,
+      requireRequestId: true,
+    },
+    options,
+  );
+}
+
 /** A multipart POST to one of bastion's routes (`/api/uploads`). */
 export async function postForm<O>(
   path: string,

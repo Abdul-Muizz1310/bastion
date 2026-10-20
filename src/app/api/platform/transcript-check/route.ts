@@ -37,7 +37,7 @@ export async function GET(req: Request): Promise<Response> {
   ]);
   if (!transcript.ok) return toResponse(transcript, false);
 
-  const check = checkTranscript(transcript.data, key.ok ? key.data : null);
+  const check = checkTranscript(transcript.data, key.ok ? key.data : null, parsed.data);
   return Response.json(
     { ...check, requestId },
     { headers: { "x-request-id": requestId, "cache-control": "no-store" } },
