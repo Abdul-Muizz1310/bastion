@@ -9,7 +9,7 @@
 ![react](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=black)
 ![ts](https://img.shields.io/badge/TypeScript-strict-3178c6?style=flat-square&logo=typescript&logoColor=white)
 ![neon](https://img.shields.io/badge/Neon-Postgres-00e599?style=flat-square&logo=postgresql&logoColor=white)
-![tests](https://img.shields.io/badge/tests-2832%20unit%20·%2083%20integration%20·%2020%20e2e-6e9f18?style=flat-square)
+![tests](https://img.shields.io/badge/tests-2846%20unit%20·%2083%20integration%20·%2020%20e2e-6e9f18?style=flat-square)
 ![coverage](https://img.shields.io/badge/coverage-89.5%25%20lines-brightgreen?style=flat-square)
 [![ci](https://img.shields.io/github/actions/workflow/status/Abdul-Muizz1310/bastion/ci.yml?style=flat-square&label=ci)](https://github.com/Abdul-Muizz1310/bastion/actions/workflows/ci.yml)
 ![license](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)
@@ -262,7 +262,7 @@ Measured on 2026-10-21 (Node 24.19, Linux):
 
 | Metric | Value |
 |---|---|
-| **Unit** | 2,832 tests in 190 files |
+| **Unit** | 2,846 tests in 191 files |
 | **Coverage** (unit) | 89.5 % lines · 87.6 % statements · 83.7 % branches · 80.3 % functions |
 | **Per-module floors** (90 % lines) | `src/capabilities` 100 % · `src/platform` 98.9 % · `src/dossier` 94.2 % |
 | **Integration** | 83 tests in 12 files, against a real Postgres (append-only triggers, concurrent claims, receipts, verification) |
