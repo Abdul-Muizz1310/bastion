@@ -78,6 +78,16 @@ describe("FLOWS: exactly the dossier's flows (spec 21 §3.1)", () => {
     }
   });
 
+  it("never says the debate argues only over signed evidence: paper-trail prefers the pool and may search the web", () => {
+    // paper-trail's planner drafts its sub-questions from the evidence pool and emits a web search
+    // only for what the pool cannot answer (paper-trail-backend agents/nodes/plan.py, final review).
+    const debate = FLOWS.find((f) => f.id === "inkprint-paper-trail")?.summary ?? "";
+    expect(debate).toBe(
+      "paper-trail’s proponent, skeptic and judge argue over that signed evidence first (cited as [cert:…]); paper-trail may search the web for what the pool cannot answer.",
+    );
+    for (const flow of FLOWS) expect(flow.summary, flow.id).not.toMatch(/\bonly\b/);
+  });
+
   it("orders every product exactly once for reading and tabbing, bastion first", () => {
     expect([...MAP_ORDER].sort()).toEqual(PRODUCTS.map((p) => p.id).sort());
     expect(MAP_ORDER[0]).toBe("bastion");

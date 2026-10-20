@@ -81,6 +81,14 @@ describe("EvidenceTable", () => {
     expect(scroller).toMatch(/class="[^"]*\brelative\b/);
   });
 
+  it("says its certified rows are the pool handed to the debate, never all the debate saw (final review)", () => {
+    // paper-trail may also search the web for what the pool cannot answer; its URL citations
+    // show in the transcript, not here.
+    const caption = textOf(/<caption\b[^>]*>([\s\S]*?)<\/caption>/.exec(render())?.[1] ?? "");
+    expect(caption).toMatch(/^The dossier’s evidence; the certified items are the pool handed to the debate/);
+    expect(caption).not.toMatch(/the debate saw/);
+  });
+
   it("says there is no evidence when there is none", () => {
     expect(textOf(render(createElement(EvidenceTable, { rows: [] })))).toMatch(/no evidence/);
   });

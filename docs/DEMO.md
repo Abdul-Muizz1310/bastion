@@ -28,8 +28,9 @@ reading a finished dossier needs no service at all, so start there.
 - The claim, the verdict stamp and its confidence.
 - **Evidence**: each row is a web item (magpie) or a PDF passage or table (inkthread, inkgrid), with
   its excerpt and its inkprint certificate.
-- **The debate**: paper-trail's rounds; every `[cert:…]` citation links to the evidence row it rests
-  on — the debate saw only signed evidence.
+- **The debate**: paper-trail's rounds; its proponent, skeptic and judge argue over that signed
+  evidence first, and every `[cert:…]` citation links to the evidence row it rests on. paper-trail
+  may search the web for what the pool cannot answer; those citations are URLs, linked out.
 - **Documents**: "show on its pages" draws each quoted passage as a box on its PDF page.
 - **The queries it caused**: what each service ran for this dossier's request id, with any exact
   `CREATE INDEX`.

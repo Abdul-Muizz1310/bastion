@@ -23,7 +23,7 @@ wake      the services this dossier needs, held up to 90 s each           bastio
 gather    web pages, scraped live                                         magpie
 read      a PDF's passages and exact tables, each with its page and box   inkthread · inkgrid
 seal      one Ed25519 certificate per evidence item, at most 12           inkprint
-debate    proponent, skeptic and judge, over the sealed evidence only     paper-trail
+debate    proponent, skeptic and judge, over the sealed evidence first    paper-trail
 measure   every query the run caused, found by its request id             slowquery
 envelope  one signed envelope over every receipt above                    inkprint
 record    the digest of the run's slice of the append-only audit log      bastion
@@ -64,7 +64,7 @@ bastion v1 was a signed-in control plane that proved four services answered. v2 
 - magpie scrapes web pages live, and inkprint signs each item it brings back.
 - inkgrid reads a PDF's tables and text exactly; inkthread maps them into a graph.
 - inkthread hands each quoted passage, with its page and its why, to inkprint to sign.
-- paper-trail's proponent, skeptic and judge argue only over that signed evidence.
+- paper-trail's proponent, skeptic and judge argue over that signed evidence first (cited as `[cert:…]`); paper-trail may search the web for what the pool cannot answer.
 - slowquery measures every query magpie, inkthread, inkprint and paper-trail ran for the dossier's request id.
 - feathers generated feathers-demo, a live FastAPI service, from one YAML schema.
 
@@ -135,7 +135,7 @@ sequenceDiagram
 | gather | magpie `POST /api/scrape/batch` (skipped with no sources) | web evidence candidates |
 | read | inkthread: poll an upload's job, then the graph and the reading (skipped with no documents) | passages and tables with their pages and boxes |
 | seal | inkprint `POST /certificates/batch` over at most 12 selected items | a certificate per item |
-| debate | paper-trail `POST /debates` with the sealed items as its only evidence; poll; fetch the signed transcript | verdict, confidence, transcript hash and signature |
+| debate | paper-trail `POST /debates` with the sealed items as its evidence pool, argued over first (paper-trail may search the web for what the pool cannot answer); poll; fetch the signed transcript | verdict, confidence, transcript hash and signature |
 | measure | `GET /_slowquery/queries?request_id=` on every service the dossier called | the perf receipt and its SHA-256 |
 | envelope | inkprint `POST /dossiers/envelope` over the certificates, transcript, perf hash and audit digest | an envelope id and signature |
 | record | the digest of the dossier's audit events | succeeded |

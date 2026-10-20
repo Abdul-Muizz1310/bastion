@@ -39,8 +39,9 @@ export function EvidenceTable({ rows }: { rows: readonly EvidenceRowView[] }) {
     >
       <table className="w-full min-w-[46rem] border-collapse font-mono text-xs">
         <caption className="sr-only">
-          The evidence the debate saw: each item with its product, where it came from, the excerpt
-          kept, its inkprint certificate and its state once verified.
+          The dossier’s evidence; the certified items are the pool handed to the debate. Each item
+          with its product, where it came from, the excerpt kept, its inkprint certificate and its
+          state once verified.
         </caption>
         <thead>
           <tr className="border-b border-border-bright text-left text-[11px] uppercase tracking-[0.16em] text-fg-muted">

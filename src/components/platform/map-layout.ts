@@ -59,7 +59,8 @@ export const FLOWS: readonly Flow[] = [
     to: "paper-trail",
     kind: "evidence",
     label: "signed evidence",
-    summary: "paper-trail’s proponent, skeptic and judge argue only over that signed evidence.",
+    summary:
+      "paper-trail’s proponent, skeptic and judge argue over that signed evidence first (cited as [cert:…]); paper-trail may search the web for what the pool cannot answer.",
   },
   {
     id: "services-slowquery",

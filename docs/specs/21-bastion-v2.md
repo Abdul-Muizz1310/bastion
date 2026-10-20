@@ -23,7 +23,7 @@ The brand spine holds: *tools that hand you a receipt*. bastion is the receipt o
 |---|---|---|
 | Access | Magic link, sessions, 3 roles, demo sign-in buttons | **No sign-in.** Visitors are pseudonymous; capability grants replace user roles (DR-0032) |
 | Products in bastion | 4 called (magpie, inkprint, paper-trail, slowquery), feathers listed as CLI | **All 8**: each has a live workbench; feathers-demo registered |
-| Dossier | 5 steps in one unawaited promise; synchronous 3-round debate without the signed evidence; envelope never called | Durable step machine (DR-0035); PDFs as evidence; debate grounded in the sealed evidence; inkprint envelope; public verification |
+| Dossier | 5 steps in one unawaited promise; synchronous 3-round debate without the signed evidence; envelope never called | Durable step machine (DR-0035); PDFs as evidence; debate over the sealed evidence first (cited as `[cert:…]`; paper-trail may search the web for what the pool cannot answer); inkprint envelope; public verification |
 | Platform tokens | No `iss`/`aud`; any bastion token accepted by every backend; three backends open in demo mode | Contract v2: issuer- and audience-bound, 10 s leeway, enforced on all six backends (DR-0033) |
 | slowquery | One demo backend | Installed in paper-trail, magpie, inkprint and inkthread; a dossier's perf receipt lists the queries it caused (DR-0034) |
 | inkgrid | Invisible (inside inkthread) | inkthread exposes inkgrid's tables and verification report; bastion shows them |
@@ -371,7 +371,7 @@ Invariants and cases:
 | gather | magpie `POST /api/scrape/batch` (skipped with no sources) | Web evidence candidates |
 | read | inkthread: uploads were started at compose time; poll `GET /jobs/{id}` until done; fetch graph + reading (skipped with no documents) | Passages and tables, with locators |
 | seal | inkprint `POST /certificates/batch` over the selected evidence (≤ 12 items) | A certificate per evidence item |
-| debate | paper-trail `POST /debates` with `evidence_pool` = the sealed items; poll until done; fetch `transcript.json` | Verdict, confidence, transcript hash + signature |
+| debate | paper-trail `POST /debates` with `evidence_pool` = the sealed items, which its planner prefers (a web search only for a sub-question the pool cannot answer); poll until done; fetch `transcript.json` | Verdict, confidence, transcript hash + signature |
 | measure | `GET /_slowquery/queries?request_id=` on every service the dossier called | Perf receipt (canonical JSON) and its SHA-256 |
 | envelope | inkprint `POST /dossiers/envelope` with the cert ids, transcript hash, perf hash and metadata (graph hashes, audit digest) | Envelope id + signature |
 | record | Compute the audit digest of the dossier's request id; mark the dossier done | Final status |
