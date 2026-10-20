@@ -230,67 +230,6 @@ describe("06-audit: DB operations", () => {
     const insertedValues = mocks.mockValues.mock.calls[0][0];
     expect(insertedValues).not.toHaveProperty("createdAt");
   });
-
-  it("events with same requestId are queryable together (integration)", async () => {
-    const requestId = "shared-request-id";
-    const eventRows = [
-      { id: 1, requestId, action: "step1", entityType: "demo", entityId: "run-1" },
-      { id: 2, requestId, action: "step2", entityType: "demo", entityId: "run-1" },
-    ];
-    mocks.mockOffset.mockResolvedValueOnce(eventRows);
-    const { queryEvents } = await import("@/platform/audit/write");
-    const result = await queryEvents({ requestId });
-    expect(result).toEqual(eventRows);
-    expect(result).toHaveLength(2);
-  });
-
-  it("queryEvents returns events in reverse chronological order (integration)", async () => {
-    const eventRows = [
-      { id: 3, action: "third", createdAt: new Date("2026-01-03") },
-      { id: 2, action: "second", createdAt: new Date("2026-01-02") },
-      { id: 1, action: "first", createdAt: new Date("2026-01-01") },
-    ];
-    mocks.mockOffset.mockResolvedValueOnce(eventRows);
-    const { queryEvents } = await import("@/platform/audit/write");
-    const result = await queryEvents({});
-    expect(result).toEqual(eventRows);
-    // Verify orderBy was called (the DB layer handles ordering)
-    expect(mocks.mockOrderBy).toHaveBeenCalled();
-  });
-
-  it("queryEvents filters by service (integration)", async () => {
-    mocks.mockOffset.mockResolvedValueOnce([{ id: 1, service: "magpie" }]);
-    const { queryEvents } = await import("@/platform/audit/write");
-    const result = await queryEvents({ service: "magpie" });
-    expect(result).toHaveLength(1);
-    expect(mocks.mockWhere).toHaveBeenCalled();
-  });
-
-  it("queryEvents filters by date range (integration)", async () => {
-    mocks.mockOffset.mockResolvedValueOnce([]);
-    const { queryEvents } = await import("@/platform/audit/write");
-    const from = new Date("2026-01-01");
-    const to = new Date("2026-12-31");
-    await queryEvents({ from, to });
-    expect(mocks.mockWhere).toHaveBeenCalled();
-  });
-
-  it("queryEvents filters by actor (integration)", async () => {
-    mocks.mockOffset.mockResolvedValueOnce([{ id: 1, actor: VISITOR }]);
-    const { queryEvents } = await import("@/platform/audit/write");
-    const result = await queryEvents({ actor: VISITOR });
-    expect(result).toHaveLength(1);
-    expect(mocks.mockWhere).toHaveBeenCalled();
-  });
-
-  it("queryEvents supports pagination (integration)", async () => {
-    mocks.mockOffset.mockResolvedValueOnce([{ id: 11 }, { id: 12 }]);
-    const { queryEvents } = await import("@/platform/audit/write");
-    const result = await queryEvents({ limit: 2, offset: 10 });
-    expect(result).toHaveLength(2);
-    expect(mocks.mockLimit).toHaveBeenCalledWith(2);
-    expect(mocks.mockOffset).toHaveBeenCalledWith(10);
-  });
 });
 
 describe("06-audit: edge and failure cases", () => {
@@ -342,14 +281,12 @@ describe("06-audit: security", () => {
   });
 
   it("events cannot be modified via any endpoint (tested in schema spec)", async () => {
-    // Structural: the events schema only exposes insert (appendEvent) and select (queryEvents).
-    // There is no updateEvent or deleteEvent exported.
-    const auditMod = await import("@/platform/audit/write");
-    const auditExports = Object.keys(auditMod);
-    expect(auditExports).toContain("appendEvent");
-    expect(auditExports).toContain("queryEvents");
-    expect(auditExports).not.toContain("updateEvent");
-    expect(auditExports).not.toContain("deleteEvent");
+    // Structural: the writer only appends and the reader (read.ts) only selects; neither module
+    // exports anything that updates or deletes.
+    const writer = Object.keys(await import("@/platform/audit/write"));
+    const reader = Object.keys(await import("@/platform/audit/read"));
+    expect(writer).toEqual(["appendEvent"]);
+    expect(reader).toEqual(["readEvents"]);
   });
 
   it("the actor is written to `actor`, never to the legacy `actor_id` (integration)", async () => {

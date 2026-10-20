@@ -155,6 +155,16 @@ export const SERVICES: Readonly<Record<ServiceId, Service>> = {
   "feathers-demo": service("feathers-demo", "https://feathers-demo-rznj.onrender.com"),
 };
 
+/** The repo each service is deployed from — where its `/version` commit SHA belongs. */
+export const SERVICE_REPOS: Readonly<Record<ServiceId, string>> = {
+  "paper-trail": "paper-trail-backend",
+  magpie: "magpie-backend",
+  inkprint: "inkprint-backend",
+  inkthread: "inkthread-backend",
+  slowquery: "slowquery-demo-backend",
+  "feathers-demo": "feathers-demo",
+};
+
 export function isServiceId(value: string): value is ServiceId {
   return Object.hasOwn(SERVICES, value);
 }

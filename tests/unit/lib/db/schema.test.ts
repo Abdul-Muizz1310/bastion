@@ -146,13 +146,13 @@ describe("00-schema: edge and failure cases", () => {
 
 describe("00-schema: security — append-only events", () => {
   it("UPDATE on events table is rejected by database (integration)", async () => {
-    // Structural: the audit module only exports appendEvent and queryEvents
-    // There is no updateEvent function, enforcing append-only at the application layer.
+    // Structural: the writer exports only appendEvent and the reader only readEvents. There is
+    // no updateEvent function, enforcing append-only at the application layer.
     const auditMod = await import("@/platform/audit/write");
     const auditExports = Object.keys(auditMod);
     expect(auditExports).not.toContain("updateEvent");
     expect(auditExports).toContain("appendEvent");
-    expect(auditExports).toContain("queryEvents");
+    expect(Object.keys(await import("@/platform/audit/read"))).toEqual(["readEvents"]);
   });
 
   it("DELETE on events table is rejected by database (integration)", async () => {

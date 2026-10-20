@@ -18,15 +18,19 @@ function primeState(overrides: Record<string, unknown> = {}) {
   mockGetTimeTravelState.mockResolvedValue({
     entities: [
       {
-        entityType: "user",
-        entityId: "user-1",
-        service: "bastion",
-        state: { role: "editor" },
-        lastAction: "user.role_changed",
+        entityType: "capability",
+        entityId: "magpie.scrape",
+        service: "magpie",
+        lastAction: "gateway.call",
         lastEventAt: new Date("2026-01-05T00:00:00.000Z"),
+        requestId: "req-1",
+        actor: "v_kk6eooepno",
+        actorId: null,
+        metadata: { status: 200, ms: 40, body: "SECRET_DOWNSTREAM_BODY" },
       },
     ],
     bounds: { min: MIN, max: MAX },
+    truncated: false,
     ...overrides,
   });
 }
@@ -74,6 +78,20 @@ describe("07-replay server action: loadTimeTravelState", () => {
     });
     expect(res.view.entities[0].lastEventAt).toBe("2026-01-05T00:00:00.000Z");
     expect(JSON.parse(JSON.stringify(res.view))).toEqual(res.view);
+  });
+
+  it("sends only known fields across the boundary, never the metadata (spec 21 §3.2 invariant 6)", async () => {
+    const { loadTimeTravelState } = await import("@/features/time-travel/server/query");
+    const res = await loadTimeTravelState("2026-01-06T00:00:00.000Z");
+    if (!res.ok) throw new Error("expected ok");
+    expect(JSON.stringify(res.view)).not.toContain("SECRET_DOWNSTREAM_BODY");
+    expect(res.view.entities[0]?.facts).toEqual({
+      status: 200,
+      ms: 40,
+      stage: null,
+      attempt: null,
+      error: null,
+    });
   });
 
   it("case 7: propagates the 'no events before this time' message", async () => {

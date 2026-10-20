@@ -25,3 +25,13 @@ export const DEFAULT_BUDGETS: Readonly<Record<BudgetKey, number>> = {
 
 /** What is left of one budget today. */
 export type BudgetLeft = { limit: number; left: number };
+
+/** Each budget as a noun, for meters and notices ("debates left today"). */
+export const BUDGET_NOUN: Readonly<Record<BudgetKey, string>> = {
+  debate: "debates",
+  upload: "uploads",
+  leakscan: "leak scans",
+  scrape: "scrapes",
+  certify: "certificates",
+  "feathers.write": "feathers writes",
+};

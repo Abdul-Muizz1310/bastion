@@ -41,7 +41,7 @@ truthful CSP (DR-0018), the dark terminal house style.
 | `/dossier` | Compose: a claim, web sources (magpie source slugs), documents (inkthread samples or an upload ≤ 4 MB), a mode. |
 | `/d/[id]` | The dossier: live progress while it runs, then the permanent public receipt (§6.5) with "verify everything". |
 | `/audit`, `/audit/[requestId]` | The append-only log of every gateway call, filterable by service and request id; the trace view of one request across services. |
-| `/time-travel` | The v1 replay slider over entities (dossiers, certificates, debates, documents, gateway calls). |
+| `/time-travel` | The v1 replay slider over entities (dossiers, capabilities — the gateway calls — and v1's types); §3.2. |
 | `/platform` | Registry of the 8 products / 15 repos: services, live commit SHAs, health, the token contract (JWKS, `kid`, the audience per service), today's remaining budgets. |
 
 Removed: `/login`, `/auth/callback`, `/whoami`, `/run`, `/dashboard` (folded into `/platform`), the
@@ -87,6 +87,84 @@ renders, with the gallery marked unavailable.
 
 **Entry points.** Run a dossier (`/dossier`, with today's remaining debates when the budget store
 answers; nothing when it does not) · open a workbench (`/tools`) · read the audit log (`/audit`).
+
+### 3.2 The audit log, time-travel and the platform registry (Task 14)
+
+All three are public and rendered per request. Nothing is scoped to the visitor: everyone reads the
+same log (DR-0015's append-only `events`, the receipt behind every other receipt).
+
+**The actor** is written as the event's pseudonym: a visitor id (`v_` + 10 base32) as it is, system
+work as `bastion`. A v1 row (no `actor`, an `actor_id`) reads "v1 user" — the uuid is never shown; a
+row with neither reads "no actor"; an `actor` of any other shape reads "unrecognised actor" and is
+never echoed.
+
+**What an event shows**: its id, time (UTC), actor, service, action, entity and request id, plus
+the few *known* fields read from its metadata and checked for shape — the HTTP `status` (an integer
+100–599), the duration (`ms`, or v1's `latencyMs`: finite, ≥ 0), a dossier `stage` (one of the
+eight) and its `attempt` (a whole number ≥ 1), and an `error` (or v1's `reason`) that is a code
+(`^[a-z][a-z0-9_]{0,63}$`; any other error reads "error, detail withheld"). The metadata, `before`
+and `after` are never rendered and never sent to the browser whole: they could carry what a
+downstream answered (§6.6, Task 13).
+
+**`/audit`.** Newest first, 50 a page, a cursor by id: `?before=<id>` lists the events with smaller
+ids, the "older" link carries the smallest id shown, and a "newest" link drops the cursor. One extra
+row is read only to know whether anything older exists. Filters, in a GET form that works without
+script: `service` (`bastion` or one of the six service ids), `action` (a prefix,
+`^[a-z0-9][a-z0-9._-]{0,63}$`, matched literally — `_` and `%` are not wildcards) and `request` (an
+exact request id, `^[A-Za-z0-9._:-]{1,128}$`). An empty value is no filter. An unknown parameter, a
+repeated one or a malformed value is refused before anything is read: the page names each and why,
+and offers "clear filters". Each row links its request id to `/audit/<requestId>` and a dossier
+entity to `/d/<id>`. Nothing matches ⇒ "no events match" with the filters named; the database
+unreachable ⇒ the page still renders, with the log marked unavailable. The guarantee is stated with
+its proof: triggers (`drizzle/0001_append_only_events.sql`, DR-0019) reject UPDATE, DELETE and
+TRUNCATE for every role, the owner bastion connects as included; an owner could still drop a
+trigger, which is why each dossier's envelope also signs a digest of that dossier's slice of the log
+(§6.5) — a later edit to the slice no longer verifies.
+
+**`/audit/[requestId]`** is one request's waterfall across services. A malformed id, or one with no
+events, is a 404; the title comes from the id alone. Each event *starts* at `created_at − ms` when it
+carries a duration (the gateway logs a call when it ends) and at `created_at` otherwise; rows are
+ordered by start, ties by id. Each row shows its start's offset from the request's first start, the
+service, the action, the entity (a dossier links to `/d/<id>`), the status and duration when known,
+and a bar from start to end on one shared scale (an instant event is a tick). The span runs from the
+earliest start to the latest end; a span of 0 puts every tick at 0. More than 500 events ⇒ the first
+500, and the page says so. The header names the services touched, the span, the count and — when
+the request is a dossier's — a link to that dossier.
+
+**`/time-travel`** is spec 07's slider over the DISTINCT ON replay, over every entity type the log
+holds: dossiers, capabilities (one entity per gateway capability: its latest call) and v1's types.
+Each entity shows its type, id (a dossier links to `/d/<id>`), service, last action with its known
+fields, when, its actor and its request id (linked to the trail); the `after` state is no longer
+read. The list narrows by type in the browser, without a query. Empty states say what is true: an
+empty log disables the slider ("No audit data yet."), a moment before the first event reads "No
+events before this time", a type with nothing at that moment says so. More than 1000 entities ⇒ the
+first 1000, said so. Nothing animates.
+
+**`/platform`** is the registry in one place: the 8 products with their 15 repos (GitHub), packages
+(PyPI) and live frontends, each linked to its workbench; the 6 services with their live health (the
+shared 30 s status, §3.1 invariant 7), version, commit SHA and audience, and bastion's own commit
+(`VERCEL_GIT_COMMIT_SHA`) when it is deployed. A SHA links to its commit only when it is 7–40 hex
+digits; otherwise it is plain text, and none reads "not reported". Today's budgets come from
+`budgetsLeft()`; unavailable ⇒ said, never guessed. The token contract (§7): alg EdDSA, the `kid`
+(`keyId()`; a malformed `BASTION_KEY_ID` reads "unreadable", never its value), the JWKS link, issuer
+`bastion`, the audience per service (its id), the 60 s TTL and 10 s leeway, the fail-closed rule and
+a link to spec 22. The page shows no secret: no private key, salt, token or connection string.
+
+**Redirects.** `/dashboard` → `/platform` and `/services/<product id>` → `/tools/<product id>`, both
+permanent (308), so v1 links keep working; any other `/services/<x>` is a 404.
+
+Invariants and cases:
+1. No query on these pages is scoped by actor; every visitor reads the same rows.
+2. Actor display: visitor ⇒ its id; `bastion` ⇒ bastion; v1 ⇒ "v1 user"; neither ⇒ "no actor";
+   anything else ⇒ "unrecognised actor".
+3. Filters: an unknown, repeated or malformed parameter is refused before any read; `%`, `_` and
+   `\` in the action prefix match themselves.
+4. Pagination: consecutive pages neither overlap nor skip; "older" appears only when an older event
+   exists.
+5. Waterfall: rows ordered by start (ties by id); offsets ≥ 0; every bar inside [0 %, 100 %].
+6. No page here renders or sends to the browser an event's raw metadata, `before` or `after`.
+7. `/platform` renders when the status poll fails (every service "unknown") and when the budget
+   store fails; it never contains a secret's value.
 
 ## 4. The capability layer (bastion)
 

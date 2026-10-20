@@ -1,18 +1,6 @@
-import { and, desc, eq, gte, like, lte } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { events } from "@/lib/db/schema";
-import { type Actor, type EventInput, eventInputSchema } from "@/platform/audit/event";
-
-export type QueryEventsOptions = {
-  service?: string;
-  requestId?: string;
-  from?: Date;
-  to?: Date;
-  limit?: number;
-  offset?: number;
-  actor?: Actor;
-  actionPrefix?: string;
-};
+import { type EventInput, eventInputSchema } from "@/platform/audit/event";
 
 export async function appendEvent(input: EventInput): Promise<number | null> {
   const parsed = eventInputSchema.parse(input);
@@ -39,38 +27,4 @@ export async function appendEvent(input: EventInput): Promise<number | null> {
     console.error("appendEvent failed:", err);
     return null;
   }
-}
-
-export async function queryEvents(options: QueryEventsOptions = {}) {
-  const db = getDb();
-  const conditions = [];
-
-  if (options.service) {
-    conditions.push(eq(events.service, options.service));
-  }
-  if (options.requestId) {
-    conditions.push(eq(events.requestId, options.requestId));
-  }
-  if (options.from) {
-    conditions.push(gte(events.createdAt, options.from));
-  }
-  if (options.to) {
-    conditions.push(lte(events.createdAt, options.to));
-  }
-  if (options.actor) {
-    conditions.push(eq(events.actor, options.actor));
-  }
-  if (options.actionPrefix) {
-    conditions.push(like(events.action, `${options.actionPrefix}%`));
-  }
-
-  const query = db
-    .select()
-    .from(events)
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(desc(events.createdAt))
-    .limit(options.limit ?? 50)
-    .offset(options.offset ?? 0);
-
-  return query;
 }

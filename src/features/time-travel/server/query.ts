@@ -1,7 +1,9 @@
 "use server";
 
+import "server-only";
 import { z } from "zod/v4";
-import { type TimeTravelQueryResult, toTimeTravelView } from "@/features/time-travel/view";
+import { toTimeTravelView } from "@/features/time-travel/to-view";
+import type { TimeTravelQueryResult } from "@/features/time-travel/view";
 import { getTimeTravelState } from "@/lib/audit/replay";
 
 /**

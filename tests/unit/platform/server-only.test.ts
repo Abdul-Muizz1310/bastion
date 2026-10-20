@@ -10,11 +10,16 @@ import { describe, expect, it } from "vitest";
 
 const ROOT = resolve(__dirname, "../../..");
 const SERVER_ONLY = [
+  "src/features/audit/load.ts",
+  "src/features/audit/server/query.ts",
   "src/features/dossier/load.ts",
+  "src/features/platform/load.ts",
+  "src/features/time-travel/to-view.ts",
   "src/features/tools/components/WorkbenchPage.tsx",
   "src/features/tools/feathers/proof.ts",
   "src/features/tools/load.ts",
   "src/features/tools/paper-trail/transcript-check.ts",
+  "src/platform/audit/read.ts",
   "src/platform/budget.ts",
   "src/platform/gateway/call.ts",
   "src/platform/gateway/http.ts",
@@ -27,8 +32,11 @@ const SERVER_ONLY = [
 const CLIENT_DIRS = [
   "src/capabilities",
   "src/components/tools",
-  "src/features/tools",
+  "src/features/audit",
   "src/features/dossier",
+  "src/features/platform",
+  "src/features/time-travel",
+  "src/features/tools",
 ];
 
 function files(dir: string): string[] {

@@ -4,7 +4,7 @@ import { useId } from "react";
 import { BudgetMeter } from "@/components/platform/BudgetMeter";
 import { useBudgets } from "@/features/tools/BudgetProvider";
 import { affordability } from "@/features/tools/budgets";
-import type { BudgetKey } from "@/platform/budget-keys";
+import { BUDGET_NOUN, type BudgetKey } from "@/platform/budget-keys";
 import { BUTTON } from "./styles";
 import { useWakeReady } from "./WakeGate";
 
@@ -13,15 +13,6 @@ import { useWakeReady } from "./WakeGate";
  * today. Disabled until the product is live, while it runs, and when fewer units are left than it
  * spends. When the budgets could not be read it stays enabled and says so: the gateway enforces them.
  */
-
-export const BUDGET_NOUN: Readonly<Record<BudgetKey, string>> = {
-  debate: "debates",
-  upload: "uploads",
-  leakscan: "leak scans",
-  scrape: "scrapes",
-  certify: "certificates",
-  "feathers.write": "feathers writes",
-};
 
 export function BudgetedAction({
   budget,
