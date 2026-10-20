@@ -512,11 +512,19 @@ prove the rebuild (`tests/fixtures/receipts/`).
 
 **Bundle.** `GET /api/dossiers/[id]/receipts` is public and limited to 30 a minute per visitor (429 with
 `retry-after`). It answers 404 for an unknown dossier. Otherwise
-it serves the canonical JSON of `{dossier, evidence, documents, receipts}` with
+it serves the canonical JSON of `{dossier, evidence, documents, receipts, audit_events}` with
 `content-disposition: attachment`.
 
 - `dossier` holds the public fields only: no `visitor`, no `user_id`.
 - `documents` carries the graph hashes the documents check re-fetches.
+- `audit_events` is the slice of the audit log the dossier's digests cover (final review): the events
+  with its `request_id` and `id` ≤ the highest bound a stored receipt carries (the audit receipt's
+  `up_to_event_id`, the envelope's signed `audit_up_to`; neither ⇒ `[]`), ordered by `id`, each
+  exactly the digest's row `[id, action, service, created_at]` — never the actor or the metadata.
+  Both digests recompute from the bundle alone (the audit receipt's over the rows ≤ its bound, the
+  envelope's over the rows ≤ `audit_up_to`), and the envelope's is signed by inkprint, so a match
+  with it proves those rows are the ones digested at sealing. That no other event of the request
+  sits below a bound is what "verify everything" checks against the log itself.
 
 **Canonical form.** bastion's own receipts (the perf receipt, the audit digest, the envelope receipt's
 hash) are hashed over `canonicalJson`, whose output is **RFC 8785 (JCS)** for any I-JSON value: keys

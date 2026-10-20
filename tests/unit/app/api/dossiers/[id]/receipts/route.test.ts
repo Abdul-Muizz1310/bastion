@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 /**
  * `GET /api/dossiers/[id]/receipts` (spec 21 §6.3, §6.5): the receipts bundle, public, downloaded
  * as `dossier-<id>.receipts.json` — the canonical JSON of the dossier's public fields, evidence,
- * documents and receipts, so a stranger can re-check everything without bastion. 404 for a dossier
+ * documents, receipts and the audit events its digests cover, so a stranger can re-check
+ * everything without bastion. 404 for a dossier
  * that does not exist. Ruling W: limited to 30 a minute per visitor (each download reads every
  * receipt with its payload).
  */
@@ -17,6 +18,7 @@ const m = vi.hoisted(() => {
     listEvidence: vi.fn(),
     listDocuments: vi.fn(),
     listReceipts: vi.fn(),
+    requestEvents: vi.fn(),
   };
 });
 
@@ -25,12 +27,21 @@ vi.mock("@/dossier/store", () => ({ findDossier: m.findDossier }));
 vi.mock("@/dossier/evidence", () => ({ listEvidence: m.listEvidence }));
 vi.mock("@/dossier/documents", () => ({ listDocuments: m.listDocuments }));
 vi.mock("@/dossier/receipts", () => ({ listReceipts: m.listReceipts }));
+vi.mock("@/platform/audit/request-events", () => ({ requestEvents: m.requestEvents }));
 
 import * as route from "@/app/api/dossiers/[id]/receipts/route";
 import { receiptsBundle } from "@/dossier/bundle";
 import { canonicalJson } from "@/platform/canonical-json";
 import { dossier } from "../../../../../dossier/stages/helpers";
-import { allReceipts, documents, DOSSIER } from "../../../../../dossier/verify-golden";
+import {
+  allReceipts,
+  DOSSIER,
+  documents,
+  EVENTS,
+  eventsUpTo,
+  GOLDEN,
+  perfReceipt,
+} from "../../../../../dossier/verify-golden";
 
 const ID = DOSSIER.id;
 const row = dossier({ id: ID, requestId: DOSSIER.requestId, status: "succeeded" });
@@ -49,6 +60,7 @@ beforeEach(() => {
   m.listEvidence.mockReset().mockResolvedValue([]);
   m.listDocuments.mockReset().mockResolvedValue(documents());
   m.listReceipts.mockReset().mockResolvedValue(allReceipts());
+  m.requestEvents.mockReset().mockImplementation(async (_id: string, upTo: number) => eventsUpTo(upTo));
 });
 
 afterEach(() => {
@@ -87,7 +99,7 @@ describe("GET /api/dossiers/[id]/receipts", () => {
     expect(res.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/);
   });
 
-  it("is the canonical JSON of the dossier's public fields, evidence, documents and receipts", async () => {
+  it("is the canonical JSON of the dossier's public fields, evidence, documents, receipts and audit events", async () => {
     const body = await (await get()).text();
     expect(body).toBe(
       canonicalJson(
@@ -96,6 +108,7 @@ describe("GET /api/dossiers/[id]/receipts", () => {
           evidence: [],
           documents: documents(),
           receipts: allReceipts(),
+          auditEvents: EVENTS,
         }),
       ),
     );
@@ -103,6 +116,20 @@ describe("GET /api/dossiers/[id]/receipts", () => {
     expect(m.listEvidence).toHaveBeenCalledWith(ID);
     expect(m.listDocuments).toHaveBeenCalledWith(ID);
     expect(body).not.toContain(row.visitor ?? "never");
+  });
+
+  it("reads the request's audit events up to the highest bound a receipt carries", async () => {
+    const body = JSON.parse(await (await get()).text()) as { audit_events: [number][] };
+    expect(m.requestEvents).toHaveBeenCalledOnce();
+    expect(m.requestEvents).toHaveBeenCalledWith(DOSSIER.requestId, GOLDEN.recordUpTo);
+    expect(body.audit_events.map(([id]) => id)).toEqual(eventsUpTo(GOLDEN.recordUpTo).map((e) => e.id));
+  });
+
+  it("reads no audit events when no receipt binds a digest", async () => {
+    m.listReceipts.mockResolvedValue([perfReceipt()]);
+    const body = JSON.parse(await (await get()).text()) as { audit_events: unknown[] };
+    expect(m.requestEvents).not.toHaveBeenCalled();
+    expect(body.audit_events).toEqual([]);
   });
 
   it("never downloads an internal error's message (review round 1)", async () => {

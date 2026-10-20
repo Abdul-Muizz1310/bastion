@@ -28,7 +28,7 @@ import { paperTrail } from "@/capabilities/paper-trail";
 import { listDocuments } from "@/dossier/documents";
 import { listEvidence, saveSealed } from "@/dossier/evidence";
 import { envelopeBundleJson, inkprintCanonicalText } from "@/dossier/issuer-forms";
-import { type PerfReceipt, perfReceiptHash } from "@/dossier/receipt-math";
+import { auditDigest, type PerfReceipt, perfReceiptHash } from "@/dossier/receipt-math";
 import {
   findReceipt,
   recordTranscript,
@@ -412,6 +412,34 @@ describe.skipIf(!LOCAL)("verify everything, composed, against Postgres", () => {
     ]);
     const perf = bundle.receipts.find((r) => r.kind === "perf");
     expect(perf?.hash).toBe(perfReceiptHash(perf?.payload as unknown as PerfReceipt));
+  });
+
+  it("bundles the audit events its digests cover, so both recompute from the download alone", async () => {
+    const res = await receiptsRoute(new Request(`https://bastion.test/api/dossiers/${id}/receipts`), {
+      params: Promise.resolve({ id }),
+    });
+    const bundle = (await res.json()) as {
+      receipts: { kind: string; hash: string; payload: Record<string, unknown> }[];
+      audit_events: [number, string, string | null, string][];
+    };
+    const asEvents = (upTo: number) =>
+      bundle.audit_events
+        .filter(([eventId]) => eventId <= upTo)
+        .map(([eventId, action, service, at]) => ({ id: eventId, action, service, createdAt: new Date(at) }));
+
+    const audit = bundle.receipts.find((r) => r.kind === "audit");
+    const upTo = audit?.payload.up_to_event_id as number;
+    expect(asEvents(upTo)).toHaveLength(audit?.payload.event_count as number);
+    expect(auditDigest(asEvents(upTo))).toBe(audit?.hash);
+    // The event logged after the record stage (the test above) is past every bound: not shipped.
+    expect(bundle.audit_events.every(([eventId]) => eventId <= upTo)).toBe(true);
+    expect(bundle.audit_events.some(([, action]) => action === "dossier.later")).toBe(false);
+    // Each row is the digest's row: no actor, no metadata.
+    for (const row of bundle.audit_events) expect(row).toHaveLength(4);
+
+    const envelope = bundle.receipts.find((r) => r.kind === "envelope");
+    const signed = (envelope?.payload.request as { metadata: Record<string, string> }).metadata;
+    expect(auditDigest(asEvents(Number(signed.audit_up_to)))).toBe(signed.audit_digest_at_envelope);
   });
 
   it("a one-word edit of a certified text fails, though inkprint answers valid:true", async () => {

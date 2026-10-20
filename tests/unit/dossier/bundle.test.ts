@@ -1,14 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { bundleFilename, receiptsBundle } from "@/dossier/bundle";
+import { bundleAuditBound, bundleFilename, receiptsBundle } from "@/dossier/bundle";
+import { auditDigest } from "@/dossier/receipt-math";
+import type { StoredReceipt } from "@/dossier/receipts";
 import type { Dossier, EvidenceItem } from "@/lib/db/schema";
 import { canonicalJson } from "@/platform/canonical-json";
+import { sha256Hex } from "@/platform/sha256";
 import { dossier } from "./stages/helpers";
-import { allReceipts, documents, DOSSIER } from "./verify-golden";
+import {
+  allReceipts,
+  auditReceipt,
+  DOSSIER,
+  documents,
+  ENVELOPE_REQUEST,
+  EVENTS,
+  envelopeReceipt,
+  GOLDEN,
+  perfReceipt,
+} from "./verify-golden";
 
 /**
  * The receipts bundle (spec 21 §6.3, §6.5): everything a stranger needs to re-check the dossier
- * without bastion — the dossier's public fields, its evidence, its documents and every receipt with
- * its payload — and nothing about who made it (no visitor, no user).
+ * without bastion — the dossier's public fields, its evidence, its documents, every receipt with
+ * its payload and the audit events its digests cover — and nothing about who made it (no visitor,
+ * no user, no event's actor or metadata).
  */
 
 const AT = new Date("2026-10-20T09:00:00.123Z");
@@ -51,11 +65,13 @@ const bundle = (over: Partial<Dossier> = {}) =>
     evidence: [evidence],
     documents: documents(),
     receipts: allReceipts(),
+    auditEvents: EVENTS,
   }) as {
     dossier: Record<string, unknown>;
     evidence: Record<string, unknown>[];
     documents: Record<string, unknown>[];
     receipts: Record<string, unknown>[];
+    audit_events: unknown[][];
   };
 
 describe("receiptsBundle", () => {
@@ -74,7 +90,7 @@ describe("receiptsBundle", () => {
       created_at: "2026-10-20T09:00:00.123Z",
     });
     const text = canonicalJson(
-      receiptsBundle({ dossier: row(), evidence: [], documents: [], receipts: [] }),
+      receiptsBundle({ dossier: row(), evidence: [], documents: [], receipts: [], auditEvents: [] }),
     );
     expect(text).not.toContain("v_kk6eooepno");
     expect(text).not.toContain("0000000000aa");
@@ -137,6 +153,87 @@ describe("receiptsBundle", () => {
     );
   });
 
+  it("holds the audit events the digests cover, each exactly the digest's row", () => {
+    expect(bundle().audit_events).toEqual(
+      EVENTS.filter((e) => e.id <= GOLDEN.recordUpTo).map((e) => [
+        e.id,
+        e.action,
+        e.service,
+        e.createdAt.toISOString(),
+      ]),
+    );
+  });
+
+  it("recomputes both audit digests from the bundle alone (the download is all a stranger has)", () => {
+    const parsed = JSON.parse(
+      canonicalJson(
+        receiptsBundle({
+          dossier: row(),
+          evidence: [evidence],
+          documents: documents(),
+          receipts: allReceipts(),
+          auditEvents: EVENTS,
+        }),
+      ),
+    ) as {
+      receipts: { kind: string; hash: string; payload: Record<string, unknown> }[];
+      audit_events: [number, string, string | null, string][];
+    };
+    const rows = parsed.audit_events;
+    const asEvents = (upTo: number) =>
+      rows
+        .filter(([id]) => id <= upTo)
+        .map(([id, action, service, at]) => ({ id, action, service, createdAt: new Date(at) }));
+
+    const audit = parsed.receipts.find((r) => r.kind === "audit");
+    const upTo = audit?.payload.up_to_event_id as number;
+    expect(auditDigest(asEvents(upTo))).toBe(audit?.hash);
+    expect(asEvents(upTo)).toHaveLength(audit?.payload.event_count as number);
+    // Without bastion's code too: the JCS of the rows themselves, hashed.
+    expect(sha256Hex(canonicalJson(rows.filter(([id]) => id <= upTo)))).toBe(audit?.hash);
+
+    const envelope = parsed.receipts.find((r) => r.kind === "envelope");
+    const signed = (envelope?.payload.request as typeof ENVELOPE_REQUEST).metadata as Record<string, string>;
+    expect(auditDigest(asEvents(Number(signed.audit_up_to)))).toBe(signed.audit_digest_at_envelope);
+  });
+
+  it("never ships an event past the highest bound a receipt carries", () => {
+    const later = { id: GOLDEN.recordUpTo + 1, action: "dossier.verified", service: "bastion", createdAt: new Date() };
+    const rows = bundle().audit_events;
+    const withLater = receiptsBundle({
+      dossier: row(),
+      evidence: [],
+      documents: [],
+      receipts: allReceipts(),
+      auditEvents: [...EVENTS, later],
+    }) as { audit_events: unknown[][] };
+    expect(withLater.audit_events).toEqual(rows);
+  });
+
+  it("carries no events for a dossier with no audit or envelope receipt", () => {
+    const b = receiptsBundle({
+      dossier: row(),
+      evidence: [],
+      documents: [],
+      receipts: [perfReceipt()],
+      auditEvents: EVENTS,
+    }) as { audit_events: unknown[] };
+    expect(b.audit_events).toEqual([]);
+  });
+
+  it("orders the events by id whatever order they arrive in", () => {
+    const b = receiptsBundle({
+      dossier: row(),
+      evidence: [],
+      documents: [],
+      receipts: allReceipts(),
+      auditEvents: [...EVENTS].reverse(),
+    }) as { audit_events: [number][] };
+    expect(b.audit_events.map(([id]) => id)).toEqual(
+      EVENTS.filter((e) => e.id <= GOLDEN.recordUpTo).map((e) => e.id),
+    );
+  });
+
   it("is canonical JSON: the same dossier always downloads as the same bytes", () => {
     const a = canonicalJson(
       receiptsBundle({
@@ -144,6 +241,7 @@ describe("receiptsBundle", () => {
         evidence: [evidence],
         documents: documents(),
         receipts: allReceipts(),
+        auditEvents: EVENTS,
       }),
     );
     const b = canonicalJson(
@@ -152,6 +250,7 @@ describe("receiptsBundle", () => {
         evidence: [evidence],
         documents: documents(),
         receipts: allReceipts(),
+        auditEvents: EVENTS,
       }),
     );
     expect(a).toBe(b);
@@ -166,6 +265,34 @@ describe("receiptsBundle", () => {
   });
 });
 
+describe("bundleAuditBound — how far the bundle's audit events reach", () => {
+  const withPayload = (r: StoredReceipt, payload: StoredReceipt["payload"]): StoredReceipt => ({
+    ...r,
+    payload,
+  });
+
+  it("is the audit receipt's bound when the record stage ran", () => {
+    expect(bundleAuditBound(allReceipts())).toBe(GOLDEN.recordUpTo);
+  });
+
+  it("is the envelope's signed bound when the dossier failed after sealing", () => {
+    expect(bundleAuditBound([perfReceipt(), envelopeReceipt()])).toBe(GOLDEN.envelopeUpTo);
+  });
+
+  it("is the higher of the two, whichever order the receipts come in", () => {
+    expect(bundleAuditBound([auditReceipt(), envelopeReceipt()])).toBe(GOLDEN.recordUpTo);
+    expect(bundleAuditBound([envelopeReceipt(), auditReceipt()])).toBe(GOLDEN.recordUpTo);
+  });
+
+  it("is null with neither receipt, or with neither payload readable", () => {
+    expect(bundleAuditBound([])).toBeNull();
+    expect(bundleAuditBound([perfReceipt()])).toBeNull();
+    expect(
+      bundleAuditBound([withPayload(auditReceipt(), { up_to: 3 }), withPayload(envelopeReceipt(), null)]),
+    ).toBeNull();
+  });
+});
+
 describe("receiptsBundle never publishes an internal error's message (review round 1)", () => {
   const SQL = "syntax error at or near \"FROM\" in SELECT password_hash FROM users WHERE id = 7";
 
@@ -175,6 +302,7 @@ describe("receiptsBundle never publishes an internal error's message (review rou
       evidence: [],
       documents: [],
       receipts: [],
+      auditEvents: [],
     });
     const json = canonicalJson(bundle);
     expect(json).not.toContain("SELECT");
@@ -188,6 +316,7 @@ describe("receiptsBundle never publishes an internal error's message (review rou
       evidence: [],
       documents: [],
       receipts: [],
+      auditEvents: [],
     });
     expect((bundle as { dossier: { error: string } }).dossier.error).toBe(
       "debate: paper-trail.debate: budget_exhausted",

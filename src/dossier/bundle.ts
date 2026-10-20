@@ -2,14 +2,18 @@ import { z } from "zod";
 import type { Dossier, DossierDocument, EvidenceItem } from "@/lib/db/schema";
 import type { Json } from "@/platform/canonical-json";
 import { publicDossierError } from "./public-error";
+import { type AuditEventForDigest, auditDigestRow } from "./receipt-math";
 import type { StoredReceipt } from "./receipts";
+import { auditBound, envelopeAuditBound } from "./verify";
 
 /**
  * The receipts bundle (spec 21 §6.3, §6.5), pure: everything a stranger needs to re-check a dossier
  * without bastion — its public fields (claim, verdict, request id), its evidence, its documents
- * (with the graph hashes the documents check re-fetches) and every receipt with its full payload.
- * Who made the dossier (`visitor`, `user_id`) is not in it. Served as canonical JSON, so the same
- * dossier always downloads as the same bytes.
+ * (with the graph hashes the documents check re-fetches), every receipt with its full payload, and
+ * the audit events its digests cover, each as the digest's own row (`[id, action, service,
+ * created_at]`), so both audit digests recompute from the download alone. Who made the dossier
+ * (`visitor`, `user_id`) is not in it, nor any event's actor or metadata. Served as canonical JSON,
+ * so the same dossier always downloads as the same bytes.
  */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -20,7 +24,35 @@ export type BundleInputs = {
   evidence: readonly EvidenceItem[];
   documents: readonly DossierDocument[];
   receipts: readonly StoredReceipt[];
+  /** The request's events up to `bundleAuditBound(receipts)`; any past it are left out. */
+  auditEvents: readonly AuditEventForDigest[];
 };
+
+/**
+ * How far the bundle's audit events reach: the highest event id a stored receipt binds a digest to
+ * (the audit receipt's `up_to_event_id`, the envelope's signed `audit_up_to`), or null when no
+ * receipt binds one — then the bundle carries no events.
+ */
+export function bundleAuditBound(receipts: readonly StoredReceipt[]): number | null {
+  const bounds = receipts.flatMap((r) => {
+    const bound =
+      r.kind === "audit" ? auditBound(r) : r.kind === "envelope" ? envelopeAuditBound(r) : null;
+    return bound === null ? [] : [bound];
+  });
+  return bounds.length === 0 ? null : Math.max(...bounds);
+}
+
+function auditEventsJson(
+  events: readonly AuditEventForDigest[],
+  receipts: readonly StoredReceipt[],
+): Json {
+  const bound = bundleAuditBound(receipts);
+  if (bound === null) return [];
+  return events
+    .filter((e) => e.id <= bound)
+    .sort((a, b) => a.id - b.id)
+    .map(auditDigestRow);
+}
 
 function dossierJson(d: Dossier): Json {
   return {
@@ -86,6 +118,7 @@ export function receiptsBundle(i: BundleInputs): Json {
     evidence: i.evidence.map(evidenceJson),
     documents: i.documents.map(documentJson),
     receipts: i.receipts.map(receiptJson),
+    audit_events: auditEventsJson(i.auditEvents, i.receipts),
   };
 }
 

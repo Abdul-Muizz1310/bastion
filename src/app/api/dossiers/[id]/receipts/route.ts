@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { bundleFilename, receiptsBundle } from "@/dossier/bundle";
+import { bundleAuditBound, bundleFilename, receiptsBundle } from "@/dossier/bundle";
 import { listDocuments } from "@/dossier/documents";
 import { listEvidence } from "@/dossier/evidence";
 import { listReceipts } from "@/dossier/receipts";
 import { findDossier } from "@/dossier/store";
+import { requestEvents } from "@/platform/audit/request-events";
 import { canonicalJson } from "@/platform/canonical-json";
 import { errorResponse } from "@/platform/gateway/http";
 import { createRateLimiter } from "@/platform/ratelimit";
@@ -12,9 +13,10 @@ import { visitorFromRequest } from "@/platform/visitor";
 /**
  * `GET /api/dossiers/[id]/receipts` (spec 21 §6.3, §6.5): the receipts bundle, a download named
  * `dossier-<id>.receipts.json`. Public: it holds the dossier's public fields, its evidence, its
- * documents and every receipt with its payload — what a stranger needs to re-check the dossier
- * without bastion — as canonical JSON. Never cached: a running dossier gains receipts. Ruling W:
- * limited to 30 a minute per visitor, since each download reads every receipt with its payload.
+ * documents, every receipt with its payload and the audit events its digests cover (up to the
+ * highest bound a receipt carries) — what a stranger needs to re-check the dossier without
+ * bastion — as canonical JSON. Never cached: a running dossier gains receipts. Ruling W: limited
+ * to 30 a minute per visitor, since each download reads every receipt with its payload.
  */
 
 export const dynamic = "force-dynamic";
@@ -42,7 +44,11 @@ export async function GET(req: Request, ctx: Context): Promise<Response> {
       listDocuments(dossier.id),
       listReceipts(dossier.id),
     ]);
-    const body = canonicalJson(receiptsBundle({ dossier, evidence, documents, receipts }));
+    const bound = bundleAuditBound(receipts);
+    const auditEvents = bound === null ? [] : await requestEvents(dossier.requestId, bound);
+    const body = canonicalJson(
+      receiptsBundle({ dossier, evidence, documents, receipts, auditEvents }),
+    );
     return new Response(body, {
       headers: {
         "content-type": "application/json; charset=utf-8",

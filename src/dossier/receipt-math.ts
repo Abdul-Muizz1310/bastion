@@ -101,10 +101,16 @@ export function auditDigest(events: readonly AuditEventForDigest[]): string {
     if (ids.has(e.id)) throw new RangeError(`auditDigest: event id ${e.id} appears twice`);
     ids.add(e.id);
   }
-  const rows: Json = [...events]
-    .sort((a, b) => a.id - b.id)
-    .map((e) => [e.id, e.action, e.service, e.createdAt.toISOString()]);
+  const rows: Json = [...events].sort((a, b) => a.id - b.id).map(auditDigestRow);
   return sha256Hex(canonicalJson(rows));
+}
+
+/**
+ * One event as the digest covers it — `[id, action, service, created_at]` — and as the receipts
+ * bundle publishes it, so the digest recomputes from the bundle alone. Never the actor or metadata.
+ */
+export function auditDigestRow(e: AuditEventForDigest): Json {
+  return [e.id, e.action, e.service, e.createdAt.toISOString()];
 }
 
 /** The highest event id in the set — the inclusive bound a digest is recomputed over — or 0. */

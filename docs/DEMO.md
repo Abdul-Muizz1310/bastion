@@ -41,7 +41,9 @@ reading a finished dossier needs no service at all, so start there.
 - Press **verify everything**. bastion fetches each issuer's published key and re-checks every
   signature and hash live: certificates, transcript, envelope, perf, audit, documents, steps.
 - Each check says pass, fail, unavailable (the issuer could not be asked — never a pass) or expired.
-- **download receipts** saves the whole bundle as canonical JSON, to check without bastion.
+- **download receipts** saves the whole bundle as canonical JSON — every receipt, the evidence and
+  the audit events the digests cover — so each hash, signature and digest can be recomputed
+  without bastion.
 
 ## 4. A workbench (25 s) — `/tools/inkprint`
 
