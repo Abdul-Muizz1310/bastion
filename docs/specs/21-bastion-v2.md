@@ -164,6 +164,52 @@ their pages; the perf receipt per service with any index suggestion; the envelop
 
 Each check is ✓ / ✗ / unavailable with the reason. The bundle downloads as `dossier-<id>.receipts.json`.
 
+**Verification (Task 9).** `POST /api/dossiers/[id]/verify` is public, limited to 10 a minute per visitor,
+spends no budget (every capability it calls is free) and runs for at most 120 s. Its calls go through the
+gateway as the visitor under the verify request's own id, never the dossier's. It stores no result; it
+appends one `dossier.verified` audit event with each check's state. It answers `{dossierId, checks}`,
+where each check is `{name, state, detail, items?}` and `state` is one of:
+
+- `pass`: recomputed, re-fetched, signature verified, and everything agrees;
+- `fail`: something was checked and does not hold, or the issuer answered 404/410 for it;
+- `unavailable`: the issuer could not be asked or answered unusably (asleep, 5xx, rate-limited, unexpected
+  body). Never a pass. A proven failure elsewhere in the same check still wins;
+- `expired`: an inkthread upload whose graph is gone by design (DR-0029).
+
+A check whose receipts the dossier lacks is omitted. Signatures are always checked against the key the
+issuer publishes now, never one carried by the dossier.
+
+| Check | What it does |
+|---|---|
+| certificates | `inkprint.verifyBatch` with each certificate id and the full certified text kept in its receipt. |
+| transcript | Re-fetch `transcript.json`. The stored copy must hash to the receipt and equal the live copy. The receipt's Ed25519 signature must verify against `paper-trail.receiptKey`. |
+| envelope | The manifest must hash to the receipt. The bundle must hash to the manifest's `c2pa.hash.data`. The signed bundle must name exactly the stored certificates, transcript (hash and signature), perf hash, request id and graph hashes. The signature must verify against `inkprint.publicKey`. |
+| perf | The stored payload must parse strictly and recompute to its hash. |
+| audit | The record receipt's digest over events ≤ `up_to_event_id` (with its count), and the envelope's signed digest over events ≤ `metadata.audit_up_to`, must both recompute. Later events never count. |
+| documents | Re-fetch each read document's graph; `graph_hash` and `sha256` must be unchanged. An upload answering 404/410 is `expired`. A sample answering 404 fails. |
+
+**What the issuers sign.** Both issuers sign the UTF-8 bytes of Python
+`json.dumps(v, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`. This is not JCS: floats are
+written as Python `repr` (`1.0`, `5e-05`) and keys sort by code point. bastion rebuilds those bytes
+(`src/platform/python-json.ts`, `src/dossier/issuer-forms.ts`). Fixtures produced by the issuers' own code
+prove the rebuild (`tests/fixtures/receipts/`).
+
+- **paper-trail:** it signs `{claim, verdict, confidence: float, rounds}`, where each round is
+  `{side, round: int, argument_md, citations[{type, ref, title}], confidence: float|null}`. The
+  `transcript_hash` it serves is its render node's SHA-256 of the same object with each round's
+  `confidence` key absent. A debate from before that node stored a hash gets the route's hash of the
+  signed form instead.
+- **inkprint:** it signs `{dossier_id, evidence_cert_ids (in order), debate_transcript_hash,
+  perf_receipt_hash, metadata, issued_at}`. `issued_at` is the manifest's `isoformat()` string
+  (`+00:00`), not `created_at` (`Z`).
+
+**Bundle.** `GET /api/dossiers/[id]/receipts` is public. It answers 404 for an unknown dossier. Otherwise
+it serves the canonical JSON of `{dossier, evidence, documents, receipts}` with
+`content-disposition: attachment`.
+
+- `dossier` holds the public fields only: no `visitor`, no `user_id`.
+- `documents` carries the graph hashes the documents check re-fetches.
+
 **Canonical form.** bastion's own receipts (the perf receipt, the audit digest, the envelope receipt's
 hash) are hashed over `canonicalJson`, whose output is **RFC 8785 (JCS)** for any I-JSON value: keys
 sorted by UTF-16 code units, no whitespace, numbers and strings exactly as ECMAScript's

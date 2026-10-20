@@ -23,6 +23,8 @@
 # misc
 .DS_Store
 *.pem
+# Public keys recorded from the issuers for tests (never a private key).
+!tests/fixtures/**/public-key.pem
 
 # debug
 npm-debug.log*

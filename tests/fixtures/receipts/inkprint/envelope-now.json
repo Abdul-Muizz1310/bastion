@@ -1,0 +1,91 @@
+{
+  "request": {
+    "dossier_id": "550e8400-e29b-41d4-a716-446655440000",
+    "evidence_cert_ids": [
+      "2b9f6a1e-4c3d-4e5f-9a7b-8c6d5e4f3a2b",
+      "3c0a7b2f-5d4e-4f60-8b8c-9d7e6f5a4b3c"
+    ],
+    "debate_transcript_hash": "5cf763b7b6ffad58ace87598b704dc435b07261ff7d7f606a87060699ffe2340",
+    "perf_receipt_hash": "7777777777777777777777777777777777777777777777777777777777777777",
+    "metadata": {
+      "request_id": "req-dossier-1",
+      "audit_digest_at_envelope": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_up_to": "8",
+      "graph_hashes": "",
+      "transcript_signature": "sig/with+chars==",
+      "debate_id": "889d7f2b-33c0-432a-b956-8a360f7b9497",
+      "zz_unicode": "Café — 東京 🚀"
+    }
+  },
+  "response": {
+    "envelope_id": "550e8400-e29b-41d4-a716-446655440000",
+    "envelope_manifest": {
+      "@context": "https://c2pa.org/statements/v1",
+      "version": "2.2",
+      "title": "Dossier envelope 550e8400-e29b-41d4-a716-446655440000",
+      "instance_id": "urn:uuid:550e8400-e29b-41d4-a716-446655440000",
+      "format": "application/json",
+      "claim_generator": "bastion/dossier-envelope",
+      "claim_generator_info": [
+        {
+          "name": "bastion",
+          "version": "0.1.0"
+        }
+      ],
+      "issued_at": "2026-10-20T08:27:42.226754+00:00",
+      "assertions": [
+        {
+          "label": "c2pa.ingredient.v2",
+          "data": {
+            "relationship": "inputTo",
+            "url": "/certificates/2b9f6a1e-4c3d-4e5f-9a7b-8c6d5e4f3a2b/manifest",
+            "instance_id": "urn:uuid:2b9f6a1e-4c3d-4e5f-9a7b-8c6d5e4f3a2b"
+          }
+        },
+        {
+          "label": "c2pa.ingredient.v2",
+          "data": {
+            "relationship": "inputTo",
+            "url": "/certificates/3c0a7b2f-5d4e-4f60-8b8c-9d7e6f5a4b3c/manifest",
+            "instance_id": "urn:uuid:3c0a7b2f-5d4e-4f60-8b8c-9d7e6f5a4b3c"
+          }
+        },
+        {
+          "label": "bastion.debate_transcript_hash",
+          "data": {
+            "alg": "sha256",
+            "hash": "5cf763b7b6ffad58ace87598b704dc435b07261ff7d7f606a87060699ffe2340"
+          }
+        },
+        {
+          "label": "bastion.perf_receipt_hash",
+          "data": {
+            "alg": "sha256",
+            "hash": "7777777777777777777777777777777777777777777777777777777777777777"
+          }
+        },
+        {
+          "label": "c2pa.hash.data",
+          "data": {
+            "alg": "sha256",
+            "hash": "fa1cc25e4be7c2d2f6bcf4693397683be656d0bd755d26fe0edec75cbf3a1683",
+            "pad": ""
+          }
+        }
+      ],
+      "signature": {
+        "alg": "Ed25519",
+        "key_id": "inkprint-ed25519-fixture",
+        "value": "1iZJ59OCL71f4KlW8epBw5qAr5iMHDQ7mfX/iLlBQdsrHplC6jsLHfV8IrQUyFR/zTf0ELPp6wmt75CutodjBw==",
+        "signed_assertions": [
+          "c2pa.ingredient.v2",
+          "bastion.debate_transcript_hash",
+          "bastion.perf_receipt_hash",
+          "c2pa.hash.data"
+        ]
+      }
+    },
+    "envelope_signature": "1iZJ59OCL71f4KlW8epBw5qAr5iMHDQ7mfX/iLlBQdsrHplC6jsLHfV8IrQUyFR/zTf0ELPp6wmt75CutodjBw==",
+    "created_at": "2026-10-20T08:27:42.226754Z"
+  }
+}

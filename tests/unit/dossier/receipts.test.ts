@@ -85,6 +85,7 @@ vi.mock("@/lib/db/client", () => {
 
 import {
   findReceipt,
+  listReceipts,
   recordTranscript,
   saveEnvelopeReceipt,
   saveReceiptOnce,
@@ -139,6 +140,24 @@ describe("findReceipt", () => {
   it("refuses a row Postgres should never hold", async () => {
     fake.selects.push([row({ kind: "invoice" })]);
     await expect(findReceipt(ID, "perf")).rejects.toThrow();
+  });
+});
+
+describe("listReceipts", () => {
+  it("returns every receipt of the dossier, parsed, as Postgres ordered them", async () => {
+    fake.selects.push([row({ kind: "certificate", ref: "c1" }), row({ kind: "audit" })]);
+    const all = await listReceipts(ID);
+    expect(all.map((r) => [r.kind, r.ref])).toEqual([
+      ["certificate", "c1"],
+      ["audit", "req-1"],
+    ]);
+    expect(all[0]).not.toHaveProperty("dossierId");
+    expect(fake.calls).toEqual([{ op: "select", table: receipts }]);
+  });
+
+  it("refuses a row Postgres should never hold", async () => {
+    fake.selects.push([row({ hash: 7 })]);
+    await expect(listReceipts(ID)).rejects.toThrow();
   });
 });
 

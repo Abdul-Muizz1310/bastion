@@ -80,6 +80,16 @@ export async function findReceipt(
   return firstOf(getDb(), dossierId, kind, ref);
 }
 
+/** Every receipt the dossier holds, oldest first: what verification and the bundle read. */
+export async function listReceipts(dossierId: string): Promise<StoredReceipt[]> {
+  const rows = await getDb()
+    .select()
+    .from(receipts)
+    .where(eq(receipts.dossierId, dossierId))
+    .orderBy(asc(receipts.createdAt), asc(receipts.id));
+  return rows.map(stored);
+}
+
 /**
  * Inside `tx`: the stored receipt of the kind, or this one inserted. The dossier row is locked
  * first, so concurrent saves for one dossier serialise and exactly one receipt is stored.
