@@ -92,14 +92,14 @@ describe("20-site: share card (case 8)", () => {
   });
 
   it("describes itself in its alt text", () => {
-    expect(shareCardAlt(SITE)).toBe("bastion — one gateway, every call audited.");
+    expect(shareCardAlt(SITE)).toBe("bastion — tools that hand you a receipt.");
   });
 
   it("renders the name, the comment, the highlight in the accent and the live host", () => {
     const html = renderToStaticMarkup(<ShareCard site={SITE} icon="data:image/svg+xml;base64," />);
     expect(html).toContain(">bastion<");
-    expect(html).toContain("// control plane · identity · audit");
-    expect(html).toMatch(/color:#a78bfa[^>]*>audited</);
+    expect(html).toContain("// 8 products · 1 signed receipt");
+    expect(html).toMatch(/color:#a78bfa[^>]*>receipt</);
     expect(html).toContain("bastion-six.vercel.app");
   });
 

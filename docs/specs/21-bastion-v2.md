@@ -47,6 +47,39 @@ truthful CSP (DR-0018), the dark terminal house style.
 Removed: `/login`, `/auth/callback`, `/whoami`, `/run`, `/dashboard` (folded into `/platform`), the
 forbidden/unauthorized interrupt pages, `/services/[id]` (folded into `/tools/[product]` and `/platform`).
 
+### 3.1 The shell and the home page
+
+**Shell.** Every page has a skip link to `#main`, one primary nav (map · tools · dossier · audit ·
+time-travel · platform → `/`, `/tools`, `/dossier`, `/audit`, `/time-travel`, `/platform`) with
+`aria-current="page"` on the active entry, and nothing sign-in related (no login, whoami or role).
+
+**System map.** An inline SVG drawn on the server: 8 product nodes with bastion at the centre and
+feathers-demo as feathers' generated service. Edges are exactly the dossier's flows: magpie → inkprint,
+inkthread → inkprint, inkgrid → inkthread, inkprint → paper-trail, {magpie, inkthread, inkprint,
+paper-trail} → slowquery (the services slowquery-detective instruments, §8), feathers → feathers-demo.
+Every node is a link to `/tools/<id>` whose accessible name is its name, its health state in words and
+its role. Health comes from one client island that polls `GET /api/platform/status` every 30 s.
+
+Invariants and cases:
+1. A product's state is the worst of its services' (down > unknown > asleep > live); a product with no
+   service (bastion) is live, because bastion is serving the page. Before the first answer every node
+   says "checking"; a failed request makes every service-backed node "unknown", never a guess.
+2. The state is always written in text beside a glyph; colour is never the only signal.
+3. Polls never overlap: the next one is scheduled 30 s after the previous one ends. A hidden tab does
+   not poll (each probe can wake a Render service) and catches up once when shown. Leaving the page
+   aborts the request in flight.
+4. The status body is parsed, not cast; a malformed body or a non-2xx answer counts as a failed request.
+5. No edge passes through a node, every edge starts on its source's border and ends on its target's.
+6. Reduced motion: no pulsing glyphs and no moving packets on the edges.
+
+**Gallery.** The 6 most recent `succeeded` dossiers among the 12 `GET /api/dossiers` returns, each as a
+receipt: verdict and confidence, evidence count, documents, products used, a link to `/d/<id>`. No
+finished dossier ⇒ an empty state that links to `/dossier`. The database unreachable ⇒ the page still
+renders, with the gallery marked unavailable.
+
+**Entry points.** Run a dossier (`/dossier`, with today's remaining debates when the budget store
+answers; nothing when it does not) · open a workbench (`/tools`) · read the audit log (`/audit`).
+
 ## 4. The capability layer (bastion)
 
 One module per product under `src/capabilities/<product>/`, each with:

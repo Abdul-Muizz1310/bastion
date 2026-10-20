@@ -44,7 +44,7 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
   const repo = product.repos[0];
 
   return (
-    <PageFrame active="registry">
+    <PageFrame active="platform">
       <div className="space-y-6">
         <div>
           <Link href="/dashboard" className="font-mono text-xs text-fg-faint hover:text-fg-muted">

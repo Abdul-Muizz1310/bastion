@@ -1,0 +1,277 @@
+import type { ProductId } from "@/platform/registry/products";
+
+/**
+ * The system map's geometry (spec 21 §3.1), as data: which flows exist, where every node sits and how
+ * every edge runs, for a wide (desktop) and a tall (phone) canvas. Pure, so its honesty is testable:
+ * edges start on their source's border, end on their target's, and never cross a node.
+ */
+
+export type MapNodeId = ProductId | "feathers-demo";
+export type FlowKind = "evidence" | "telemetry" | "scaffold";
+export type FlowId =
+  | "magpie-inkprint"
+  | "inkgrid-inkthread"
+  | "inkthread-inkprint"
+  | "inkprint-paper-trail"
+  | "services-slowquery"
+  | "feathers-scaffold";
+
+export type Flow = {
+  id: FlowId;
+  from: readonly ProductId[];
+  to: MapNodeId;
+  kind: FlowKind;
+  /** Printed on the edge. */
+  label: string;
+  /** One sentence for the text description the drawing points to. */
+  summary: string;
+};
+
+/** Exactly the dossier's flows (spec 21 §3.1); slowquery's sources are the services it instruments (§8). */
+export const FLOWS: readonly Flow[] = [
+  {
+    id: "magpie-inkprint",
+    from: ["magpie"],
+    to: "inkprint",
+    kind: "evidence",
+    label: "web evidence",
+    summary: "magpie scrapes web pages live, and inkprint signs each item it brings back.",
+  },
+  {
+    id: "inkgrid-inkthread",
+    from: ["inkgrid"],
+    to: "inkthread",
+    kind: "evidence",
+    label: "exact tables",
+    summary: "inkgrid reads a PDF’s tables and text exactly; inkthread maps them into a graph.",
+  },
+  {
+    id: "inkthread-inkprint",
+    from: ["inkthread"],
+    to: "inkprint",
+    kind: "evidence",
+    label: "PDF passages",
+    summary: "inkthread hands each quoted passage, with its page and its why, to inkprint to sign.",
+  },
+  {
+    id: "inkprint-paper-trail",
+    from: ["inkprint"],
+    to: "paper-trail",
+    kind: "evidence",
+    label: "signed evidence",
+    summary: "paper-trail’s proponent, skeptic and judge argue only over that signed evidence.",
+  },
+  {
+    id: "services-slowquery",
+    from: ["magpie", "inkthread", "inkprint", "paper-trail"],
+    to: "slowquery",
+    kind: "telemetry",
+    label: "queries · by request id",
+    summary: "slowquery measures every query those four services ran for the dossier’s request id.",
+  },
+  {
+    id: "feathers-scaffold",
+    from: ["feathers"],
+    to: "feathers-demo",
+    kind: "scaffold",
+    label: "generates",
+    summary: "feathers generated feathers-demo, a live FastAPI service, from one YAML schema.",
+  },
+];
+
+/** What each node does, in a few words; part of each node's accessible name. */
+export const NODE_ROLE: Readonly<Record<ProductId, string>> = {
+  bastion: "runs every call",
+  magpie: "scrapes the web",
+  inkgrid: "reads PDF tables",
+  inkthread: "maps a PDF’s parts",
+  inkprint: "signs evidence",
+  "paper-trail": "debates the claim",
+  slowquery: "measures queries",
+  feathers: "scaffolds APIs",
+};
+
+/** Reading and tab order: the hub first, then the products in the order a dossier uses them. */
+export const MAP_ORDER: readonly ProductId[] = [
+  "bastion",
+  "magpie",
+  "inkgrid",
+  "inkthread",
+  "inkprint",
+  "paper-trail",
+  "slowquery",
+  "feathers",
+];
+
+export type Point = readonly [number, number];
+export type Box = { x: number; y: number; w: number; h: number };
+export type Segment = { points: readonly Point[]; arrow: boolean };
+export type FlowGeometry = {
+  segments: readonly Segment[];
+  /** Where a source's line joins a shared bus. */
+  junctions: readonly Point[];
+  label: { x: number; y: number; anchor: "start" | "middle" | "end" };
+};
+
+export type MapLayout = {
+  id: "wide" | "tall";
+  width: number;
+  height: number;
+  /** Font sizes in canvas units. */
+  type: { name: number; hub: number; meta: number; label: number };
+  nodes: Readonly<Record<MapNodeId, Box>>;
+  flows: Readonly<Record<FlowId, FlowGeometry>>;
+};
+
+const seg = (arrow: boolean, ...points: Point[]): Segment => ({ points, arrow });
+
+/** Desktop: sources on the left, signing and debate on the right, bastion and slowquery between. */
+export const WIDE: MapLayout = {
+  id: "wide",
+  width: 1200,
+  height: 640,
+  type: { name: 17, hub: 26, meta: 12.5, label: 11.5 },
+  nodes: {
+    magpie: { x: 52, y: 52, w: 196, h: 84 },
+    inkthread: { x: 52, y: 278, w: 196, h: 84 },
+    inkgrid: { x: 52, y: 504, w: 196, h: 84 },
+    inkprint: { x: 952, y: 52, w: 196, h: 84 },
+    "paper-trail": { x: 952, y: 278, w: 196, h: 84 },
+    feathers: { x: 952, y: 504, w: 196, h: 84 },
+    bastion: { x: 470, y: 250, w: 260, h: 140 },
+    slowquery: { x: 502, y: 504, w: 196, h: 84 },
+    "feathers-demo": { x: 752, y: 526, w: 132, h: 40 },
+  },
+  flows: {
+    "magpie-inkprint": {
+      segments: [seg(true, [248, 80], [952, 80])],
+      junctions: [],
+      label: { x: 600, y: 70, anchor: "middle" },
+    },
+    "inkgrid-inkthread": {
+      segments: [seg(true, [150, 504], [150, 362])],
+      junctions: [],
+      label: { x: 162, y: 437, anchor: "start" },
+    },
+    "inkthread-inkprint": {
+      segments: [seg(true, [248, 320], [300, 320], [300, 112], [952, 112])],
+      junctions: [],
+      label: { x: 600, y: 134, anchor: "middle" },
+    },
+    "inkprint-paper-trail": {
+      segments: [seg(true, [1050, 136], [1050, 278])],
+      junctions: [],
+      label: { x: 1038, y: 211, anchor: "end" },
+    },
+    "services-slowquery": {
+      segments: [
+        seg(false, [52, 104], [22, 104], [22, 616], [600, 616]),
+        seg(false, [52, 330], [22, 330]),
+        seg(false, [1148, 104], [1178, 104], [1178, 616], [600, 616]),
+        seg(false, [1148, 330], [1178, 330]),
+        seg(true, [600, 616], [600, 588]),
+      ],
+      junctions: [
+        [22, 330],
+        [1178, 330],
+        [600, 616],
+      ],
+      label: { x: 612, y: 607, anchor: "start" },
+    },
+    "feathers-scaffold": {
+      segments: [seg(true, [952, 546], [884, 546])],
+      junctions: [],
+      label: { x: 918, y: 534, anchor: "middle" },
+    },
+  },
+};
+
+/** Phone: the same flows top to bottom, slowquery's bus down both sides. */
+export const TALL: MapLayout = {
+  id: "tall",
+  width: 400,
+  height: 944,
+  type: { name: 15, hub: 22, meta: 12.5, label: 11.5 },
+  nodes: {
+    magpie: { x: 30, y: 24, w: 160, h: 80 },
+    inkgrid: { x: 210, y: 24, w: 160, h: 80 },
+    inkthread: { x: 210, y: 150, w: 160, h: 80 },
+    inkprint: { x: 30, y: 276, w: 160, h: 80 },
+    "paper-trail": { x: 30, y: 402, w: 160, h: 80 },
+    bastion: { x: 86, y: 528, w: 228, h: 112 },
+    slowquery: { x: 120, y: 690, w: 160, h: 80 },
+    feathers: { x: 30, y: 840, w: 160, h: 80 },
+    "feathers-demo": { x: 246, y: 862, w: 124, h: 36 },
+  },
+  flows: {
+    "magpie-inkprint": {
+      segments: [seg(true, [110, 104], [110, 276])],
+      junctions: [],
+      label: { x: 118, y: 194, anchor: "start" },
+    },
+    "inkgrid-inkthread": {
+      segments: [seg(true, [290, 104], [290, 150])],
+      junctions: [],
+      label: { x: 298, y: 131, anchor: "start" },
+    },
+    "inkthread-inkprint": {
+      segments: [seg(true, [290, 230], [290, 300], [190, 300])],
+      junctions: [],
+      label: { x: 298, y: 270, anchor: "start" },
+    },
+    "inkprint-paper-trail": {
+      segments: [seg(true, [110, 356], [110, 402])],
+      junctions: [],
+      label: { x: 118, y: 383, anchor: "start" },
+    },
+    "services-slowquery": {
+      segments: [
+        seg(false, [30, 74], [10, 74], [10, 800], [200, 800]),
+        seg(false, [30, 326], [10, 326]),
+        seg(false, [30, 452], [10, 452]),
+        seg(false, [370, 200], [390, 200], [390, 800], [200, 800]),
+        seg(true, [200, 800], [200, 770]),
+      ],
+      junctions: [
+        [10, 326],
+        [10, 452],
+        [200, 800],
+      ],
+      label: { x: 208, y: 791, anchor: "start" },
+    },
+    "feathers-scaffold": {
+      segments: [seg(true, [190, 880], [246, 880])],
+      junctions: [],
+      label: { x: 308, y: 852, anchor: "middle" },
+    },
+  },
+};
+
+export const LAYOUTS: readonly MapLayout[] = [WIDE, TALL];
+
+/** An SVG path through the points, each corner rounded by at most `radius` (half the shorter leg). */
+export function pathOf(points: readonly Point[], radius = 10): string {
+  if (points.length < 2) throw new RangeError("pathOf: a path needs at least two points");
+  const fmt = (n: number) => String(Math.round(n * 100) / 100);
+  const [x0, y0] = points[0] as Point;
+  let d = `M${fmt(x0)} ${fmt(y0)}`;
+  for (let i = 1; i < points.length; i++) {
+    const [px, py] = points[i - 1] as Point;
+    const [cx, cy] = points[i] as Point;
+    const next = points[i + 1];
+    if (!next) {
+      d += `L${fmt(cx)} ${fmt(cy)}`;
+      break;
+    }
+    const [nx, ny] = next;
+    const inLen = Math.hypot(cx - px, cy - py);
+    const outLen = Math.hypot(nx - cx, ny - cy);
+    const r = Math.min(radius, inLen / 2, outLen / 2);
+    const ax = cx - ((cx - px) / inLen) * r;
+    const ay = cy - ((cy - py) / inLen) * r;
+    const bx = cx + ((nx - cx) / outLen) * r;
+    const by = cy + ((ny - cy) / outLen) * r;
+    d += `L${fmt(ax)} ${fmt(ay)}Q${fmt(cx)} ${fmt(cy)} ${fmt(bx)} ${fmt(by)}`;
+  }
+  return d;
+}

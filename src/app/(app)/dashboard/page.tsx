@@ -33,7 +33,7 @@ export default async function DashboardPage() {
   }
 
   return (
-    <PageFrame active="registry" statusRight={`${PRODUCTS.length} products`}>
+    <PageFrame active="platform" statusRight={`${PRODUCTS.length} products`}>
       <div className="space-y-8">
         <div>
           <p className="font-mono text-xs text-fg-faint">{"// service_registry"}</p>
