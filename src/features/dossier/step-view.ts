@@ -1,4 +1,5 @@
 import type { Stage, StepRow, StepStatus } from "@/dossier/stages";
+import { type OutputSummary, type StepSummaryRow, summarize } from "@/dossier/step-summary";
 import type { Json } from "@/platform/canonical-json";
 
 /**
@@ -25,44 +26,39 @@ export type StepView = {
 
 const iso = (d: Date | null): string | null => (d === null ? null : d.toISOString());
 
-export function stepView(row: StepRow): StepView {
+/** bastion's own failures, whose recorded text carries an exception's message after the code. */
+export const INTERNAL_ERRORS = ["stage_threw", "invalid_outcome"] as const;
+
+/**
+ * The error as the page may publish it (review round 1): an internal error is reduced to its bare
+ * code — an exception's message can name hosts, queries or secrets — and anything else (a
+ * downstream code with the gateway's own detail, a timeout) is kept as recorded.
+ */
+export function publicError(error: string | null): string | null {
+  if (error === null) return null;
+  const internal = INTERNAL_ERRORS.find((code) => error === code || error.startsWith(`${code}:`));
+  return internal ?? error;
+}
+
+/** A full row (the page) or a summary row (the stream): the view is the same either way. */
+export function stepView(row: StepRow | StepSummaryRow): StepView {
   const waits = row.status === "pending" || row.status === "waiting";
   return {
     stage: row.stage,
     status: row.status,
     attempt: row.attempt,
-    error: row.error,
+    error: publicError(row.error),
     nextAt: waits ? row.notBefore.toISOString() : null,
     leaseUntil: row.leaseUntil.getTime() > 0 ? row.leaseUntil.toISOString() : null,
     startedAt: iso(row.startedAt),
     finishedAt: iso(row.finishedAt),
-    note: stepNote(row.stage, row.status, row.output),
+    note: noteOf(row.stage, row.status, "summary" in row ? row.summary : summarize(row.output)),
   };
 }
 
 /** What makes two views of one stage different enough to send again. */
 export function stepFingerprint(v: StepView): string {
   return JSON.stringify([v.status, v.attempt, v.error, v.nextAt, v.leaseUntil, v.note]);
-}
-
-type Obj = { readonly [key: string]: Json };
-
-function obj(value: Json): Obj | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : null;
-}
-
-function strings(value: Json | undefined): string[] | null {
-  return Array.isArray(value) && value.every((v) => typeof v === "string")
-    ? (value as string[])
-    : null;
-}
-
-function str(value: Json | undefined): string | null {
-  return typeof value === "string" && value !== "" ? value : null;
-}
-
-function num(value: Json | undefined): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 const SKIPPED: Readonly<Record<string, string>> = {
@@ -73,90 +69,75 @@ const SKIPPED: Readonly<Record<string, string>> = {
   no_certificates: "nothing was certified, so there is no envelope",
 };
 
-function skippedNote(output: Json): string {
-  const reason = str(obj(output)?.reason);
-  if (reason === null) return "skipped";
-  return SKIPPED[reason] ?? `skipped: ${reason}`;
+function skippedNote(o: OutputSummary): string {
+  if (o.reason === null) return "skipped";
+  return SKIPPED[o.reason] ?? `skipped: ${o.reason}`;
 }
 
 function count(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-function waitingNote(stage: Stage, output: Json): string | null {
+function waitingNote(stage: Stage, o: OutputSummary): string | null {
   switch (stage) {
-    case "wake": {
-      const asleep = strings(obj(output)?.asleep);
-      return asleep !== null && asleep.length > 0
-        ? `waiting for ${asleep.join(", ")} to wake`
+    case "wake":
+      return o.asleep !== null && o.asleep.length > 0
+        ? `waiting for ${o.asleep.join(", ")} to wake`
         : "waiting for the services to wake";
-    }
     case "read":
       return "waiting for inkthread to finish reading";
-    case "debate": {
-      const id = str(obj(output)?.debateId);
-      return id === null ? null : `debate ${id.slice(0, 8)} is running`;
-    }
+    case "debate":
+      return o.debateId === null ? null : `debate ${o.debateId.slice(0, 8)} is running`;
     default:
       return null;
   }
 }
 
-function okNote(stage: Stage, output: Json): string | null {
-  const o = obj(output);
+function okNote(stage: Stage, o: OutputSummary): string | null {
   switch (stage) {
-    case "wake": {
-      const live = strings(o?.live);
-      return live === null ? null : `live: ${live.join(", ")}`;
-    }
+    case "wake":
+      return o.live === null ? null : `live: ${o.live.join(", ")}`;
     case "gather":
-      return Array.isArray(output) ? count(output.length, "web candidate", "web candidates") : null;
+      return o.length === null ? null : count(o.length, "web candidate", "web candidates");
     case "read":
-      return Array.isArray(output)
-        ? count(output.length, "passage or table", "passages and tables")
-        : null;
-    case "seal": {
-      const certified = num(o?.certified);
-      const total = num(o?.total);
-      return certified === null || total === null ? null : `certified ${certified} of ${total}`;
-    }
-    case "debate": {
-      const verdict = str(o?.verdict);
-      const confidence = num(o?.confidence);
-      if (verdict === null) return null;
-      return confidence === null
-        ? verdict.toLowerCase()
-        : `${verdict.toLowerCase()} · ${Math.round(confidence * 100)}% confidence`;
-    }
-    case "measure": {
-      const hash = str(o?.perfReceiptHash);
-      return hash === null ? null : `perf receipt ${hash.slice(0, 8)}`;
-    }
-    case "envelope": {
-      const id = str(o?.envelopeId);
-      return id === null ? null : `envelope ${id.slice(0, 8)}`;
-    }
-    case "record": {
-      const digest = str(o?.auditDigest);
-      return digest === null ? null : `audit digest ${digest.slice(0, 8)}`;
-    }
+      return o.length === null ? null : count(o.length, "passage or table", "passages and tables");
+    case "seal":
+      return o.certified === null || o.total === null
+        ? null
+        : `certified ${o.certified} of ${o.total}`;
+    case "debate":
+      if (o.verdict === null) return null;
+      return o.confidence === null
+        ? o.verdict.toLowerCase()
+        : `${o.verdict.toLowerCase()} · ${Math.round(o.confidence * 100)}% confidence`;
+    case "measure":
+      return o.perfReceiptHash === null ? null : `perf receipt ${o.perfReceiptHash.slice(0, 8)}`;
+    case "envelope":
+      return o.envelopeId === null ? null : `envelope ${o.envelopeId.slice(0, 8)}`;
+    case "record":
+      return o.auditDigest === null ? null : `audit digest ${o.auditDigest.slice(0, 8)}`;
   }
 }
 
-/** One line about a row's output, or null when there is nothing to say (or it cannot be read). */
-export function stepNote(stage: Stage, status: StepStatus, output: Json): string | null {
+/** One line about a row's output summary, or null when there is nothing to say. */
+export function noteOf(stage: Stage, status: StepStatus, o: OutputSummary): string | null {
   switch (status) {
     case "skipped":
-      return skippedNote(output);
+      return skippedNote(o);
     case "waiting":
-      return waitingNote(stage, output);
+      return waitingNote(stage, o);
     case "ok":
-      return okNote(stage, output);
+      return okNote(stage, o);
     case "pending":
     case "running":
     case "error":
       return null;
   }
+}
+
+/** One line about a row's output, or null when there is nothing to say (or it cannot be read). */
+export function stepNote(stage: Stage, status: StepStatus, output: Json): string | null {
+  return noteOf(stage, status, summarize(output));
 }
 
 const STAGE_ORDER: readonly Stage[] = [

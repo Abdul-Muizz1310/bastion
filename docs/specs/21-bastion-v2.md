@@ -446,11 +446,21 @@ Invariants:
 its title comes from the id alone. A **succeeded** dossier is the permanent receipt, rendered on
 the server so it is crawlable. A **pending or running** one is a client island that follows the run
 and, once it is done, re-renders the page as its receipt. A **failed** one shows its timeline with
-"retry from this stage" and every receipt it already holds.
+"retry from this stage" and every receipt it already holds. A dossier with no step rows (v1) is
+shown as it is, statically: nothing follows or nudges it (Ruling AK).
+
+*The live card* (review round 1). While the island follows a run, the verdict slip beside the claim
+is fed by the same stream: its status, verdict stamp and confidence change with each `status`
+event. Counts the stream does not carry are never shown as stale zeros: the evidence line reads
+seal's "certified N of M" once seal is ok, else "after seal"; the envelope line reads "after the
+run" until the envelope stage is ok.
 
 *The live run.* The island reads `GET /api/dossiers/[id]/stream` (SSE) and shows the eight stages
 (`StageTimeline`). The route polls the dossier and its `dossier_steps` every 2 s (reading the dossier
-first, so a terminal status is never seen before the step that ended it) and sends:
+first, so a terminal status is never seen before the step that ended it). It reads only what the
+events carry — each row's scalar columns and a few small projections of its output (an array's
+length, `certified`, `total`, `debateId`, `verdict`, `confidence`, `reason`, the woken services, the
+receipt ids) — never a stage's whole output, which for gather holds whole web pages. It sends:
 
 - `step` — `{stage, status, attempt, error, nextAt, leaseUntil, startedAt, finishedAt, note}` for every
   row on the first tick and for each row whose status, attempt, error, `nextAt`, `leaseUntil` or
@@ -459,9 +469,18 @@ first, so a terminal status is never seen before the step that ended it) and sen
   row's output (why it was skipped, what it waits for, what it produced), never the output itself.
 - `status` — `{status, verdict, confidence}` on the first tick and whenever one of them changes;
 - `done` — `{status, verdict, confidence}` once the status is succeeded or failed, then the stream
-  ends (a deleted dossier ends with `{status: "failed", reason: "dossier_deleted"}`);
-- `heartbeat` every 15 s and `timeout` after 140 polls, so a stream ends within `maxDuration` (300 s);
-  the island reconnects. A client that disconnects stops the polling.
+  ends (a deleted dossier ends with `{status: "failed", reason: "dossier_deleted"}`; a dossier with
+  no step rows ends at once with `reason: "no_steps"`: nothing will ever move it);
+- `heartbeat` every 15 s, and `timeout` once 270 s of wall-clock time have passed since the stream
+  opened (however slow the reads were), so a stream ends within `maxDuration` (300 s); the island
+  reconnects. A client that disconnects stops the polling.
+
+The island's end of it (Ruling AK, review round 1): every event is parsed and a malformed one
+dropped — except `done`, which ends the stream even when its body does not parse (the page then
+renders again from the server's truth). A stream that fails to open five times in a row without
+once opening (a 404, a 500) stops reconnecting and says so, with a reload. A hidden tab closes the
+stream and pauses the nudge; when the tab is shown again the stream reopens (its first tick sends
+every row again) and the nudge plans afresh.
 
 *The nudge* (carry from Task 5: after a `stage_timeout` nothing advances by itself). The frontier
 stage — the first one that is not ok or skipped — is **due** when it is running and its lease has
@@ -479,7 +498,9 @@ skipped), with the attempt when it is past the first, the note, and the time
 stage carries "retry from this stage" (`POST /api/dossiers/[id]/retry`), disabled while that call
 is in flight; its refusal (409, 429) is said, and its success re-renders the page. Step rows that are not
 one per stage (only tampering does that; the `steps` check fails them) are shown as they are, with
-a note, and the page neither follows nor nudges that dossier.
+a note, and the page neither follows nor nudges that dossier. An internal error of bastion's own
+(`stage_threw`, `invalid_outcome`) is published as its bare code — never the exception's message —
+and shown as "bastion hit an internal error running this stage", with the retry.
 
 *The receipt* (§6.5), from what bastion stored:
 - the claim, the verdict and its confidence;
@@ -489,9 +510,14 @@ a note, and the page neither follows nor nudges that dossier.
 - the transcript (the one the envelope names, else the latest), each round in order; every
   `[cert:<id>]` in an argument links to the evidence row holding that certificate (`#e-<key>`); a
   certificate no row holds is said, unlinked. URL citations link out only when http(s);
-- each document's pages with its excerpts drawn as boxes (`PageWithBoxes`, page sizes from
-  `inkthread.graph`, behind a wake gate on inkthread). An upload whose graph answers 404 or 410 says
-  its pages are gone (DR-0029) and that the quoted passages remain in the dossier;
+- every outbound link taken from scraped or model-written content (a web evidence row's URL, a
+  transcript's URL citation) carries `rel="nofollow ugc noreferrer"` (Ruling AK);
+- each document's quoted pages, each anchored `doc-<id>-p<N>` whatever happens next (the evidence
+  table's locators link there), listing the excerpts on it. Ruling AJ: nothing wakes inkthread
+  for a visitor who only reads; "show on its pages" wakes it (a wake gate, opened on demand), reads
+  the page sizes from `inkthread.graph` and draws each excerpt as a box (`PageWithBoxes`). An upload
+  whose graph answers 404 or 410 says its pages are gone (DR-0029) and that the quoted passages
+  remain in the dossier;
 - the perf receipt per service: each query's fingerprint, calls and times, and its suggestions'
   exact SQL; a service that did not answer says why;
 - the envelope: its id, signature, manifest hash and the metadata inkprint signed;

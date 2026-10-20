@@ -58,6 +58,20 @@ describe("stepView", () => {
     expect(stepView(stepRow("seal", { status, notBefore: NEXT })).nextAt).toBeNull();
   });
 
+  it.each([
+    ["stage_threw: connect ECONNREFUSED 10.0.0.7:5432 password=hunter2", "stage_threw"],
+    ["invalid_outcome: retryInMs must be a whole number of ms in 0..270000", "invalid_outcome"],
+  ])("publishes an internal error as its bare code, never the exception's message (%s)", (raw, code) => {
+    const v = stepView(stepRow("seal", { status: "error", error: raw }));
+    expect(v.error).toBe(code);
+    expect(JSON.stringify(v)).not.toContain(raw.slice(code.length + 2));
+  });
+
+  it("keeps a downstream error as recorded (its code and the gateway's own detail)", () => {
+    const v = stepView(stepRow("seal", { status: "error", error: "inkprint.certifyBatch: downstream_error (422)" }));
+    expect(v.error).toBe("inkprint.certifyBatch: downstream_error (422)");
+  });
+
   it("never carries the output itself (gather's candidates hold whole pages)", () => {
     const big = Array.from({ length: 3 }, (_, i) => ({ key: `w-${i}`, text: "x".repeat(10_000) }));
     const v = stepView(stepRow("gather", { output: big }));

@@ -1,4 +1,5 @@
-import { and, eq, lt, lte } from "drizzle-orm";
+import { and, eq, lt, lte, sql } from "drizzle-orm";
+import { z } from "zod/v4";
 import { getDb } from "@/lib/db/client";
 import { dossierDocuments, dossierSteps, dossiers } from "@/lib/db/schema";
 import {
@@ -13,6 +14,7 @@ import {
   type StepRow,
   stepRowSchema,
 } from "./stages";
+import type { OutputSummary, StepSummaryRow } from "./step-summary";
 
 /**
  * The step machine's Postgres adapter (spec 21 §6.2). Every decision is made by the pure functions
@@ -86,6 +88,109 @@ export async function findDossier(id: string): Promise<DossierRow | null> {
 export async function loadSteps(dossierId: string): Promise<StepRow[]> {
   if (!UUID.test(dossierId)) return [];
   return selectSteps(getDb(), dossierId);
+}
+
+/*
+ * The stream's read (spec 21 §6.6): every column but `output`, and a few small projections of it —
+ * what `summarize` (./step-summary) reads, with the same types — so a 2 s poll never ships a
+ * stage's whole output (gather's holds whole web pages). The keys are constants of this module.
+ */
+const out = dossierSteps.output;
+const field = (key: string) => sql.raw(`'${key}'`);
+const text = (key: string) =>
+  sql<
+    string | null
+  >`case when jsonb_typeof(${out}->${field(key)}) = 'string' then nullif(${out}->>${field(key)}, '') end`;
+const number = (key: string) =>
+  sql<
+    number | null
+  >`case when jsonb_typeof(${out}->${field(key)}) = 'number' then (${out}->>${field(key)})::float8 end`;
+const names = (key: string) =>
+  sql<
+    string[] | null
+  >`case when jsonb_typeof(${out}->${field(key)}) = 'array' and not exists (select 1 from jsonb_array_elements(${out}->${field(key)}) as e(v) where jsonb_typeof(e.v) <> 'string') then ${out}->${field(key)} end`;
+
+const summarySchema: z.ZodType<OutputSummary> = z.object({
+  length: z.number().int().nonnegative().nullable(),
+  reason: z.string().nullable(),
+  live: z.array(z.string()).nullable(),
+  asleep: z.array(z.string()).nullable(),
+  certified: z.number().nullable(),
+  total: z.number().nullable(),
+  debateId: z.string().nullable(),
+  verdict: z.string().nullable(),
+  confidence: z.number().nullable(),
+  perfReceiptHash: z.string().nullable(),
+  envelopeId: z.string().nullable(),
+  auditDigest: z.string().nullable(),
+});
+
+const summaryRowSchema = stepRowSchema.omit({ output: true }).extend({ summary: summarySchema });
+
+export async function loadStepSummaries(dossierId: string): Promise<StepSummaryRow[]> {
+  if (!UUID.test(dossierId)) return [];
+  const rows = await getDb()
+    .select({
+      dossierId: dossierSteps.dossierId,
+      stage: dossierSteps.stage,
+      status: dossierSteps.status,
+      attempt: dossierSteps.attempt,
+      leaseUntil: dossierSteps.leaseUntil,
+      notBefore: dossierSteps.notBefore,
+      startedAt: dossierSteps.startedAt,
+      finishedAt: dossierSteps.finishedAt,
+      error: dossierSteps.error,
+      length: sql<
+        number | null
+      >`case when jsonb_typeof(${out}) = 'array' then jsonb_array_length(${out}) end`,
+      reason: text("reason"),
+      live: names("live"),
+      asleep: names("asleep"),
+      certified: number("certified"),
+      total: number("total"),
+      debateId: text("debateId"),
+      verdict: text("verdict"),
+      confidence: number("confidence"),
+      perfReceiptHash: text("perfReceiptHash"),
+      envelopeId: text("envelopeId"),
+      auditDigest: text("auditDigest"),
+    })
+    .from(dossierSteps)
+    .where(eq(dossierSteps.dossierId, dossierId));
+  return rows.map(
+    ({
+      length,
+      reason,
+      live,
+      asleep,
+      certified,
+      total,
+      debateId,
+      verdict,
+      confidence,
+      perfReceiptHash,
+      envelopeId,
+      auditDigest,
+      ...columns
+    }) =>
+      summaryRowSchema.parse({
+        ...columns,
+        summary: {
+          length,
+          reason,
+          live,
+          asleep,
+          certified,
+          total,
+          debateId,
+          verdict,
+          confidence,
+          perfReceiptHash,
+          envelopeId,
+          auditDigest,
+        },
+      }),
+  );
 }
 
 /**
