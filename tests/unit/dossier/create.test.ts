@@ -36,6 +36,7 @@ describe("createBodySchema", () => {
     ["a repeated document", { claim: "c", documents: [sample(DOC_A), sample(DOC_A)] }],
     ["an unknown mode", { claim: "c", sources: ["hn"], mode: "yolo" }],
     ["an unknown key", { claim: "c", sources: ["hn"], extra: 1 }],
+    ["a non-uuid job_id", { claim: "c", documents: [{ document_id: DOC_A, kind: "upload", job_id: "j1" }] }],
     ["a non-uuid document", { claim: "c", documents: [sample("nope")] }],
   ])("refuses %s", (_name, body) => {
     expect(parse(body).success).toBe(false);
@@ -127,6 +128,16 @@ describe("createDossier", () => {
     );
     const docs = vi.mocked(d.insert).mock.calls[0]?.[2];
     expect(docs?.map((x) => x.jobId)).toEqual([null, JOB]);
+  });
+
+  it("still answers ok (and the caller can start the runner) when the audit throws", async () => {
+    const d = deps({ audit: vi.fn().mockRejectedValue(new Error("audit down")) });
+    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await createDossier(input(), ctx, d);
+    expect(r).toMatchObject({ ok: true });
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+    expect(d.release).not.toHaveBeenCalled();
   });
 
   it("refuses an unknown source with 422 before reserving anything", async () => {

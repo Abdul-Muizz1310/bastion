@@ -102,7 +102,7 @@ describe.skipIf(!LOCAL)("createDossier (Postgres)", () => {
     const input = createBodySchema.parse({
       claim: "integration: a failed write leaves nothing",
       sources: [],
-      documents: [{ document_id: randomUUID(), kind: "upload", job_id: "ok" }],
+      documents: [{ document_id: randomUUID(), kind: "upload", job_id: randomUUID() }],
     });
     // A NUL byte in a text column is refused by Postgres only when the documents insert runs,
     // after the dossier and its steps were written inside the same transaction.

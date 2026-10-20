@@ -26,7 +26,7 @@ export const MODES = ["rapid", "standard", "adversarial"] as const;
 const documentRef = z.strictObject({
   document_id: z.uuid(),
   kind: z.enum(["sample", "upload"]),
-  job_id: z.string().min(1).max(128).optional(),
+  job_id: z.uuid().optional(),
 });
 
 export const createBodySchema = z
@@ -146,18 +146,23 @@ export async function createDossier(
     throw err;
   }
 
-  await deps.audit({
-    actor: ctx.visitor,
-    action: "dossier.created",
-    entityType: "dossier",
-    entityId: id,
-    service: "bastion",
-    requestId: ctx.requestId,
-    metadata: {
-      sources: input.sources.length,
-      documents: input.documents.length,
-      mode: input.mode,
-    },
-  });
+  // The dossier exists now: a failed audit write is logged, never allowed to strand it.
+  try {
+    await deps.audit({
+      actor: ctx.visitor,
+      action: "dossier.created",
+      entityType: "dossier",
+      entityId: id,
+      service: "bastion",
+      requestId: ctx.requestId,
+      metadata: {
+        sources: input.sources.length,
+        documents: input.documents.length,
+        mode: input.mode,
+      },
+    });
+  } catch (err) {
+    console.error("dossier.created audit failed", { dossierId: id, requestId: ctx.requestId, err });
+  }
   return { ok: true, dossierId: id, requestId: ctx.requestId };
 }

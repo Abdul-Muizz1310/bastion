@@ -32,6 +32,27 @@ function baseName(name: string): string {
   return clean === "" ? "upload.pdf" : clean.slice(0, 200);
 }
 
+class TooLarge extends Error {}
+
+/** The body's bytes, read through a counter that stops (and cancels the stream) past the cap. */
+async function boundedBody(req: Request, cap: number): Promise<Buffer> {
+  if (req.body === null) return Buffer.alloc(0);
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > cap) {
+      await reader.cancel().catch(() => {});
+      throw new TooLarge();
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}
+
 export async function POST(req: Request): Promise<Response> {
   const requestId = randomUUID();
   const visitor = visitorFromRequest(req);
@@ -58,10 +79,19 @@ export async function POST(req: Request): Promise<Response> {
     return errorResponse(413, { error: "payload_too_large", detail: "at most 4 MB", requestId });
   }
 
+  // A chunked request has no content-length to refuse early: count the bytes as they arrive.
   let form: FormData;
   try {
-    form = await req.formData();
-  } catch {
+    const bytes = await boundedBody(req, MAX_UPLOAD_BYTES + FRAMING_SLACK_BYTES);
+    form = await new Request(req.url, {
+      method: "POST",
+      headers: { "content-type": req.headers.get("content-type") ?? "" },
+      body: new Blob([new Uint8Array(bytes)]),
+    }).formData();
+  } catch (err) {
+    if (err instanceof TooLarge) {
+      return errorResponse(413, { error: "payload_too_large", detail: "at most 4 MB", requestId });
+    }
     return errorResponse(422, {
       error: "invalid_input",
       detail: "body is not multipart",
@@ -97,7 +127,10 @@ export async function POST(req: Request): Promise<Response> {
 
   const result = await callCapability(
     inkthread.upload,
-    { file, fileName: baseName(file.name) },
+    {
+      file: new File([file], baseName(file.name), { type: "application/pdf" }),
+      fileName: baseName(file.name),
+    },
     { actor: visitor, requestId, clientIp: clientAddress(req) },
   );
   if (!result.ok) return toResponse(result, false);

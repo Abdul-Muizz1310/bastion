@@ -122,6 +122,35 @@ describe("POST /api/uploads", () => {
     expect(res.status).toBe(413);
   });
 
+  it("answers 413 to a chunked body with no content-length, without reading past the cap", async () => {
+    const chunk = new Uint8Array(256 * 1024);
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        if (pulled > 1000) controller.close();
+        else controller.enqueue(chunk);
+      },
+    });
+    const res = await route.POST(
+      new Request("https://bastion.test/api/uploads", {
+        method: "POST",
+        body,
+        // @ts-expect-error Node's fetch needs duplex for a streamed request body
+        duplex: "half",
+        headers: { "content-type": "multipart/form-data; boundary=x", "x-forwarded-for": "203.0.113.9" },
+      }),
+    );
+    expect(res.status).toBe(413);
+    expect(pulled).toBeLessThan(40);
+    expect(callCapability).not.toHaveBeenCalled();
+  });
+
+  it("forwards the file as application/pdf whatever the client declared", async () => {
+    await upload(new Blob([PDF], { type: "text/html" }));
+    expect(callCapability.mock.calls[0]?.[1].file.type).toBe("application/pdf");
+  });
+
   it("accepts exactly 4 MB", async () => {
     const edge = new Uint8Array(MAX_UPLOAD_BYTES);
     edge.set(PDF);
