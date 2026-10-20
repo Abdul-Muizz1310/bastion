@@ -13,13 +13,15 @@ import {
   ROLE_GROUPS,
   type RoleGroup,
 } from "./graph-layout";
+import { HELD_REASON, whenLive } from "./held";
 
 /**
  * inkthread's graph, drawn (spec 21 §5, §5.1 invariant 6). The layout is settled before it is drawn
  * (a fixed number of d3-force ticks), so nothing moves on its own; with motion allowed the drawing
  * only fades in once. Nodes are coloured by role group and threads by family, both explained in a
  * text legend. The drawing is one tab stop: arrow keys move between elements in reading order, Home
- * and End jump, Enter or Space explains one (click does too).
+ * and End jump, Enter or Space explains one (click does too). While the gate is not live a node only
+ * moves focus: explaining it is held, and an Enter or click says why (invariant 1, round 4).
  */
 
 export const GROUP_FILL: Readonly<Record<RoleGroup, string>> = {
@@ -73,10 +75,13 @@ export function GraphView({
   graph,
   selected,
   onSelect,
+  ready,
 }: {
   graph: Pick<Graph, "nodes" | "edges">;
   selected: string | null;
   onSelect: (id: string) => void;
+  /** The wake gate is live: explaining a node calls inkthread. */
+  ready: boolean;
 }) {
   const input = useMemo(() => graphLayoutInput(graph), [graph]);
   const placed = useMemo(() => layoutGraph(input), [input]);
@@ -84,6 +89,16 @@ export function GraphView({
   const refs = useRef(new Map<string, SVGGElement>());
   const helpId = `graph-help-${useId()}`;
   const titleId = `graph-title-${useId()}`;
+  // An Enter or click on a held node; it is said in the polite region below until the gate is live.
+  const [heldTry, setHeldTry] = useState(false);
+  const activate = whenLive(
+    ready,
+    (id: string) => {
+      setHeldTry(false);
+      onSelect(id);
+    },
+    () => setHeldTry(true),
+  );
 
   const ids = placed.nodes.map((n) => n.id);
   const stop =
@@ -112,7 +127,7 @@ export function GraphView({
       case " ": {
         e.preventDefault();
         const id = ids[index];
-        if (id !== undefined) onSelect(id);
+        if (id !== undefined) activate(id);
         return;
       }
       default:
@@ -169,12 +184,13 @@ export function GraphView({
                 role="button"
                 tabIndex={n.id === stop ? 0 : -1}
                 aria-pressed={isSelected}
+                aria-disabled={ready ? undefined : true}
                 aria-label={nodeName(n)}
                 data-node={n.id}
                 data-group={n.group}
                 transform={`translate(${n.x} ${n.y})`}
-                className="graph-node cursor-pointer"
-                onClick={() => onSelect(n.id)}
+                className={`graph-node ${ready ? "cursor-pointer" : "cursor-not-allowed"}`}
+                onClick={() => activate(n.id)}
                 onKeyDown={(e) => move(e, i)}
                 onFocus={() => setFocused(n.id)}
               >
@@ -205,6 +221,10 @@ export function GraphView({
             ? `showing ${input.nodes.length} of ${input.total} elements (the first in reading order). `
             : null}
           Arrow keys move between elements; Enter explains one. Click works too.
+          {ready ? null : ` ${HELD_REASON}`}
+        </p>
+        <p aria-live="polite" data-held-notice="" className="text-warning">
+          {!ready && heldTry ? `Nothing was explained yet. ${HELD_REASON}` : ""}
         </p>
         <div className="grid gap-x-8 gap-y-3 md:grid-cols-2">
           <div>

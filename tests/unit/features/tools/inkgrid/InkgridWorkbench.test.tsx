@@ -36,6 +36,14 @@ function render(opts: Partial<Parameters<typeof Seeded>[0]> = {}, initial: objec
 }
 
 describe("InkgridWorkbench", () => {
+  it("has a polite region for a PDF picked while the gate is not live — it is held, not uploaded (round 4)", () => {
+    // The OS file dialog can outlive the gate; the picker's answer goes through whenLive, and a
+    // held one is said in this region rather than silently dropped.
+    const html = render({ gate: "waking" });
+    expect(isDisabled(buttonNamed(html, /upload and read a PDF/))).toBe(true);
+    expect(html).toMatch(/<p\b[^>]*aria-live="polite"[^>]*data-held-notice="upload"/);
+  });
+
   it("renders without crashing when the wake fails, with the upload disabled", () => {
     const html = render({ gate: "failed" }, {});
     expect(html).toContain('data-gate="unknown"');

@@ -8,10 +8,11 @@ vi.mock("next/link", () => ({
 }));
 
 import type { Graph, InkthreadDocument, Why } from "@/capabilities/inkthread";
+import { HELD_REASON } from "@/components/tools/held";
 import { InkthreadWorkbench } from "@/features/tools/inkthread/InkthreadWorkbench";
 import { fixture } from "../../../capabilities/harness";
-import { buttonNamed, isDisabled, Seeded } from "../../../components/tools/gate-fixtures";
-import { links, textOf } from "../../../helpers/html";
+import { buttonNamed, buttons, isDisabled, Seeded } from "../../../components/tools/gate-fixtures";
+import { links, sliceByAttr, textOf } from "../../../helpers/html";
 import { auditHrefs, copyButtons, ok, RID } from "../outcomes";
 
 /**
@@ -86,6 +87,42 @@ describe("InkthreadWorkbench", () => {
     expect(html).toContain(`/api/tools/inkthread.page?documentId=${DOC}&amp;page=1`);
     expect(html).toContain('viewBox="0 0 612 792"');
     expect(html).toMatch(/<rect\b[^>]*data-box="self"/);
+  });
+
+  // The chosen paragraph also on page 2, so the page buttons show.
+  const twoPages: Graph = {
+    ...graph,
+    nodes: graph.nodes.map((n) =>
+      n.id === NODE && n.regions[0] ? { ...n, regions: [...n.regions, { ...n.regions[0], page: 2 }] } : n,
+    ),
+  };
+  const whyButtons = (html: string) => buttons(html).filter((b) => /^<button\b[^>]*>\s*why\b/.test(b));
+  const pageButtons = (html: string) => buttons(html).filter((b) => /^<button\b[^>]*>\s*page \d/.test(b));
+  const reasonOf = (html: string, button: string) =>
+    textOf(sliceByAttr(html, "id", /aria-describedby="([^"]+)"/.exec(button)?.[1] ?? "-"));
+
+  it.each(["waking", "asleep"] as const)(
+    "holds every why and page button while the gate is %s, and says why (invariant 1, round 4)",
+    (gate) => {
+      const html = render({ ...full, graph: ok(twoPages, RID) }, { gate });
+      const held = [...whyButtons(html), ...pageButtons(html)];
+      expect(whyButtons(html).length).toBeGreaterThan(2);
+      expect(pageButtons(html)).toHaveLength(2);
+      for (const b of held) {
+        expect(isDisabled(b)).toBe(true);
+        expect(reasonOf(html, b)).toContain(HELD_REASON);
+      }
+      expect(html.match(/<g\b[^>]*role="button"[^>]*aria-disabled="true"/g)).toHaveLength(graph.nodes.length);
+    },
+  );
+
+  it("offers every why and page button once the gate is live", () => {
+    const html = render({ ...full, graph: ok(twoPages, RID) });
+    for (const b of [...whyButtons(html), ...pageButtons(html)]) {
+      expect(isDisabled(b)).toBe(false);
+      expect(b).not.toMatch(/aria-describedby/);
+    }
+    expect(textOf(html)).not.toContain(HELD_REASON);
   });
 
   it("links the same document to inkgrid's reading", () => {

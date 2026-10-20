@@ -51,6 +51,16 @@ describe("BastionWorkbench", () => {
     expect(isDisabled(buttonNamed(html, /make the call/))).toBe(false);
   });
 
+  it("holds the inspector and the JWKS re-read outside a live gate, like every action (round 4)", () => {
+    const held = renderToStaticMarkup(<BastionWorkbench initial={{}} />);
+    const inspector = /<select\b[^>]*>/.exec(held)?.[0] ?? "";
+    expect(inspector).toMatch(/\sdisabled=""/);
+    expect(isDisabled(buttonNamed(held, /read it again/))).toBe(true);
+    const live = render({});
+    expect(/<select\b[^>]*>/.exec(live)?.[0]).not.toMatch(/\sdisabled=""/);
+    expect(isDisabled(buttonNamed(live, /read it again/))).toBe(false);
+  });
+
   it("offers every capability to inspect, by product", () => {
     const html = render({});
     expect(html).toMatch(/<optgroup label="inkprint"/);

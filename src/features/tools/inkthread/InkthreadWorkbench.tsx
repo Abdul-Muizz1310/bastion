@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   type Graph,
   type GraphEdge,
@@ -11,6 +11,7 @@ import {
   type Why,
 } from "@/capabilities/inkthread";
 import { GraphView } from "@/components/tools/GraphView";
+import { HELD_REASON } from "@/components/tools/held";
 import { Outcome } from "@/components/tools/Outcome";
 import { OutcomeNotice } from "@/components/tools/OutcomeNotice";
 import { type PageBox, PageWithBoxes } from "@/components/tools/PageWithBoxes";
@@ -90,13 +91,15 @@ export function InkthreadWorkbench({
     if (doc !== null && graph.outcome !== null && graphLoad(graph.outcome)) load(doc);
   }, [ready]);
 
+  // Invariant 1: a why (and a new selection's page image) is a call — held until the gate is live.
   const explain = (id: string) => {
-    if (doc === null) return;
+    if (!ready || doc === null) return;
     setElement(id);
     void why.run((signal) => callTool(inkthread.why, { documentId: doc, element: id }, { signal }));
   };
 
   const select = (id: string) => {
+    if (!ready) return;
     setSelected(id);
     explain(id);
   };
@@ -155,6 +158,7 @@ export function InkthreadWorkbench({
               selected={selected}
               element={element}
               why={why}
+              ready={ready}
               onSelect={select}
               onExplain={explain}
             />
@@ -172,6 +176,7 @@ function GraphPanels({
   selected,
   element,
   why,
+  ready,
   onSelect,
   onExplain,
 }: {
@@ -181,6 +186,7 @@ function GraphPanels({
   selected: string | null;
   element: string | null;
   why: Action<Why>;
+  ready: boolean;
   onSelect: (id: string) => void;
   onExplain: (id: string) => void;
 }) {
@@ -219,7 +225,7 @@ function GraphPanels({
             />
           }
         >
-          <GraphView graph={graph} selected={selected} onSelect={onSelect} />
+          <GraphView graph={graph} selected={selected} onSelect={onSelect} ready={ready} />
         </WithReceipt>
       </Panel>
 
@@ -237,6 +243,7 @@ function GraphPanels({
               nodes={nodes}
               element={element}
               why={why}
+              ready={ready}
               onExplain={onExplain}
             />
           )}
@@ -251,7 +258,7 @@ function GraphPanels({
               The chosen element’s page appears here.
             </p>
           ) : (
-            <ElementPage node={node} graph={graph} nodes={nodes} doc={doc} />
+            <ElementPage node={node} graph={graph} nodes={nodes} doc={doc} ready={ready} />
           )}
         </Panel>
       </div>
@@ -274,6 +281,7 @@ function ElementWhy({
   nodes,
   element,
   why,
+  ready,
   onExplain,
 }: {
   node: GraphNode;
@@ -281,9 +289,12 @@ function ElementWhy({
   nodes: Map<string, GraphNode>;
   element: string | null;
   why: Action<Why>;
+  ready: boolean;
   onExplain: (id: string) => void;
 }) {
   const threads = threadsOf(graph, node.id);
+  const heldId = `why-held-${useId()}`;
+  const held = ready ? {} : { disabled: true, "aria-describedby": heldId };
   const pill = (id: string) =>
     `${BUTTON_QUIET} ${element === id ? "border-accent-violet text-accent-violet" : ""}`;
   return (
@@ -303,6 +314,7 @@ function ElementWhy({
           onClick={() => onExplain(node.id)}
           className={pill(node.id)}
           aria-pressed={element === node.id}
+          {...held}
         >
           why this element
         </button>
@@ -315,6 +327,7 @@ function ElementWhy({
               onClick={() => onExplain(id)}
               className={pill(id)}
               aria-pressed={element === id}
+              {...held}
             >
               why {words(r.role)}
             </button>
@@ -329,6 +342,7 @@ function ElementWhy({
               onClick={() => onExplain(e.id)}
               className={pill(e.id)}
               aria-pressed={element === e.id}
+              {...held}
             >
               why {words(e.type)} {e.source === node.id ? "→" : "←"}{" "}
               {short(other?.label ?? "?", 24)}
@@ -336,6 +350,11 @@ function ElementWhy({
           );
         })}
       </div>
+      {ready ? null : (
+        <p id={heldId} className="font-mono text-[11px] text-fg-muted">
+          {HELD_REASON}
+        </p>
+      )}
 
       <Outcome state={why} product={P} what="the why">
         {(w, requestId) => <WhyView why={w} requestId={requestId} />}
@@ -400,14 +419,18 @@ function ElementPage({
   graph,
   nodes,
   doc,
+  ready,
 }: {
   node: GraphNode;
   graph: Graph;
   nodes: Map<string, GraphNode>;
   doc: string;
+  /** Another page's image is a call (`inkthread.page`): held until the gate is live. */
+  ready: boolean;
 }) {
   const pages = [...new Set(node.regions.map((r) => r.page))].sort((a, b) => a - b);
   const [chosen, setChosen] = useState<number | null>(null);
+  const heldId = `page-held-${useId()}`;
   const page = chosen !== null && pages.includes(chosen) ? chosen : pages[0];
   if (page === undefined) {
     return (
@@ -446,12 +469,19 @@ function ElementPage({
               key={n}
               type="button"
               onClick={() => setChosen(n)}
+              disabled={!ready}
+              aria-describedby={ready ? undefined : heldId}
               aria-pressed={n === page}
               className={`${BUTTON_QUIET} ${n === page ? "border-accent-violet text-accent-violet" : ""}`}
             >
               page {n}
             </button>
           ))}
+          {ready ? null : (
+            <p id={heldId} className="w-full font-mono text-[11px] text-fg-muted">
+              {HELD_REASON}
+            </p>
+          )}
         </fieldset>
       ) : null}
       <PageWithBoxes

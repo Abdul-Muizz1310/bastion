@@ -10,6 +10,7 @@ import {
 } from "@/capabilities/inkthread";
 import { BudgetedAction } from "@/components/tools/BudgetedAction";
 import { CopyButton } from "@/components/tools/CopyButton";
+import { HELD_REASON, whenLive } from "@/components/tools/held";
 import { Outcome } from "@/components/tools/Outcome";
 import { OutcomeNotice } from "@/components/tools/OutcomeNotice";
 import { Panel, WithReceipt } from "@/components/tools/Panel";
@@ -135,6 +136,18 @@ export function InkgridWorkbench({
     setJob({ phase: "ended", job: null, problem });
   }
 
+  // Invariant 1: the OS file dialog can outlive the gate (an asleep answer elsewhere re-gates the
+  // page), so the picker's answer checks it too; a held PDF is said, never silently uploaded.
+  const [uploadHeld, setUploadHeld] = useState(false);
+  const pick = whenLive(
+    ready,
+    (file: File) => {
+      setUploadHeld(false);
+      void uploadAndRead(file);
+    },
+    () => setUploadHeld(true),
+  );
+
   const list = samples.outcome?.ok ? samples.outcome.data.items : [];
 
   return (
@@ -179,7 +192,7 @@ export function InkgridWorkbench({
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 e.target.value = "";
-                if (file) void uploadAndRead(file);
+                if (file) pick(file);
               }}
             />
             <BudgetedAction
@@ -189,6 +202,13 @@ export function InkgridWorkbench({
               busy={upload.busy || job.phase === "following"}
               onRun={() => fileInput.current?.click()}
             />
+            <p
+              aria-live="polite"
+              data-held-notice="upload"
+              className="font-mono text-[11px] text-warning"
+            >
+              {!ready && uploadHeld ? `The PDF was not uploaded. ${HELD_REASON}` : ""}
+            </p>
             <p className="font-mono text-[11px] leading-relaxed text-fg-muted">
               Up to 4 MB. inkthread processes the PDF and never keeps it: the bytes are dropped once
               read, and the reading goes with the document after an hour.

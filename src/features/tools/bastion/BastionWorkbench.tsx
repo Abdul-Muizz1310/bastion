@@ -115,6 +115,7 @@ export function BastionWorkbench({ initial = {} }: { initial?: BastionState }) {
             id={`${ids}-cap`}
             value={capability}
             onChange={(e) => inspect(e.target.value)}
+            disabled={!ready}
             className={INPUT}
           >
             {[...BY_SERVICE].map(([product, capabilities]) => (
@@ -239,7 +240,7 @@ export function BastionWorkbench({ initial = {} }: { initial?: BastionState }) {
             onClick={() =>
               void jwks.run((signal) => getRoute("/.well-known/jwks.json", jwksSchema, { signal }))
             }
-            disabled={jwks.busy}
+            disabled={!ready || jwks.busy}
             className={BUTTON_QUIET}
           >
             read it again

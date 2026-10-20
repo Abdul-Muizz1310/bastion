@@ -159,8 +159,11 @@ reopens — at most once per failure (a load the gateway keeps timing out must n
 which its panel shows the failure with a manual retry. A background wake's own answer is kept: when
 the wake route refuses it (5 a minute) or it fails, the notice says bastion could not wake the host,
 never that it is waking it; slowquery's fleet badges word a routed host the same way, and only the
-gate's own host reads as being woken again (review round 4). A manual retry is an action: it stays
-disabled, saying why, until the gate is live. A retry reloads only the read that failed and never
+gate's own host reads as being woken again (review round 4). Every action is held until the gate is
+live, a manual retry, a why, a page image and the upload picker's answer included: a control that
+can be disabled is, and says why ("This unlocks once the wake above answers live"); one that cannot
+(a graph node, a file chosen in an OS dialog that outlived the gate) does nothing but announce why.
+A retry reloads only the read that failed and never
 clears another result — a retry of magpie's items or heal history keeps the visitor's scrape.
 
 **Budgets.** The page renders with today's budgets (`budgetsLeft()`; unavailable ⇒ none shown) and

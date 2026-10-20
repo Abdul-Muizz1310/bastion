@@ -2,6 +2,7 @@ import { useId } from "react";
 import type { FailedOutcome } from "@/features/tools/outcome";
 import type { ServiceId } from "@/platform/registry/products";
 import { AuditLink } from "./AuditLink";
+import { HELD_REASON } from "./held";
 import { BUTTON_QUIET } from "./styles";
 import { useGateServices, useSideWakes, useWakeReady } from "./WakeGate";
 import { rewakePlan, type SideWakes, sideWakeWords, type WakePlan } from "./wake-model";
@@ -125,7 +126,7 @@ export function OutcomeNotice({
           </button>
           {ready ? null : (
             <span id={heldId} className="text-fg-muted">
-              This unlocks once the wake above answers live.
+              {HELD_REASON}
             </span>
           )}
         </div>
