@@ -5,6 +5,7 @@ import {
   initialWake,
   rewakeAll,
   rewakePlan,
+  sideWakeWords,
   wakeAnswered,
   wakeStarted,
 } from "@/components/tools/wake-model";
@@ -179,5 +180,32 @@ describe("claimRewake (Ruling AI)", () => {
     const latch = { current: false };
     expect([claimRewake(latch), claimRewake(latch)]).toEqual([true, false]);
     expect(latch.current).toBe(true);
+  });
+});
+
+describe("sideWakeWords (review round 3: a background wake's own answer)", () => {
+  it("says bastion is waking the host while the wake is in flight, or about to start", () => {
+    expect(sideWakeWords("magpie", { phase: "waking" })).toMatch(/bastion is waking magpie now/);
+    expect(sideWakeWords("magpie", undefined)).toMatch(/bastion is waking magpie now/);
+  });
+
+  it("says it could not wake the host when the wake route refused, with the wait", () => {
+    const words = sideWakeWords("magpie", { phase: "done", answer: { kind: "rate_limited", retryAfterS: 17 } });
+    expect(words).toMatch(/could not wake magpie — too many wakes; try again in 17 s/);
+    expect(words).not.toMatch(/is waking/);
+  });
+
+  it("says it could not wake the host when the wake request failed", () => {
+    expect(
+      sideWakeWords("magpie", { phase: "done", answer: { kind: "failed", detail: "x" } }),
+    ).toMatch(/could not wake magpie/);
+  });
+
+  it("says what the wake route answered when it finished", () => {
+    const answer = (state: "live" | "asleep" | "down") =>
+      sideWakeWords("magpie", { phase: "done", answer: { kind: "answer", state, latencyMs: 1 } });
+    expect(answer("live")).toMatch(/magpie is awake again: try once more/);
+    expect(answer("asleep")).toMatch(/magpie did not wake within 90 s/);
+    expect(answer("down")).toMatch(/magpie is down/);
   });
 });

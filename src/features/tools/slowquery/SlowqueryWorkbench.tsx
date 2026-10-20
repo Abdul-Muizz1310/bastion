@@ -12,6 +12,7 @@ import {
 import { ServiceBadge } from "@/components/platform/ServiceBadge";
 import { CopyButton } from "@/components/tools/CopyButton";
 import { Outcome } from "@/components/tools/Outcome";
+import { OutcomeNotice } from "@/components/tools/OutcomeNotice";
 import { Panel, WithReceipt } from "@/components/tools/Panel";
 import { BUTTON, BUTTON_QUIET, MONO_BLOCK } from "@/components/tools/styles";
 import { ToolReceipt } from "@/components/tools/ToolReceipt";
@@ -19,8 +20,7 @@ import { useRewake, useWakeReady } from "@/components/tools/WakeGate";
 import { callTool } from "../client";
 import { ms, plural, utc } from "../format";
 import type { FailedOutcome, ToolOutcome } from "../outcome";
-import { needsLoad } from "../run-action";
-import { useAction } from "../use-action";
+import { useAction, useFirstLoad } from "../use-action";
 import { fleetView, type HostAnswer, rankMs } from "./fleet";
 
 /**
@@ -82,14 +82,20 @@ export function SlowqueryWorkbench({ initial = {} }: { initial?: SlowqueryState 
     }
   };
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, when the gate opens
+  const loadBranch = () => void branch.run((signal) => callTool(slowquery.branch, {}, { signal }));
+
+  // First loads retry once after a failure (the gate reopening), then wait for a manual retry
+  // ("read the fleet", or the branch's own) — a host that keeps timing out never loops (round 3).
+  const fleetLoad = useFirstLoad();
+  const branchLoad = useFirstLoad();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the gate opens
   useEffect(() => {
     if (!ready) return;
-    // The demo's own answer failing (asleep) re-gates the page; when it reopens, read again.
-    const demo = fleet?.find((h) => h.service === "slowquery")?.outcome ?? null;
-    if (fleet === null || needsLoad(demo)) void readFleet();
-    if (needsLoad(branch.outcome))
-      void branch.run((signal) => callTool(slowquery.branch, {}, { signal }));
+    // The fleet's first load is judged by the demo's own answer (the gate's service).
+    const demo =
+      fleet === null ? null : (fleet.find((h) => h.service === "slowquery")?.outcome ?? null);
+    if (fleet === null ? fleetLoad(null) : demo !== null && fleetLoad(demo)) void readFleet();
+    if (branchLoad(branch.outcome)) loadBranch();
   }, [ready]);
 
   const choose = (service: SlowqueryHost, id: string) => {
@@ -260,6 +266,9 @@ export function SlowqueryWorkbench({ initial = {} }: { initial?: SlowqueryState 
             </button>
           ))}
         </div>
+        {branch.outcome && !branch.outcome.ok ? (
+          <OutcomeNotice failure={branch.outcome} product={P} onRetry={loadBranch} />
+        ) : null}
         <p className="font-mono text-[11px] text-fg-muted">
           Twice a minute per visitor: a switch rebuilds the demo for everyone.
         </p>

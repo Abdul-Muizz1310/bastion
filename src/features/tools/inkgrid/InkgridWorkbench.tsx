@@ -23,8 +23,7 @@ import { plural } from "../format";
 import { SamplePicker } from "../inkthread/SamplePicker";
 import type { ToolOutcome } from "../outcome";
 import { pollTool } from "../poll";
-import { needsLoad } from "../run-action";
-import { useAction } from "../use-action";
+import { useAction, useFirstLoad } from "../use-action";
 import { type UploadAnswer, uploadPdf } from "./upload";
 
 /**
@@ -72,21 +71,28 @@ export function InkgridWorkbench({
     void reading.run((signal) => callTool(inkthread.reading, { documentId: id }, { signal }));
   };
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, when the gate opens
-  useEffect(() => {
-    if (!ready) return;
-    if (!needsLoad(samples.outcome)) {
-      // The samples came back; a reading that failed (asleep) is read again.
-      if (doc !== null && needsLoad(reading.outcome)) read(doc);
-      return;
-    }
+  const loadSamples = () =>
     void samples
       .run((signal) => callTool(inkthread.samples, {}, { signal }))
       .then((outcome) => {
-        if (!needsLoad(reading.outcome)) return;
+        // The first reading only: a failed one is retried by its own first-load rule below.
+        if (reading.outcome !== null) return;
         const first = doc ?? (outcome?.ok ? (outcome.data.items[0]?.id ?? null) : null);
         if (first) read(first);
       });
+
+  // Each first load retries once after a failure (the gate reopening), then waits for its manual
+  // retry, so a load that keeps timing out never loops (review round 3).
+  const samplesLoad = useFirstLoad();
+  const readingLoad = useFirstLoad();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the gate opens
+  useEffect(() => {
+    if (!ready) return;
+    if (samplesLoad(samples.outcome)) {
+      loadSamples();
+      return;
+    }
+    if (doc !== null && reading.outcome !== null && readingLoad(reading.outcome)) read(doc);
   }, [ready]);
 
   async function uploadAndRead(file: File) {
@@ -159,7 +165,7 @@ export function InkgridWorkbench({
               </button>
             </div>
             {samples.outcome && !samples.outcome.ok ? (
-              <OutcomeNotice failure={samples.outcome} product="inkthread" />
+              <OutcomeNotice failure={samples.outcome} product="inkthread" onRetry={loadSamples} />
             ) : null}
           </div>
           <div className="space-y-3">
@@ -209,7 +215,12 @@ export function InkgridWorkbench({
           ) : undefined
         }
       >
-        <Outcome state={reading} product="inkthread" what="the reading">
+        <Outcome
+          state={reading}
+          product="inkthread"
+          what="the reading"
+          retry={doc === null ? undefined : () => read(doc)}
+        >
           {(r, requestId) => <ReadingView reading={r} requestId={requestId} />}
         </Outcome>
       </Panel>

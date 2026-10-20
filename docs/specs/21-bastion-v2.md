@@ -155,7 +155,10 @@ until the wake route says live (review fix 2). Ruling AI: the notice names what 
 the gate's own services ("again above"), a routed host woken in the background (a slowquery read
 of magpie; a call made from bastion's own page wakes the called service), or nothing at all; two
 asleep answers in parallel start one re-wake; a first load that failed runs again once the gate
-reopens.
+reopens — at most once per failure (a load the gateway keeps timing out must not loop), after
+which its panel shows the failure with a manual retry. A background wake's own answer is kept: when
+the wake route refuses it (5 a minute) or it fails, the notice says bastion could not wake the host,
+never that it is waking it.
 
 **Budgets.** The page renders with today's budgets (`budgetsLeft()`; unavailable ⇒ none shown) and
 re-reads `GET /api/platform/budgets` after every budgeted action. A budgeted action shows its meter

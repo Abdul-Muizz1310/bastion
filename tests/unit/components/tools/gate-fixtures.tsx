@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { WakeGate } from "@/components/tools/WakeGate";
 import {
   initialWake,
+  type SideWakes,
   type WakeState,
   wakeAnswered,
   wakeStarted,
@@ -47,16 +48,19 @@ export function Seeded({
   services = ["magpie"],
   gate = "live",
   budgets = budgetsWith(),
+  side,
 }: {
   children: ReactNode;
   name?: string;
   services?: ServiceId[];
   gate?: GateSeed;
   budgets?: Budgets | null;
+  /** Background wakes already under way or answered (review round 3). */
+  side?: SideWakes;
 }) {
   return (
     <BudgetProvider initial={budgets}>
-      <WakeGate name={name} services={services} initial={gateWith(services, gate)}>
+      <WakeGate name={name} services={services} initial={gateWith(services, gate)} initialSide={side}>
         {children}
       </WakeGate>
     </BudgetProvider>

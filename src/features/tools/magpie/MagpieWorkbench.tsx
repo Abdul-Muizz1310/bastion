@@ -18,8 +18,7 @@ import { useBudgets } from "../BudgetProvider";
 import { callTool } from "../client";
 import { plural, short, utc } from "../format";
 import type { ToolOutcome } from "../outcome";
-import { needsLoad } from "../run-action";
-import { useAction } from "../use-action";
+import { useAction, useFirstLoad } from "../use-action";
 
 /**
  * magpie's workbench (spec 21 §5, §5.1): pick a source, browse its items (each with its content
@@ -53,10 +52,7 @@ export function MagpieWorkbench({ initial = {} }: { initial?: MagpieState }) {
     void heals.run((signal) => callTool(magpie.heals, { source: name, limit: 10 }, { signal }));
   };
 
-  // Once magpie is awake: its sources, then the first one that has items.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, when the gate opens
-  useEffect(() => {
-    if (!ready || !needsLoad(sources.outcome)) return;
+  const loadSources = () =>
     void sources
       .run((signal) => callTool(magpie.sources, {}, { signal }))
       .then((outcome) => {
@@ -64,6 +60,23 @@ export function MagpieWorkbench({ initial = {} }: { initial?: MagpieState }) {
         const first = outcome.data.find((s) => s.item_count > 0) ?? outcome.data[0];
         if (first) choose(first.name);
       });
+
+  // Once magpie is awake: its sources, then the first one that has items. Each first load retries
+  // once after a failure (the gate reopening), then waits for its manual retry (review round 3).
+  const sourcesLoad = useFirstLoad();
+  const itemsLoad = useFirstLoad();
+  const healsLoad = useFirstLoad();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the gate opens
+  useEffect(() => {
+    if (!ready) return;
+    if (sourcesLoad(sources.outcome)) {
+      loadSources();
+      return;
+    }
+    // The sources came back: a source's items or heals that failed are its first loads too.
+    const itemsAgain = itemsLoad(items.outcome);
+    const healsAgain = healsLoad(heals.outcome);
+    if (source !== null && (itemsAgain || healsAgain)) choose(source);
   }, [ready]);
 
   const runScrape = () => {
@@ -77,7 +90,7 @@ export function MagpieWorkbench({ initial = {} }: { initial?: MagpieState }) {
     <div className="space-y-8">
       <div className="grid gap-8 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         <Panel id="magpie-sources" title="sources" hint="YAML scrapers, one per site">
-          <Outcome state={sources} product={P} what="the sources">
+          <Outcome state={sources} product={P} what="the sources" retry={loadSources}>
             {(list, requestId) => (
               <div className="space-y-3">
                 <fieldset className="space-y-2">
@@ -180,7 +193,12 @@ export function MagpieWorkbench({ initial = {} }: { initial?: MagpieState }) {
         title="items"
         hint={source ? `the newest ${ITEMS} from ${source}` : undefined}
       >
-        <Outcome state={items} product={P} what="the items">
+        <Outcome
+          state={items}
+          product={P}
+          what="the items"
+          retry={source === null ? undefined : () => choose(source)}
+        >
           {(list, requestId) => (
             <WithReceipt
               receipt={
@@ -218,7 +236,12 @@ export function MagpieWorkbench({ initial = {} }: { initial?: MagpieState }) {
         title="heal history"
         hint="when a selector broke, the fix magpie proposed"
       >
-        <Outcome state={heals} product={P} what="the heal history">
+        <Outcome
+          state={heals}
+          product={P}
+          what="the heal history"
+          retry={source === null ? undefined : () => choose(source)}
+        >
           {(list, requestId) => (
             <WithReceipt
               receipt={

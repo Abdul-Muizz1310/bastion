@@ -93,6 +93,40 @@ export function rewakePlan(gate: readonly ServiceId[], target: ServiceId | undef
   return { kind: "gate", services: gate };
 }
 
+/** A routed host woken in the background (review round 3): in flight, or its answer kept. */
+export type SideWake = { phase: "waking" } | { phase: "done"; answer: WakeAnswer };
+export type SideWakes = Readonly<Partial<Record<ServiceId, SideWake>>>;
+
+/**
+ * What a notice says about a background wake — never "waking" when the wake route refused it or
+ * already answered. No entry yet means the wake is being started with this very answer.
+ */
+export function sideWakeWords(service: ServiceId, side: SideWake | undefined): string {
+  if (side === undefined || side.phase === "waking") {
+    return `bastion is waking ${service} now; try again once it answers.`;
+  }
+  const { answer } = side;
+  switch (answer.kind) {
+    case "rate_limited":
+      return `bastion could not wake ${service} — too many wakes; try again in ${answer.retryAfterS} s.`;
+    case "failed":
+      return `bastion could not wake ${service}: the wake request failed. Try again shortly.`;
+    case "answer":
+      switch (answer.state) {
+        case "live":
+          return `${service} is awake again: try once more.`;
+        case "asleep":
+          return `${service} did not wake within 90 s: try again later.`;
+        case "down":
+          return `${service} is down: try again later.`;
+        default:
+          return assertNever(answer.state);
+      }
+    default:
+      return assertNever(answer);
+  }
+}
+
 /** Ruling AI: the first caller takes the latch; a second asleep answer in parallel does not. */
 export function claimRewake(latch: { current: boolean }): boolean {
   if (latch.current) return false;

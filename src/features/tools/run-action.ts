@@ -36,3 +36,17 @@ export async function runAction<O>(
 export function needsLoad(outcome: ToolOutcome<unknown> | null): boolean {
   return outcome === null || !outcome.ok;
 }
+
+/**
+ * Review round 3: a first load retries at most once per failure. A load the gateway keeps timing
+ * out (it reads as asleep, which re-gates the page) would otherwise loop forever; after its one
+ * retry the panel shows the failure with a manual retry. A success clears the flag.
+ */
+export function nextLoad(
+  outcome: ToolOutcome<unknown> | null,
+  retried: boolean,
+): { load: boolean; retried: boolean } {
+  if (outcome === null) return { load: true, retried: false };
+  if (outcome.ok) return { load: false, retried: false };
+  return retried ? { load: false, retried: true } : { load: true, retried: true };
+}

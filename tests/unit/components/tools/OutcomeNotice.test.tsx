@@ -69,6 +69,33 @@ describe("OutcomeNotice", () => {
     expect(text).not.toMatch(/slowquery/);
   });
 
+  it("says a background wake was refused instead of claiming one (review round 3)", () => {
+    const html = renderToStaticMarkup(
+      <Seeded
+        name="slowquery"
+        services={["slowquery"]}
+        side={{ magpie: { phase: "done", answer: { kind: "rate_limited", retryAfterS: 17 } } }}
+      >
+        <OutcomeNotice
+          failure={{ ok: false, kind: "asleep", requestId: RID }}
+          product="magpie"
+          wakes="magpie"
+        />
+      </Seeded>,
+    );
+    const text = textOf(sliceByAttr(html, "data-kind", "asleep"));
+    expect(text).toMatch(/could not wake magpie — too many wakes; try again in 17 s/);
+    expect(text).not.toMatch(/is waking magpie/);
+  });
+
+  it("offers a manual retry when the panel gives one", () => {
+    const html = renderToStaticMarkup(
+      <OutcomeNotice failure={{ ok: false, kind: "asleep", requestId: RID }} product="magpie" onRetry={() => {}} />,
+    );
+    expect(html).toMatch(/<button[^>]*type="button"[^>]*>try again<\/button>/);
+    expect(render({ ok: false, kind: "asleep", requestId: RID })).not.toMatch(/<button/);
+  });
+
   it("says nothing is being woken when nothing is", () => {
     const text = textOf(render({ ok: false, kind: "asleep", requestId: RID }));
     expect(text).toMatch(/nothing on this page wakes it/i);

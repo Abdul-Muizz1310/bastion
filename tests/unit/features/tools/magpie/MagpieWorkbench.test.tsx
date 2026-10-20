@@ -70,6 +70,11 @@ describe("MagpieWorkbench", () => {
     expect(auditHrefs(render())).toContain("/audit/rid-items");
   });
 
+  it("offers a manual retry when a first load failed (it retries itself only once)", () => {
+    const html = render({}, { sources: { ok: false, kind: "asleep", requestId: "rid-s" } });
+    expect(isDisabled(buttonNamed(html, /^\s*try again\s*$/))).toBe(false);
+  });
+
   it("names an item that has neither title nor URL instead of drawing an empty link", () => {
     const html = render();
     expect(textOf(html)).toContain("(no title)");

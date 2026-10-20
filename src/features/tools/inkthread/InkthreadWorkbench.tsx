@@ -21,8 +21,7 @@ import { useWakeReady } from "@/components/tools/WakeGate";
 import { callTool } from "../client";
 import { plural, short } from "../format";
 import type { ToolOutcome } from "../outcome";
-import { needsLoad } from "../run-action";
-import { type Action, useAction } from "../use-action";
+import { type Action, useAction, useFirstLoad } from "../use-action";
 import { SamplePicker } from "./SamplePicker";
 
 /**
@@ -67,21 +66,28 @@ export function InkthreadWorkbench({
     void graph.run((signal) => callTool(inkthread.graph, { documentId: id }, { signal }));
   };
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, when the gate opens
-  useEffect(() => {
-    if (!ready) return;
-    if (!needsLoad(samples.outcome)) {
-      // The samples came back; a graph that failed (asleep) is read again.
-      if (doc !== null && needsLoad(graph.outcome)) load(doc);
-      return;
-    }
+  const loadSamples = () =>
     void samples
       .run((signal) => callTool(inkthread.samples, {}, { signal }))
       .then((outcome) => {
-        if (!needsLoad(graph.outcome)) return;
+        // The first graph only: a failed one is retried by its own first-load rule below.
+        if (graph.outcome !== null) return;
         const first = doc ?? (outcome?.ok ? (outcome.data.items[0]?.id ?? null) : null);
         if (first) load(first);
       });
+
+  // Each first load retries once after a failure (the gate reopening), then waits for its manual
+  // retry, so a load that keeps timing out never loops (review round 3).
+  const samplesLoad = useFirstLoad();
+  const graphLoad = useFirstLoad();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the gate opens
+  useEffect(() => {
+    if (!ready) return;
+    if (samplesLoad(samples.outcome)) {
+      loadSamples();
+      return;
+    }
+    if (doc !== null && graph.outcome !== null && graphLoad(graph.outcome)) load(doc);
   }, [ready]);
 
   const explain = (id: string) => {
@@ -130,11 +136,16 @@ export function InkthreadWorkbench({
           </button>
         </div>
         {samples.outcome && !samples.outcome.ok ? (
-          <OutcomeNotice failure={samples.outcome} product={P} />
+          <OutcomeNotice failure={samples.outcome} product={P} onRetry={loadSamples} />
         ) : null}
       </Panel>
 
-      <Outcome state={graph} product={P} what="the graph">
+      <Outcome
+        state={graph}
+        product={P}
+        what="the graph"
+        retry={doc === null ? undefined : () => load(doc)}
+      >
         {(g, requestId) =>
           doc === null ? null : (
             <GraphPanels

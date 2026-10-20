@@ -19,6 +19,7 @@ import {
   initialWake,
   rewakeAll,
   rewakePlan,
+  type SideWakes,
   type WakeState,
   wakeAnswered,
   wakeStarted,
@@ -37,9 +38,16 @@ type GateControls = {
   services: readonly ServiceId[];
   /** Wakes what an asleep answer from `target` (default: the gate's own service) calls for. */
   rewake: (target?: ServiceId) => void;
+  /** Routed hosts woken in the background, with their answers once they come (review round 3). */
+  side: SideWakes;
 };
 
-const GateContext = createContext<GateControls>({ ready: false, services: [], rewake: () => {} });
+const GateContext = createContext<GateControls>({
+  ready: false,
+  services: [],
+  rewake: () => {},
+  side: {},
+});
 
 /** Whether the product this workbench operates is live (false outside a gate). */
 export function useWakeReady(): boolean {
@@ -56,16 +64,24 @@ export function useGateServices(): readonly ServiceId[] {
   return useContext(GateContext).services;
 }
 
+/** The background wakes and their answers, so a notice never claims a wake that was refused. */
+export function useSideWakes(): SideWakes {
+  return useContext(GateContext).side;
+}
+
 export function WakeGate({
   name,
   services,
   initial,
+  initialSide,
   children,
 }: {
   name: string;
   services: readonly ServiceId[];
   /** The state to render before any wake answers (tests seed it). */
   initial?: WakeState;
+  /** Background wakes to render before any answers (tests seed them). */
+  initialSide?: SideWakes;
   children: ReactNode;
 }) {
   const [state, setState] = useState<WakeState>(() => initial ?? initialWake(services));
@@ -109,7 +125,11 @@ export function WakeGate({
   // routed host wakes that host in the background; with nothing to wake, nothing happens.
   const wakingRef = useRef(waking);
   wakingRef.current = waking;
-  const sideWakes = useRef(new Set<ServiceId>());
+  // Review round 3: each background wake's answer is kept (the wake route's 5 a minute limit can
+  // refuse it), so the notice says what really happened.
+  const [side, setSide] = useState<SideWakes>(initialSide ?? {});
+  const sideRef = useRef(side);
+  sideRef.current = side;
   const sideAbort = useRef(new AbortController());
   useEffect(() => {
     const controller = new AbortController();
@@ -120,11 +140,13 @@ export function WakeGate({
     const plan = rewakePlan(latest.current.services, target);
     if (plan.kind === "none") return;
     if (plan.kind === "side") {
-      if (sideWakes.current.has(plan.service)) return;
-      sideWakes.current.add(plan.service);
-      void wakeService(plan.service, sideAbort.current.signal)
-        .catch(() => {})
-        .finally(() => sideWakes.current.delete(plan.service));
+      const service = plan.service;
+      if (sideRef.current[service]?.phase === "waking") return;
+      sideRef.current = { ...sideRef.current, [service]: { phase: "waking" } };
+      setSide((s) => ({ ...s, [service]: { phase: "waking" } }));
+      void wakeService(service, sideAbort.current.signal)
+        .then((answer) => setSide((s) => ({ ...s, [service]: { phase: "done", answer } })))
+        .catch(() => {});
       return;
     }
     if (!claimRewake(wakingRef)) return;
@@ -133,7 +155,7 @@ export function WakeGate({
   }, []);
 
   return (
-    <GateContext value={{ ready: view.ready, services, rewake }}>
+    <GateContext value={{ ready: view.ready, services, rewake, side }}>
       <div
         data-gate={view.state}
         className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-[var(--radius)] border border-border bg-surface/60 px-4 py-3 md:px-5"

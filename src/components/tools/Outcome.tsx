@@ -13,6 +13,7 @@ export function Outcome<O>({
   product,
   what,
   wakes,
+  retry,
   children,
 }: {
   state: ActionState<O>;
@@ -21,6 +22,8 @@ export function Outcome<O>({
   what: string;
   /** The service the call went to, when it is not the gate's own (a routed read). */
   wakes?: ServiceId;
+  /** A manual retry offered with a failure (first loads, after their one automatic retry). */
+  retry?: () => void;
   children: (data: O, requestId: string) => ReactNode;
 }) {
   const { busy, outcome } = state;
@@ -44,7 +47,7 @@ export function Outcome<O>({
       {outcome === null ? null : outcome.ok ? (
         children(outcome.data, outcome.requestId)
       ) : (
-        <OutcomeNotice failure={outcome} product={product} wakes={wakes} />
+        <OutcomeNotice failure={outcome} product={product} wakes={wakes} onRetry={retry} />
       )}
     </div>
   );

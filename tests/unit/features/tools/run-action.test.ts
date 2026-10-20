@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ToolOutcome } from "@/features/tools/outcome";
-import { needsLoad, runAction } from "@/features/tools/run-action";
+import { needsLoad, nextLoad, runAction } from "@/features/tools/run-action";
 
 /**
  * One workbench action (spec 21 §5.1, review fix 2): its outcome, or null when the page moved on —
@@ -59,5 +59,26 @@ describe("needsLoad (Ruling AI)", () => {
 
   it("never reloads what already loaded", () => {
     expect(needsLoad({ ok: true, data: [], status: 200, requestId: "r" })).toBe(false);
+  });
+});
+
+describe("nextLoad (review round 3: retry a first load at most once per failure)", () => {
+  const failed: ToolOutcome<number> = { ok: false, kind: "asleep", requestId: "r" };
+  const done: ToolOutcome<number> = { ok: true, data: 1, status: 200, requestId: "r" };
+
+  it("loads what was never loaded, without spending the retry", () => {
+    expect(nextLoad(null, false)).toEqual({ load: true, retried: false });
+  });
+
+  it("retries a failed first load once", () => {
+    expect(nextLoad(failed, false)).toEqual({ load: true, retried: true });
+  });
+
+  it("does not retry it a second time: a load that keeps timing out never loops", () => {
+    expect(nextLoad(failed, true)).toEqual({ load: false, retried: true });
+  });
+
+  it("clears the flag once a load succeeds, so a later failure gets its one retry again", () => {
+    expect(nextLoad(done, true)).toEqual({ load: false, retried: false });
   });
 });

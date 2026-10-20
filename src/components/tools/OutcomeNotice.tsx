@@ -1,8 +1,9 @@
 import type { FailedOutcome } from "@/features/tools/outcome";
 import type { ServiceId } from "@/platform/registry/products";
 import { AuditLink } from "./AuditLink";
-import { useGateServices } from "./WakeGate";
-import { rewakePlan, type WakePlan } from "./wake-model";
+import { BUTTON_QUIET } from "./styles";
+import { useGateServices, useSideWakes } from "./WakeGate";
+import { rewakePlan, type SideWakes, sideWakeWords, type WakePlan } from "./wake-model";
 
 /**
  * A failed action, said for what it is (spec 21 §5.1 invariant 4). The platform's limits — asleep,
@@ -13,12 +14,12 @@ import { rewakePlan, type WakePlan } from "./wake-model";
 
 const SLEEP = "Free Render services sleep after 15 minutes and take about a minute to wake.";
 
-function wakingWords(plan: WakePlan): string {
+function wakingWords(plan: WakePlan, side: SideWakes): string {
   switch (plan.kind) {
     case "gate":
       return `${SLEEP} bastion is waking ${plan.services.join(" and ")} again above; the actions come back once it answers.`;
     case "side":
-      return `${SLEEP} bastion is waking ${plan.service} now; try again once it answers.`;
+      return `${SLEEP} ${sideWakeWords(plan.service, side[plan.service])}`;
     case "none":
       return `${SLEEP} Nothing on this page wakes it: try again in a minute.`;
   }
@@ -36,13 +37,14 @@ function describe(
   f: FailedOutcome,
   product: string,
   plan: WakePlan,
+  side: SideWakes,
 ): { tone: Tone; title: string; body?: string } {
   switch (f.kind) {
     case "asleep":
       return {
         tone: "limit",
         title: `${product} is asleep (it did not answer in time)`,
-        body: wakingWords(plan),
+        body: wakingWords(plan, side),
       };
     case "rate_limited":
       return {
@@ -85,14 +87,17 @@ export function OutcomeNotice({
   failure,
   product,
   wakes,
+  onRetry,
 }: {
   failure: FailedOutcome;
   product: string;
   /** The service the call went to, when it is not the gate's own (a routed read). */
   wakes?: ServiceId;
+  /** A manual retry, for a first load that has used its one automatic retry (review round 3). */
+  onRetry?: () => void;
 }) {
   const plan = rewakePlan(useGateServices(), wakes);
-  const { tone, title, body } = describe(failure, product, plan);
+  const { tone, title, body } = describe(failure, product, plan, useSideWakes());
   return (
     <div
       data-kind={failure.kind}
@@ -102,6 +107,13 @@ export function OutcomeNotice({
       {body ? <p className="mt-1 leading-relaxed text-fg-muted break-words">{body}</p> : null}
       {failure.requestId ? (
         <AuditLink requestId={failure.requestId} className="mt-2 inline-block" />
+      ) : null}
+      {onRetry ? (
+        <div className="mt-3">
+          <button type="button" onClick={onRetry} className={BUTTON_QUIET}>
+            try again
+          </button>
+        </div>
       ) : null}
     </div>
   );

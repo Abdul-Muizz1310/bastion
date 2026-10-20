@@ -21,8 +21,7 @@ import { callTool, getRoute } from "../client";
 import { plural, utc } from "../format";
 import type { ToolOutcome } from "../outcome";
 import { pollTool } from "../poll";
-import { needsLoad } from "../run-action";
-import { useAction } from "../use-action";
+import { useAction, useFirstLoad } from "../use-action";
 import { type TranscriptCheck, transcriptCheckSchema } from "./check-result";
 import { readRounds } from "./rounds";
 
@@ -116,10 +115,14 @@ export function PaperTrailWorkbench({ initial = {} }: { initial?: PaperTrailStat
     if (created?.ok) void open(created.data.debate_id);
   };
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, when the gate opens
-  useEffect(() => {
-    if (!ready || !needsLoad(recent.outcome)) return;
+  const loadRecent = () =>
     void recent.run((signal) => callTool(paperTrail.list, { limit: 5 }, { signal }));
+
+  // A first load: it retries once after a failure, then waits for its manual retry (round 3).
+  const recentLoad = useFirstLoad();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the gate opens
+  useEffect(() => {
+    if (ready && recentLoad(recent.outcome)) loadRecent();
   }, [ready]);
 
   const current = debate.outcome?.ok ? debate.outcome.data : null;
@@ -182,7 +185,7 @@ export function PaperTrailWorkbench({ initial = {} }: { initial?: PaperTrailStat
         </Panel>
 
         <Panel id="pt-recent" title="recent debates" hint="open one: no budget spent">
-          <Outcome state={recent} product={P} what="the recent debates">
+          <Outcome state={recent} product={P} what="the recent debates" retry={loadRecent}>
             {(page, requestId) =>
               page.items.length === 0 ? (
                 <div className="space-y-3">

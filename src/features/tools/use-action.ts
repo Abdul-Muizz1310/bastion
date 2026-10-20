@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRewake } from "@/components/tools/WakeGate";
 import type { ServiceId } from "@/platform/registry/products";
 import type { ToolOutcome } from "./outcome";
-import { runAction } from "./run-action";
+import { nextLoad, runAction } from "./run-action";
 
 /**
  * One workbench action's state: whether it runs, and what it last came to. A new run aborts the one
@@ -53,4 +53,17 @@ export function useAction<O>(initial: ToolOutcome<O> | null = null): Action<O> {
   );
 
   return { ...state, run, set };
+}
+
+/**
+ * Review round 3: one first load's gate — `shouldLoad(outcome)` says whether to (re)load it now,
+ * spending its single automatic retry per failure; a success gives the retry back.
+ */
+export function useFirstLoad(): (outcome: ToolOutcome<unknown> | null) => boolean {
+  const retried = useRef(false);
+  return useCallback((outcome: ToolOutcome<unknown> | null) => {
+    const next = nextLoad(outcome, retried.current);
+    retried.current = next.retried;
+    return next.load;
+  }, []);
 }

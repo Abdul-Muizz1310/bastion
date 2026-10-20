@@ -15,8 +15,7 @@ import { useBudgets } from "../BudgetProvider";
 import { callTool, postRoute } from "../client";
 import { plural, utc } from "../format";
 import type { ToolOutcome } from "../outcome";
-import { needsLoad } from "../run-action";
-import { useAction } from "../use-action";
+import { useAction, useFirstLoad } from "../use-action";
 import { contractOf } from "./contract";
 import { type ProofAnswer, type ProofStepAnswer, proofAnswerSchema } from "./proof-answer";
 import { FEATHERS_YAML, FEATHERS_YAML_SHA256, FEATHERS_YAML_SOURCE } from "./schema";
@@ -79,9 +78,11 @@ export function FeathersWorkbench({ initial = {} }: { initial?: FeathersState })
   const list = () =>
     void users.run((signal) => callTool(feathers.users, { limit: 20 }, { signal }));
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, when the gate opens
+  // A first load: it retries once after a failure, then waits for its manual retry (round 3).
+  const usersLoad = useFirstLoad();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the gate opens
   useEffect(() => {
-    if (ready && needsLoad(users.outcome)) list();
+    if (ready && usersLoad(users.outcome)) list();
   }, [ready]);
 
   const create = async () => {
@@ -305,7 +306,7 @@ export function FeathersWorkbench({ initial = {} }: { initial?: FeathersState })
           >
             list again
           </button>
-          <Outcome state={users} product={P} what="the users">
+          <Outcome state={users} product={P} what="the users" retry={list}>
             {(rows, requestId) => (
               <div className="space-y-3">
                 {rows.length === 0 ? (
