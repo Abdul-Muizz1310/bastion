@@ -382,8 +382,10 @@ A dossier is rows, not a promise. `dossier_steps` holds one row per stage with `
   longer than that runs with its caller already gone; Next runs a *function* given to `after()` only when
   the response closes, and a close that already happened never fires again — a chain registered after
   such a stage would be dropped and the dossier would wait for a page to nudge it. A promise is kept alive
-  with `waitUntil` and needs no close. Every path settles it: with the next delay, or with nothing to
-  chain (finished, failed, unknown dossier, an error).
+  with `waitUntil` and needs no close. Every path settles it, in a `finally`: with the next delay, or
+  with nothing to chain (finished, failed, unknown dossier, an error — deciding the delay included).
+  Compose and "retry from this stage" hand their first advance to `after()` as a promise too, so a
+  client that leaves before the answer is written cannot leave a run unstarted.
 - Progress reaches the page through the existing SSE route (polling `dossier_events`, `maxDuration` 300).
 
 ### 6.3 Data model (migration on the `shadow-admin` branch)

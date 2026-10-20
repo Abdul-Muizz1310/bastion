@@ -6,16 +6,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * Rate-limited 5 an hour per visitor; the reset is audited (by `retryStage`) and the run restarts.
  */
 
-const { check, createRateLimiter, retryStage, afterCallbacks, chainAdvance } = vi.hoisted(() => {
-  const check = vi.fn();
-  return {
-    check,
-    createRateLimiter: vi.fn(() => ({ check })),
-    retryStage: vi.fn(),
-    afterCallbacks: [] as Array<() => unknown>,
-    chainAdvance: vi.fn(),
-  };
-});
+const { check, createRateLimiter, retryStage, afterCallbacks, afterKinds, chainAdvance } =
+  vi.hoisted(() => {
+    const check = vi.fn();
+    return {
+      check,
+      createRateLimiter: vi.fn(() => ({ check })),
+      retryStage: vi.fn(),
+      afterCallbacks: [] as Array<() => unknown>,
+      afterKinds: [] as Array<"function" | "promise">,
+      chainAdvance: vi.fn(),
+    };
+  });
 
 vi.mock("@/platform/ratelimit", () => ({ createRateLimiter }));
 vi.mock("@/dossier/runner", async (orig) => ({
@@ -28,8 +30,10 @@ vi.mock("@/dossier/chain", async (orig) => ({
 }));
 vi.mock("next/server", async (orig) => ({
   ...(await orig<typeof import("next/server")>()),
-  after: (cb: () => unknown) => {
-    afterCallbacks.push(cb);
+  // after() takes a function (run once the response closes) or a promise (kept alive at once).
+  after: (task: (() => unknown) | Promise<unknown>) => {
+    afterCallbacks.push(typeof task === "function" ? task : () => task);
+    afterKinds.push(typeof task === "function" ? "function" : "promise");
   },
 }));
 
@@ -54,6 +58,7 @@ beforeEach(() => {
   retryStage.mockReset().mockResolvedValue({ ok: true, dossier: "running" });
   chainAdvance.mockReset().mockResolvedValue(undefined);
   afterCallbacks.length = 0;
+  afterKinds.length = 0;
 });
 
 afterEach(() => {
@@ -104,6 +109,12 @@ describe("POST /api/dossiers/[id]/retry", () => {
     expect(afterCallbacks).toHaveLength(1);
     for (const cb of afterCallbacks) await cb();
     expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 0);
+  });
+
+  it("hands after() the restart as a promise, which a client gone before the answer cannot drop", async () => {
+    await post(JSON.stringify({ stage: "debate" }));
+    expect(afterKinds).toEqual(["promise"]);
+    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0);
   });
 
   it("answers 404 for an unknown dossier", async () => {

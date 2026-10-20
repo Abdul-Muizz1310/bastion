@@ -48,21 +48,23 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
     }
   }
 
-  // Registered now, decided once the stage is recorded: every path below decides exactly once.
+  // Registered now, decided once the stage is recorded; the finally settles it on every path.
   const decide = deferChain(req.nextUrl.origin, id, (task) => after(task), chainAdvance);
+  let delayMs: number | null = null;
   let result: Awaited<ReturnType<typeof advance>>;
   try {
     result = await advance(id, HANDLERS);
+    delayMs = chainDelayMs(result, new Date());
   } catch (err) {
-    decide(null);
     if (err instanceof UnknownDossierError) {
       return errorResponse(404, { error: "unknown_dossier", requestId });
     }
     console.error("advance failed", { dossierId: id, requestId, err });
     return errorResponse(500, { error: "advance_failed", requestId });
+  } finally {
+    decide(delayMs);
   }
 
-  decide(chainDelayMs(result, new Date()));
   return Response.json(result, {
     headers: { "cache-control": "no-store", "x-request-id": requestId },
   });

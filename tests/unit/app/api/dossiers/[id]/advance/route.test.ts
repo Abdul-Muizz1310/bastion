@@ -6,19 +6,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * visitor; the runner's own chained calls carry the internal HMAC header and are not limited.
  */
 
-const { check, createRateLimiter, advance, afterCallbacks, afterKinds, chainAdvance } = vi.hoisted(
-  () => {
-    const check = vi.fn();
-    return {
-      check,
-      createRateLimiter: vi.fn(() => ({ check })),
-      advance: vi.fn(),
-      afterCallbacks: [] as Array<() => unknown>,
-      afterKinds: [] as Array<"function" | "promise">,
-      chainAdvance: vi.fn(),
-    };
-  },
-);
+const {
+  check,
+  createRateLimiter,
+  advance,
+  afterCallbacks,
+  afterKinds,
+  chainAdvance,
+  chainDelayMs,
+} = vi.hoisted(() => {
+  const check = vi.fn();
+  return {
+    check,
+    createRateLimiter: vi.fn(() => ({ check })),
+    advance: vi.fn(),
+    afterCallbacks: [] as Array<() => unknown>,
+    afterKinds: [] as Array<"function" | "promise">,
+    chainAdvance: vi.fn(),
+    chainDelayMs: vi.fn(),
+  };
+});
 
 vi.mock("@/platform/ratelimit", () => ({ createRateLimiter }));
 vi.mock("@/dossier/runner", async (orig) => ({
@@ -28,6 +35,7 @@ vi.mock("@/dossier/runner", async (orig) => ({
 vi.mock("@/dossier/chain", async (orig) => ({
   ...(await orig<typeof import("@/dossier/chain")>()),
   chainAdvance,
+  chainDelayMs,
 }));
 vi.mock("next/server", async (orig) => ({
   ...(await orig<typeof import("next/server")>()),
@@ -69,7 +77,9 @@ async function runAfter(): Promise<void> {
   for (const cb of afterCallbacks.splice(0)) await cb();
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  const actual = await vi.importActual<typeof import("@/dossier/chain")>("@/dossier/chain");
+  chainDelayMs.mockReset().mockImplementation(actual.chainDelayMs);
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
   vi.stubEnv("IRON_SESSION_PASSWORD", "x".repeat(32));
@@ -181,6 +191,22 @@ describe("POST /api/dossiers/[id]/advance", () => {
       await post();
     }
     await runAfter();
+    expect(chainAdvance).not.toHaveBeenCalled();
+  });
+
+  it("settles the chain on every path — even when deciding the delay throws (500, no chain)", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    chainDelayMs.mockImplementation(() => {
+      throw new RangeError("a bad nextAt");
+    });
+    const res = await post();
+    expect(res.status).toBe(500);
+    expect(error).toHaveBeenCalled();
+    const settled = await Promise.race([
+      runAfter().then(() => "settled"),
+      new Promise((resolve) => setTimeout(() => resolve("never settled"), 200)),
+    ]);
+    expect(settled).toBe("settled");
     expect(chainAdvance).not.toHaveBeenCalled();
   });
 

@@ -111,8 +111,9 @@ of a waiting poll), or nothing to chain. The hand-off POSTs the same route with 
 header (so the runner never meets the visitor rate limit) and lets go after 10 s. Registering it
 first matters: a stage longer than that runs with its caller already gone, and Next runs a
 *function* given to `after()` only when the response closes — a close that has already happened.
-A promise is kept alive with `waitUntil` instead. The e2e suite crosses a 12 s stage with no page
-open to prove the chain holds.
+A promise is kept alive with `waitUntil` instead, and a `finally` settles it on every path. Compose
+and retry start a run the same way. The e2e suite crosses a 12 s stage with no page open to prove
+the chain holds.
 
 **Recovery.** The dossier page nudges `advance` when its frontier stage has been due for 5 s
 (a lease that expired, a `not_before` that passed), backing off on failure; a crashed invocation's

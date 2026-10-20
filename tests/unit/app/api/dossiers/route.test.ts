@@ -5,18 +5,26 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * after()); GET lists the 12 most recent, public fields only.
  */
 
-const { check, createRateLimiter, createDossier, listPublicDossiers, afterCallbacks, chainAdvance } =
-  vi.hoisted(() => {
-    const check = vi.fn();
-    return {
-      check,
-      createRateLimiter: vi.fn(() => ({ check })),
-      createDossier: vi.fn(),
-      listPublicDossiers: vi.fn(),
-      afterCallbacks: [] as Array<() => unknown>,
-      chainAdvance: vi.fn(),
-    };
-  });
+const {
+  check,
+  createRateLimiter,
+  createDossier,
+  listPublicDossiers,
+  afterCallbacks,
+  afterKinds,
+  chainAdvance,
+} = vi.hoisted(() => {
+  const check = vi.fn();
+  return {
+    check,
+    createRateLimiter: vi.fn(() => ({ check })),
+    createDossier: vi.fn(),
+    listPublicDossiers: vi.fn(),
+    afterCallbacks: [] as Array<() => unknown>,
+    afterKinds: [] as Array<"function" | "promise">,
+    chainAdvance: vi.fn(),
+  };
+});
 vi.mock("@/platform/ratelimit", () => ({ createRateLimiter }));
 vi.mock("@/dossier/create", async (orig) => ({
   ...(await orig<typeof import("@/dossier/create")>()),
@@ -32,8 +40,10 @@ vi.mock("@/dossier/chain", async (orig) => ({
 }));
 vi.mock("next/server", async (orig) => ({
   ...(await orig<typeof import("next/server")>()),
-  after: (cb: () => unknown) => {
-    afterCallbacks.push(cb);
+  // after() takes a function (run once the response closes) or a promise (kept alive at once).
+  after: (task: (() => unknown) | Promise<unknown>) => {
+    afterCallbacks.push(typeof task === "function" ? task : () => task);
+    afterKinds.push(typeof task === "function" ? "function" : "promise");
   },
 }));
 
@@ -64,6 +74,7 @@ beforeEach(() => {
   chainAdvance.mockReset().mockResolvedValue(undefined);
   listPublicDossiers.mockReset().mockResolvedValue([]);
   afterCallbacks.length = 0;
+  afterKinds.length = 0;
 });
 
 describe("POST /api/dossiers", () => {
@@ -74,15 +85,22 @@ describe("POST /api/dossiers", () => {
     expect(check).toHaveBeenCalledWith(expect.stringMatching(/^compose:v_[a-z2-7]{10}$/));
   });
 
-  it("answers 202 with the id, request id and url, and starts the runner after the response", async () => {
+  it("answers 202 with the id, request id and url, and starts the runner with after()", async () => {
     const res = await post(valid);
     expect(res.status).toBe(202);
     const body = await res.json();
     expect(body).toEqual({ dossier_id: ID, request_id: res.headers.get("x-request-id"), url: `/d/${ID}` });
     expect(res.headers.get("cache-control")).toBe("no-store");
-    expect(chainAdvance).not.toHaveBeenCalled();
     await afterCallbacks[0]?.();
     expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 0);
+  });
+
+  it("hands after() the first advance as a promise, which a client gone before the 202 cannot drop", async () => {
+    // Task 15: Next runs a *function* given to after() only when the response closes; a promise is
+    // kept alive with waitUntil — the same form the advance route uses.
+    await post(valid);
+    expect(afterKinds).toEqual(["promise"]);
+    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0);
   });
 
   it("passes the parsed, defaulted input and the visitor to the service", async () => {

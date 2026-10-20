@@ -77,7 +77,9 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const origin = req.nextUrl.origin;
   const id = result.dossierId;
-  after(() => chainAdvance(origin, id, 0));
+  // A promise, not a function: Next runs a function given to after() only when the response
+  // closes, and a client gone before it is written would leave the run unstarted (spec 21 §6.2).
+  after(chainAdvance(origin, id, 0));
   return Response.json(
     { dossier_id: id, request_id: requestId, url: `/d/${id}` },
     { status: 202, headers: { "cache-control": "no-store", "x-request-id": requestId } },
