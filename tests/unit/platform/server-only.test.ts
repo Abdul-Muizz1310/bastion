@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 const ROOT = resolve(__dirname, "../../..");
 const SERVER_ONLY = [
+  "src/features/dossier/load.ts",
   "src/features/tools/components/WorkbenchPage.tsx",
   "src/features/tools/feathers/proof.ts",
   "src/features/tools/load.ts",
@@ -22,8 +23,13 @@ const SERVER_ONLY = [
   "src/platform/gateway/token.ts",
 ];
 
-/** What the browser loads: the capability schemas and every workbench module. */
-const CLIENT_DIRS = ["src/capabilities", "src/components/tools", "src/features/tools"];
+/** What the browser loads: the capability schemas, every workbench and the dossier pages' islands. */
+const CLIENT_DIRS = [
+  "src/capabilities",
+  "src/components/tools",
+  "src/features/tools",
+  "src/features/dossier",
+];
 
 function files(dir: string): string[] {
   return readdirSync(join(ROOT, dir)).flatMap((name) => {
