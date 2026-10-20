@@ -1,273 +1,272 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock next/server
-vi.mock("next/server", () => {
-  class MockNextResponse {
-    status: number;
-    body: unknown;
-    headers: Headers;
-    constructor(body?: BodyInit | null, init?: { status?: number; headers?: HeadersInit }) {
-      this.body = body;
-      this.status = init?.status ?? 200;
-      this.headers = new Headers(init?.headers);
-    }
-    static json(data: unknown, init?: { status?: number }) {
-      const r = new MockNextResponse(JSON.stringify(data), { status: init?.status });
-      (r as unknown as { _jsonBody: unknown })._jsonBody = data;
-      return r;
-    }
-  }
-  return { NextResponse: MockNextResponse, NextRequest: class {} };
-});
-
-// Mock query helpers
-const mockGetDossier = vi.fn();
-const mockListEvents = vi.fn();
-vi.mock("@/features/dossier/server/query", () => ({
-  getDossier: (...args: unknown[]) => mockGetDossier(...args),
-  listDossierEvents: (...args: unknown[]) => mockListEvents(...args),
+const mockFind = vi.fn();
+const mockSteps = vi.fn();
+vi.mock("@/dossier/store", () => ({
+  findDossier: (...args: unknown[]) => mockFind(...args),
+  loadSteps: (...args: unknown[]) => mockSteps(...args),
 }));
 
-import type { Dossier } from "@/lib/db/schema";
+import * as route from "@/app/api/dossiers/[id]/stream/route";
+import { formatSseEvent, GET, maxDuration, streamDossier } from "@/app/api/dossiers/[id]/stream/route";
+import type { StepRow } from "@/dossier/stages";
+import { DOSSIER_ID, dossierRow, stepRows } from "../../../../../features/dossier/fixtures";
 
-const DOSSIER_UUID = "550e8400-e29b-41d4-a716-446655440000";
+/**
+ * Spec 21 §6.6, "The live run": the SSE route polls the dossier and its `dossier_steps` rows (the
+ * dossier first) and sends `step` for every row on the first tick and each changed row after,
+ * `status` when the status, verdict or confidence change, `done` once terminal — within its 300 s
+ * budget, stopping when the client leaves.
+ */
 
-function makeDossier(overrides: Partial<Dossier> = {}): Dossier {
-  return {
-    id: DOSSIER_UUID,
-    userId: null,
-    visitor: "v_kk6eooepno",
-    claim: "test claim",
-    sources: ["hackernews"],
-    mode: "standard",
-    status: "running",
-    verdict: null,
-    confidence: null,
-    requestId: "req-1",
-    envelopeId: null,
-    error: null,
-    createdAt: new Date("2026-04-18T10:00:00Z"),
-    updatedAt: new Date("2026-04-18T10:00:00Z"),
-    ...overrides,
-  };
+type Parsed = { type: string; data: Record<string, unknown> };
+
+function parse(chunk: string): Parsed {
+  const m = /^event: ([a-z_]+)\ndata: ([\s\S]*)\n\n$/.exec(chunk);
+  if (!m) throw new Error(`not an SSE event: ${chunk}`);
+  return { type: m[1] ?? "", data: JSON.parse(m[2] ?? "null") };
 }
 
-function makeEvent(overrides: Record<string, unknown> = {}) {
-  return {
-    id: 1,
-    dossierId: DOSSIER_UUID,
-    step: "gather",
-    status: "ok",
-    latencyMs: 10,
-    metadata: {},
-    at: new Date("2026-04-18T10:00:01Z"),
-    ...overrides,
-  };
+async function collect(gen: AsyncGenerator<string>): Promise<Parsed[]> {
+  const out: Parsed[] = [];
+  for await (const chunk of gen) out.push(parse(chunk));
+  return out;
 }
 
-describe("17-sse: formatSseEvent", () => {
-  it("formats a single event correctly", async () => {
-    const { formatSseEvent } = await import("@/app/api/dossiers/[id]/stream/route");
-    const output = formatSseEvent("state", { step: "gather", status: "ok" });
-    expect(output).toBe('event: state\ndata: {"step":"gather","status":"ok"}\n\n');
+const fast = { pollIntervalMs: 1, heartbeatIntervalMs: 1_000_000, maxIterations: 5, sleep: async () => {} };
+
+const running = (over: Parameters<typeof dossierRow>[0] = {}) =>
+  dossierRow({ status: "running", verdict: null, confidence: null, envelopeId: null, ...over });
+
+/** Rows ok through read, seal running. */
+function midRun(seal: Partial<StepRow> = {}): StepRow[] {
+  return stepRows({
+    seal: { status: "running", leaseUntil: new Date("2026-10-20T10:04:30Z"), finishedAt: null, ...seal },
+    debate: { status: "pending", attempt: 0, startedAt: null, finishedAt: null },
+    measure: { status: "pending", attempt: 0, startedAt: null, finishedAt: null },
+    envelope: { status: "pending", attempt: 0, startedAt: null, finishedAt: null },
+    record: { status: "pending", attempt: 0, startedAt: null, finishedAt: null },
   });
+}
 
-  it("serializes nested objects", async () => {
-    const { formatSseEvent } = await import("@/app/api/dossiers/[id]/stream/route");
-    const output = formatSseEvent("status", {
-      status: "succeeded",
-      verdict: "TRUE",
-      confidence: 0.87,
+describe("formatSseEvent", () => {
+  it("writes one event: its type and its JSON data", () => {
+    expect(formatSseEvent("status", { status: "running" })).toBe(
+      'event: status\ndata: {"status":"running"}\n\n',
+    );
+  });
+});
+
+describe("streamDossier", () => {
+  it("sends every step row and the status on the first tick", async () => {
+    const dossierFn = vi.fn().mockResolvedValueOnce(running()).mockResolvedValue(dossierRow());
+    const stepsFn = vi.fn().mockResolvedValue(midRun());
+    const events = await collect(streamDossier(DOSSIER_ID, { dossierFn, stepsFn }, { ...fast, maxIterations: 1 }));
+    const steps = events.filter((e) => e.type === "step");
+    expect(steps.map((e) => e.data.stage)).toEqual([
+      "wake",
+      "gather",
+      "read",
+      "seal",
+      "debate",
+      "measure",
+      "envelope",
+      "record",
+    ]);
+    expect(steps[3]?.data).toMatchObject({ status: "running", leaseUntil: "2026-10-20T10:04:30.000Z", nextAt: null });
+    expect(events.find((e) => e.type === "status")?.data).toEqual({
+      status: "running",
+      verdict: null,
+      confidence: null,
     });
-    expect(output).toContain("event: status");
-    expect(output).toContain('"verdict":"TRUE"');
-    expect(output).toContain('"confidence":0.87');
-    expect(output).toMatch(/\n\n$/);
-  });
-});
-
-describe("17-sse: streamDossierEvents generator", () => {
-  const initial = makeDossier({ status: "running" });
-
-  async function collect(gen: AsyncGenerator<string, void, unknown>): Promise<string[]> {
-    const out: string[] = [];
-    for await (const chunk of gen) out.push(chunk);
-    return out;
-  }
-
-  const fastConfig = {
-    pollIntervalMs: 1,
-    heartbeatIntervalMs: 1_000_000,
-    maxIterations: 3,
-    sleep: () => Promise.resolve(),
-  };
-
-  it("case 10: emits state event for historical events on first tick", async () => {
-    const { streamDossierEvents } = await import("@/app/api/dossiers/[id]/stream/route");
-    const events = [
-      makeEvent({ step: "gather", at: new Date("2026-04-18T10:00:01Z") }),
-      makeEvent({ step: "seal", at: new Date("2026-04-18T10:00:02Z") }),
-    ];
-    const getDossierFn = vi
-      .fn()
-      .mockResolvedValue(makeDossier({ status: "succeeded", verdict: "TRUE", confidence: "0.90" }));
-    const listEventsFn = vi.fn().mockResolvedValueOnce(events).mockResolvedValue([]);
-
-    const chunks = await collect(
-      streamDossierEvents(DOSSIER_UUID, initial, { getDossierFn, listEventsFn }, fastConfig),
-    );
-
-    const stateEvents = chunks.filter((c) => c.startsWith("event: state"));
-    expect(stateEvents).toHaveLength(2);
-    expect(stateEvents[0]).toContain("gather");
-    expect(stateEvents[1]).toContain("seal");
   });
 
-  it("case 11: emits status event when dossier status changes", async () => {
-    const { streamDossierEvents } = await import("@/app/api/dossiers/[id]/stream/route");
-    const getDossierFn = vi
+  it("then sends only the rows that changed", async () => {
+    const dossierFn = vi.fn().mockResolvedValue(running());
+    const stepsFn = vi
       .fn()
-      .mockResolvedValueOnce(makeDossier({ status: "running" }))
+      .mockResolvedValueOnce(midRun())
+      .mockResolvedValueOnce(midRun())
       .mockResolvedValueOnce(
-        makeDossier({ status: "succeeded", verdict: "TRUE", confidence: "0.90" }),
+        midRun({ status: "ok", leaseUntil: new Date(0), finishedAt: new Date("2026-10-20T10:02:00Z"), output: { certified: 2, total: 2 } }),
       );
-    const listEventsFn = vi.fn().mockResolvedValue([]);
-
-    const chunks = await collect(
-      streamDossierEvents(DOSSIER_UUID, initial, { getDossierFn, listEventsFn }, fastConfig),
-    );
-
-    const statusEvents = chunks.filter((c) => c.startsWith("event: status"));
-    expect(statusEvents).toHaveLength(1);
-    expect(statusEvents[0]).toContain('"status":"succeeded"');
-    expect(statusEvents[0]).toContain('"verdict":"TRUE"');
+    const events = await collect(streamDossier(DOSSIER_ID, { dossierFn, stepsFn }, { ...fast, maxIterations: 3 }));
+    const steps = events.filter((e) => e.type === "step");
+    expect(steps).toHaveLength(9);
+    expect(steps[8]?.data).toMatchObject({ stage: "seal", status: "ok", note: "certified 2 of 2" });
   });
 
-  it("case 12: emits done event when status becomes terminal and stops", async () => {
-    const { streamDossierEvents } = await import("@/app/api/dossiers/[id]/stream/route");
-    const getDossierFn = vi
+  it("re-sends a waiting row whose next poll moved", async () => {
+    const waiting = (at: string) =>
+      midRun({ status: "waiting", leaseUntil: new Date(0), notBefore: new Date(at) });
+    const dossierFn = vi.fn().mockResolvedValue(running());
+    const stepsFn = vi
       .fn()
-      .mockResolvedValue(
-        makeDossier({ status: "succeeded", verdict: "FALSE", confidence: "0.75" }),
-      );
-    const listEventsFn = vi.fn().mockResolvedValue([]);
-
-    const chunks = await collect(
-      streamDossierEvents(DOSSIER_UUID, initial, { getDossierFn, listEventsFn }, fastConfig),
-    );
-
-    const doneEvents = chunks.filter((c) => c.startsWith("event: done"));
-    expect(doneEvents).toHaveLength(1);
-    expect(doneEvents[0]).toContain('"status":"succeeded"');
-    // Generator should stop after done (no further iterations)
-    expect(getDossierFn).toHaveBeenCalledTimes(1);
+      .mockResolvedValueOnce(waiting("2026-10-20T10:00:03Z"))
+      .mockResolvedValueOnce(waiting("2026-10-20T10:00:06Z"));
+    const events = await collect(streamDossier(DOSSIER_ID, { dossierFn, stepsFn }, { ...fast, maxIterations: 2 }));
+    const seal = events.filter((e) => e.type === "step" && e.data.stage === "seal");
+    expect(seal.map((e) => e.data.nextAt)).toEqual(["2026-10-20T10:00:03.000Z", "2026-10-20T10:00:06.000Z"]);
   });
 
-  it("case 12b: emits done when status is failed", async () => {
-    const { streamDossierEvents } = await import("@/app/api/dossiers/[id]/stream/route");
-    const getDossierFn = vi.fn().mockResolvedValue(makeDossier({ status: "failed" }));
-    const listEventsFn = vi.fn().mockResolvedValue([]);
-
-    const chunks = await collect(
-      streamDossierEvents(DOSSIER_UUID, initial, { getDossierFn, listEventsFn }, fastConfig),
+  it("never sends a stage's output, only its note", async () => {
+    const big = "x".repeat(50_000);
+    const dossierFn = vi.fn().mockResolvedValue(running());
+    const stepsFn = vi.fn().mockResolvedValue(
+      stepRows({ gather: { output: [{ key: "w-a", text: big }] }, seal: { status: "running", finishedAt: null } }),
     );
-    expect(chunks.some((c) => c.includes("event: done"))).toBe(true);
+    const events = await collect(streamDossier(DOSSIER_ID, { dossierFn, stepsFn }, { ...fast, maxIterations: 1 }));
+    expect(JSON.stringify(events)).not.toContain(big);
   });
 
-  it("case 13: emits heartbeat when interval elapses", async () => {
-    const { streamDossierEvents } = await import("@/app/api/dossiers/[id]/stream/route");
-    const getDossierFn = vi.fn().mockResolvedValue(makeDossier({ status: "running" }));
-    const listEventsFn = vi.fn().mockResolvedValue([]);
+  it("sends status only when the status, verdict or confidence change, with a numeric confidence", async () => {
+    const dossierFn = vi
+      .fn()
+      .mockResolvedValueOnce(running())
+      .mockResolvedValueOnce(running())
+      .mockResolvedValueOnce(running({ verdict: "TRUE", confidence: "0.82" }));
+    const stepsFn = vi.fn().mockResolvedValue(midRun());
+    const events = await collect(streamDossier(DOSSIER_ID, { dossierFn, stepsFn }, { ...fast, maxIterations: 3 }));
+    expect(events.filter((e) => e.type === "status").map((e) => e.data)).toEqual([
+      { status: "running", verdict: null, confidence: null },
+      { status: "running", verdict: "TRUE", confidence: 0.82 },
+    ]);
+  });
 
-    const chunks = await collect(
-      streamDossierEvents(
-        DOSSIER_UUID,
-        initial,
-        { getDossierFn, listEventsFn },
-        {
-          pollIntervalMs: 0,
-          heartbeatIntervalMs: 0,
-          maxIterations: 2,
-          sleep: () => Promise.resolve(),
+  it("ends with done once terminal — after that tick's steps and status — and stops polling", async () => {
+    const dossierFn = vi.fn().mockResolvedValueOnce(running()).mockResolvedValue(dossierRow());
+    const stepsFn = vi.fn().mockResolvedValueOnce(midRun()).mockResolvedValue(stepRows());
+    const events = await collect(streamDossier(DOSSIER_ID, { dossierFn, stepsFn }, fast));
+    expect(events.at(-1)).toEqual({
+      type: "done",
+      data: { status: "succeeded", verdict: "TRUE", confidence: 0.82 },
+    });
+    expect(events.at(-2)?.type).toBe("status");
+    const lastSteps = events.slice(-7, -2);
+    expect(lastSteps.every((e) => e.type === "step" && e.data.status === "ok")).toBe(true);
+    expect(dossierFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the dossier before the steps on every tick, so a terminal status never outruns its step", async () => {
+    const order: string[] = [];
+    const dossierFn = vi.fn(async () => {
+      order.push("dossier");
+      return running();
+    });
+    const stepsFn = vi.fn(async () => {
+      order.push("steps");
+      return midRun();
+    });
+    await collect(streamDossier(DOSSIER_ID, { dossierFn, stepsFn }, { ...fast, maxIterations: 2 }));
+    expect(order).toEqual(["dossier", "steps", "dossier", "steps"]);
+  });
+
+  it("ends a failed dossier with done too", async () => {
+    const dossierFn = vi.fn().mockResolvedValue(running({ status: "failed" }));
+    const stepsFn = vi.fn().mockResolvedValue(stepRows({ seal: { status: "error", error: "x" } }));
+    const events = await collect(streamDossier(DOSSIER_ID, { dossierFn, stepsFn }, fast));
+    expect(events.at(-1)?.data).toMatchObject({ status: "failed" });
+  });
+
+  it("ends with done when the dossier is deleted mid-stream", async () => {
+    const dossierFn = vi.fn().mockResolvedValueOnce(running()).mockResolvedValue(null);
+    const stepsFn = vi.fn().mockResolvedValue(midRun());
+    const events = await collect(streamDossier(DOSSIER_ID, { dossierFn, stepsFn }, fast));
+    expect(events.at(-1)).toEqual({ type: "done", data: { status: "failed", reason: "dossier_deleted" } });
+  });
+
+  it("follows a v1 dossier (no step rows) by its status alone", async () => {
+    const dossierFn = vi.fn().mockResolvedValue(dossierRow({ status: "succeeded" }));
+    const stepsFn = vi.fn().mockResolvedValue([]);
+    const events = await collect(streamDossier(DOSSIER_ID, { dossierFn, stepsFn }, fast));
+    expect(events.map((e) => e.type)).toEqual(["status", "done"]);
+  });
+
+  it("sends a heartbeat when the interval passes", async () => {
+    const dossierFn = vi.fn().mockResolvedValue(running());
+    const stepsFn = vi.fn().mockResolvedValue(midRun());
+    const events = await collect(
+      streamDossier(DOSSIER_ID, { dossierFn, stepsFn }, { ...fast, heartbeatIntervalMs: 0, maxIterations: 2 }),
+    );
+    expect(events.some((e) => e.type === "heartbeat")).toBe(true);
+  });
+
+  it("ends with timeout after its polls, and by default polls 140 times 2 s apart (within 300 s)", async () => {
+    const dossierFn = vi.fn().mockResolvedValue(running());
+    const stepsFn = vi.fn().mockResolvedValue(midRun());
+    const sleeps: number[] = [];
+    const events = await collect(
+      streamDossier(DOSSIER_ID, { dossierFn, stepsFn }, {
+        heartbeatIntervalMs: 1_000_000,
+        sleep: async (ms) => {
+          sleeps.push(ms);
         },
-      ),
+      }),
     );
-
-    const heartbeats = chunks.filter((c) => c.startsWith("event: heartbeat"));
-    expect(heartbeats.length).toBeGreaterThan(0);
+    expect(events.at(-1)?.type).toBe("timeout");
+    expect(dossierFn).toHaveBeenCalledTimes(140);
+    expect(new Set(sleeps)).toEqual(new Set([2_000]));
+    expect(140 * 2_000).toBeLessThan(maxDuration * 1000);
+    expect(maxDuration).toBe(300);
   });
 
-  it("case 14: emits timeout event after maxIterations", async () => {
-    const { streamDossierEvents } = await import("@/app/api/dossiers/[id]/stream/route");
-    const getDossierFn = vi.fn().mockResolvedValue(makeDossier({ status: "running" }));
-    const listEventsFn = vi.fn().mockResolvedValue([]);
-
-    const chunks = await collect(
-      streamDossierEvents(
-        DOSSIER_UUID,
-        initial,
-        { getDossierFn, listEventsFn },
-        {
-          pollIntervalMs: 0,
-          heartbeatIntervalMs: 1_000_000,
-          maxIterations: 2,
-          sleep: () => Promise.resolve(),
+  it("stops polling when the client goes away", async () => {
+    const controller = new AbortController();
+    const dossierFn = vi.fn().mockResolvedValue(running());
+    const stepsFn = vi.fn().mockResolvedValue(midRun());
+    const events = await collect(
+      streamDossier(DOSSIER_ID, { dossierFn, stepsFn }, {
+        ...fast,
+        maxIterations: 100,
+        signal: controller.signal,
+        sleep: async () => {
+          if (dossierFn.mock.calls.length === 2) controller.abort();
         },
-      ),
+      }),
     );
-
-    const timeoutEvents = chunks.filter((c) => c.startsWith("event: timeout"));
-    expect(timeoutEvents).toHaveLength(1);
-  });
-
-  it("emits done if dossier is deleted mid-stream", async () => {
-    const { streamDossierEvents } = await import("@/app/api/dossiers/[id]/stream/route");
-    const getDossierFn = vi.fn().mockResolvedValue(null);
-    const listEventsFn = vi.fn().mockResolvedValue([]);
-
-    const chunks = await collect(
-      streamDossierEvents(DOSSIER_UUID, initial, { getDossierFn, listEventsFn }, fastConfig),
-    );
-    const done = chunks.find((c) => c.startsWith("event: done"));
-    expect(done).toBeDefined();
-    expect(done).toContain("dossier_deleted");
+    expect(dossierFn).toHaveBeenCalledTimes(2);
+    expect(events.some((e) => e.type === "timeout")).toBe(false);
   });
 });
 
-describe("17-sse: GET route — public + 404", () => {
+describe("GET /api/dossiers/[id]/stream", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
-  it("case 7: streams for an anonymous visitor — no session is read (spec 21 §2)", async () => {
-    mockGetDossier.mockResolvedValue(makeDossier({ status: "succeeded", verdict: "TRUE" }));
-    mockListEvents.mockResolvedValue([]);
-    const { GET } = await import("@/app/api/dossiers/[id]/stream/route");
-    const req = {} as any;
-    const res = (await GET(req, {
-      params: Promise.resolve({ id: DOSSIER_UUID }),
-    })) as unknown as Response;
+  const ctx = { params: Promise.resolve({ id: DOSSIER_ID }) };
+  const req = () => new Request(`http://x/api/dossiers/${DOSSIER_ID}/stream`);
+
+  it("is public and streams text/event-stream, uncached", async () => {
+    mockFind.mockResolvedValue(dossierRow());
+    mockSteps.mockResolvedValue(stepRows());
+    const res = await GET(req() as never, ctx);
     expect(res.status).toBe(200);
-    expect(mockGetDossier).toHaveBeenCalledWith(DOSSIER_UUID);
+    expect(res.headers.get("content-type")).toBe("text/event-stream");
+    expect(res.headers.get("cache-control")).toContain("no-cache");
+    const body = await res.text();
+    expect(body).toContain("event: step");
+    expect(body).toContain("event: done");
   });
 
-  it("case 8: returns 404 when dossier does not exist", async () => {
-    mockGetDossier.mockResolvedValue(null);
-    const { GET } = await import("@/app/api/dossiers/[id]/stream/route");
-    const req = {} as any;
-    const res = await GET(req, { params: Promise.resolve({ id: DOSSIER_UUID }) });
+  it("answers 404 for an unknown dossier", async () => {
+    mockFind.mockResolvedValue(null);
+    const res = await GET(req() as never, ctx);
     expect(res.status).toBe(404);
   });
 
-  it("case 9: returns text/event-stream for valid request", async () => {
-    mockGetDossier.mockResolvedValue(makeDossier({ status: "succeeded", verdict: "TRUE" }));
-    mockListEvents.mockResolvedValue([]);
-    const { GET } = await import("@/app/api/dossiers/[id]/stream/route");
-    const req = {} as any;
-    const res = (await GET(req, {
-      params: Promise.resolve({ id: DOSSIER_UUID }),
-    })) as unknown as Response;
-    // Valid stream responses aren't wrapped in MockNextResponse — they return a real Response
-    expect(res.headers.get("content-type")).toBe("text/event-stream");
+  it("ends with a stream_error that names nothing of the cause when the database fails mid-stream", async () => {
+    mockFind.mockResolvedValueOnce(dossierRow({ status: "running" })).mockRejectedValue(new Error("password=secret"));
+    mockSteps.mockResolvedValue(stepRows());
+    const res = await GET(req() as never, ctx);
+    const body = await res.text();
+    expect(body).toContain('event: stream_error\ndata: {"error":"stream_error"}');
+    expect(body).not.toContain("secret");
+  });
+
+  it("keeps a 300 s budget and no v1 dossier_events reader", () => {
+    expect(maxDuration).toBe(300);
+    expect(Object.keys(route)).not.toContain("streamDossierEvents");
   });
 });

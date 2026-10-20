@@ -417,6 +417,90 @@ digest is the lower-case hex SHA-256 of the UTF-8 bytes.
   `to_char(date_trunc('milliseconds', created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`.
   The digest is over the JCS form of that array of arrays.
 
+### 6.6 The dossier pages: compose, follow, verify (Task 13)
+
+**Compose (`/dossier`).** Rendered per request with today's budgets. The form has a claim, web
+sources, documents and a mode, and posts `POST /api/dossiers`; a 202 navigates to its `url`
+(`/d/<id>`).
+
+- *Claim*: 1–1024 characters after trimming, with a running count.
+- *Web sources*: magpie's sources (`magpie.sources`), at most 5, behind a wake gate on magpie (§5.1:
+  the list loads once the gate is live, and a manual retry is held until then).
+- *Documents*: inkthread's samples (`inkthread.samples`) or an upload (`POST /api/uploads`, budget
+  `upload`), at most 3 together, behind a wake gate on inkthread. **Ruling X**: before any upload
+  control, the form says that a dossier is public and that the passages it quotes from a PDF —
+  an uploaded one included — become part of it, while inkthread never keeps the PDF's bytes.
+- *Mode*: rapid (1 round), standard (2, the default), adversarial (3).
+- *Budget*: the debates left today. At 0 the submit is disabled and says why (budgets reset 00:00
+  UTC); unreadable budgets leave it enabled and say so, because the server still reserves one.
+
+Invariants:
+1. The fields are checked when the visitor submits, never by pre-disabling the submit: an empty
+   claim, a claim over 1024 characters, or nothing picked (no source and no document) is refused
+   inline, the first bad field takes focus, and nothing is sent.
+2. Only the budget (or a submit already in flight) disables the submit.
+3. A refusal is said for what it is: `budget_exhausted` and `rate_limited` as limits, a 422 with its
+   detail, a 503 `catalog_unavailable` as the list being unreachable — never as the product failing.
+
+**The dossier (`/d/[id]`).** Public and rendered per request; an unknown or malformed id is a 404;
+its title comes from the id alone. A **succeeded** dossier is the permanent receipt, rendered on
+the server so it is crawlable. A **pending or running** one is a client island that follows the run
+and, once it is done, re-renders the page as its receipt. A **failed** one shows its timeline with
+"retry from this stage" and every receipt it already holds.
+
+*The live run.* The island reads `GET /api/dossiers/[id]/stream` (SSE) and shows the eight stages
+(`StageTimeline`). The route polls the dossier and its `dossier_steps` every 2 s (reading the dossier
+first, so a terminal status is never seen before the step that ended it) and sends:
+
+- `step` — `{stage, status, attempt, error, nextAt, leaseUntil, startedAt, finishedAt, note}` for every
+  row on the first tick and for each row whose status, attempt, error, `nextAt`, `leaseUntil` or
+  note changed since. `nextAt` is `not_before` while the row is pending or waiting, otherwise null;
+  `leaseUntil` is the lease while one is held, otherwise null; `note` is a one-line summary of the
+  row's output (why it was skipped, what it waits for, what it produced), never the output itself.
+- `status` — `{status, verdict, confidence}` on the first tick and whenever one of them changes;
+- `done` — `{status, verdict, confidence}` once the status is succeeded or failed, then the stream
+  ends (a deleted dossier ends with `{status: "failed", reason: "dossier_deleted"}`);
+- `heartbeat` every 15 s and `timeout` after 140 polls, so a stream ends within `maxDuration` (300 s);
+  the island reconnects. A client that disconnects stops the polling.
+
+*The nudge* (carry from Task 5: after a `stage_timeout` nothing advances by itself). The frontier
+stage — the first one that is not ok or skipped — is **due** when it is running and its lease has
+expired, or it is pending or waiting and its `nextAt` has passed (and no lease is held). The island
+calls `POST /api/dossiers/[id]/advance` when the frontier stage has been due for 5 s (the runner's
+own chain arrives exactly on time, so it normally wins), at most one call at a time; a 429 waits the
+`retryAfterS` it was given, any other failure backs off 15 s, doubling to 2 min; an error stage,
+a finished dossier or a 404 stops it.
+
+*The timeline.* The eight stages in stage order (Postgres returns the rows in no particular
+order), each status written in words beside a glyph (pending · running · waiting · ok · error ·
+skipped), with the attempt when it is past the first, the note, and the time
+(UTC) a waiting stage is asked again. An error says what failed; `budget_exhausted`,
+`rate_limited` and an asleep service are named as limits, never as the product failing. The error
+stage carries "retry from this stage" (`POST /api/dossiers/[id]/retry`), disabled while that call
+is in flight; its refusal (409, 429) is said, and its success re-renders the page. Step rows that are not
+one per stage (only tampering does that; the `steps` check fails them) are shown as they are, with
+a note, and the page neither follows nor nudges that dossier.
+
+*The receipt* (§6.5), from what bastion stored:
+- the claim, the verdict and its confidence;
+- the evidence table: one row per evidence item with the anchor `e-<key>` — product, locator (the
+  URL, or the document and page), the excerpt, the certificate id linking to inkprint's public
+  page (`https://inkprint-frontend.vercel.app/certificates/<id>`), and its state once verified;
+- the transcript (the one the envelope names, else the latest), each round in order; every
+  `[cert:<id>]` in an argument links to the evidence row holding that certificate (`#e-<key>`); a
+  certificate no row holds is said, unlinked. URL citations link out only when http(s);
+- each document's pages with its excerpts drawn as boxes (`PageWithBoxes`, page sizes from
+  `inkthread.graph`, behind a wake gate on inkthread). An upload whose graph answers 404 or 410 says
+  its pages are gone (DR-0029) and that the quoted passages remain in the dossier;
+- the perf receipt per service: each query's fingerprint, calls and times, and its suggestions'
+  exact SQL; a service that did not answer says why;
+- the envelope: its id, signature, manifest hash and the metadata inkprint signed;
+- the audit digest and a link to the trail (`/audit/<requestId>`);
+- "verify everything" (`POST /api/dossiers/[id]/verify`, held while in flight) shows every check it
+  returns — `steps` included — each with its state in words (pass · fail · unavailable · expired),
+  its detail and its items; a legacy dossier shows its note and no checks; and "download receipts"
+  (`GET /api/dossiers/[id]/receipts`).
+
 ## 7. Platform token contract v2 (DR-0033)
 
 Minted by bastion (and, for their own backend, by the standalone frontends of DR-0030):
