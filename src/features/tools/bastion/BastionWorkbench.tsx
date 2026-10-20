@@ -91,10 +91,11 @@ export function BastionWorkbench({ initial = {} }: { initial?: BastionState }) {
     setLastCalled(id);
     // The inspector follows the call: these are the claims bastion mints for it.
     inspect(id);
+    // Ruling AI: bastion's page wakes nothing of its own; an asleep answer wakes the called service.
     void call.run(async (signal) => {
       const outcome = await callTool(cap, {}, { signal });
       return outcome.ok ? { ...outcome, data: { capability: id, data: outcome.data } } : outcome;
-    });
+    }, cap.service);
   };
 
   const kid = preview.outcome?.ok ? preview.outcome.data.header.kid : null;
@@ -169,7 +170,12 @@ export function BastionWorkbench({ initial = {} }: { initial?: BastionState }) {
             bastion mints a token like the one above, calls the service, and appends one audit
             event: the capability, the service, the status and the time it took — never the body.
           </p>
-          <Outcome state={call} product={lastCalled.split(".")[0] ?? P} what="the call">
+          <Outcome
+            state={call}
+            product={lastCalled.split(".")[0] ?? P}
+            what="the call"
+            wakes={capabilityById(lastCalled)?.service}
+          >
             {(result, requestId) => (
               <ToolReceipt
                 kind="bastion gateway call"

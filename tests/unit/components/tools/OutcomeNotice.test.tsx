@@ -9,7 +9,8 @@ vi.mock("next/link", () => ({
 
 import { OutcomeNotice } from "@/components/tools/OutcomeNotice";
 import type { FailedOutcome } from "@/features/tools/outcome";
-import { links, textOf } from "../../helpers/html";
+import { links, sliceByAttr, textOf } from "../../helpers/html";
+import { Seeded } from "./gate-fixtures";
 
 /**
  * A failure said for what it is (spec 21 §5.1 invariant 4): the platform's limits are never shown
@@ -41,10 +42,37 @@ describe("OutcomeNotice", () => {
     expect(text).not.toMatch(/fail|error/i);
   });
 
-  it("says bastion is waking a sleeping product again, rather than asking for a control that is gone", () => {
+  it("names the gate's service it is waking again above (Ruling AI)", () => {
+    const text = textOf(
+      renderToStaticMarkup(
+        <Seeded name="inkprint" services={["inkprint"]}>
+          <OutcomeNotice failure={{ ok: false, kind: "asleep", requestId: RID }} product="inkprint" />
+        </Seeded>,
+      ),
+    );
+    expect(text).toMatch(/bastion is waking inkprint again above/);
+  });
+
+  it("names a routed host it wakes in the background, not the gate's service", () => {
+    const html = renderToStaticMarkup(
+      <Seeded name="slowquery" services={["slowquery"]}>
+        <OutcomeNotice
+          failure={{ ok: false, kind: "asleep", requestId: RID }}
+          product="magpie"
+          wakes="magpie"
+        />
+      </Seeded>,
+    );
+    // The notice itself, not the gate bar above it (which rightly names slowquery).
+    const text = textOf(sliceByAttr(html, "data-kind", "asleep"));
+    expect(text).toMatch(/bastion is waking magpie now/);
+    expect(text).not.toMatch(/slowquery/);
+  });
+
+  it("says nothing is being woken when nothing is", () => {
     const text = textOf(render({ ok: false, kind: "asleep", requestId: RID }));
-    expect(text).toMatch(/waking it again/);
-    expect(text).not.toMatch(/wake it above/i);
+    expect(text).toMatch(/nothing on this page wakes it/i);
+    expect(text).not.toMatch(/waking/);
   });
 
   it("shows the product's own answer with its status and reason", () => {

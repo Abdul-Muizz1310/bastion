@@ -27,3 +27,12 @@ export async function runAction<O>(
   if (!outcome.ok && outcome.kind === "asleep") hooks.onAsleep();
   return outcome;
 }
+
+/**
+ * Ruling AI: whether a first load should run when the gate opens — never loaded, or failed (an
+ * asleep first load re-wakes the gate; once it reopens, the load runs again). Never a reload of
+ * what already came back.
+ */
+export function needsLoad(outcome: ToolOutcome<unknown> | null): boolean {
+  return outcome === null || !outcome.ok;
+}

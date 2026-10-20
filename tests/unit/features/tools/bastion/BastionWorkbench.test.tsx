@@ -10,7 +10,7 @@ vi.mock("next/link", () => ({
 import { BastionWorkbench } from "@/features/tools/bastion/BastionWorkbench";
 import type { TokenPreview } from "@/features/tools/bastion/token-preview";
 import { buttonNamed, isDisabled, Seeded } from "../../../components/tools/gate-fixtures";
-import { links, textOf } from "../../../helpers/html";
+import { links, sliceByAttr, textOf } from "../../../helpers/html";
 import { auditHrefs, copyButtons, ok, RID } from "../outcomes";
 
 /**
@@ -70,6 +70,12 @@ describe("BastionWorkbench", () => {
     expect(textOf(html)).toMatch(/bastion gateway call/);
     expect(auditHrefs(html)).toContain(`/audit/${RID}`);
     expect(copyButtons(html)).toContain("copy the bastion gateway call receipt");
+  });
+
+  it("wakes the called product's service when bastion's own page finds it asleep (Ruling AI)", () => {
+    const html = render({ call: { ok: false, kind: "asleep", requestId: RID }, choice: "magpie.sources" });
+    const notice = textOf(sliceByAttr(html, "data-kind", "asleep"));
+    expect(notice).toMatch(/bastion is waking magpie now/);
   });
 
   it("names the capability that was called, not whatever the picker shows now", () => {

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { ActionState } from "@/features/tools/use-action";
+import type { ServiceId } from "@/platform/registry/products";
 import { OutcomeNotice } from "./OutcomeNotice";
 
 /**
@@ -11,12 +12,15 @@ export function Outcome<O>({
   state,
   product,
   what,
+  wakes,
   children,
 }: {
   state: ActionState<O>;
   product: string;
   /** What the action produces, for the announcement ("the certificate"). */
   what: string;
+  /** The service the call went to, when it is not the gate's own (a routed read). */
+  wakes?: ServiceId;
   children: (data: O, requestId: string) => ReactNode;
 }) {
   const { busy, outcome } = state;
@@ -40,7 +44,7 @@ export function Outcome<O>({
       {outcome === null ? null : outcome.ok ? (
         children(outcome.data, outcome.requestId)
       ) : (
-        <OutcomeNotice failure={outcome} product={product} />
+        <OutcomeNotice failure={outcome} product={product} wakes={wakes} />
       )}
     </div>
   );

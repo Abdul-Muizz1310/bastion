@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRewake } from "@/components/tools/WakeGate";
+import type { ServiceId } from "@/platform/registry/products";
 import type { ToolOutcome } from "./outcome";
 import { runAction } from "./run-action";
 
@@ -13,9 +14,13 @@ import { runAction } from "./run-action";
 
 export type ActionState<O> = { busy: boolean; outcome: ToolOutcome<O> | null };
 
+/** `target` is the service a routed call went to, when it is not the gate's own (Ruling AI). */
 export type Action<O> = ActionState<O> & {
-  run: (call: (signal: AbortSignal) => Promise<ToolOutcome<O>>) => Promise<ToolOutcome<O> | null>;
-  set: (outcome: ToolOutcome<O> | null) => void;
+  run: (
+    call: (signal: AbortSignal) => Promise<ToolOutcome<O>>,
+    target?: ServiceId,
+  ) => Promise<ToolOutcome<O> | null>;
+  set: (outcome: ToolOutcome<O> | null, target?: ServiceId) => void;
 };
 
 export function useAction<O>(initial: ToolOutcome<O> | null = null): Action<O> {
@@ -26,12 +31,12 @@ export function useAction<O>(initial: ToolOutcome<O> | null = null): Action<O> {
   const rewake = useRewake();
 
   const run = useCallback(
-    async (call: (signal: AbortSignal) => Promise<ToolOutcome<O>>) => {
+    async (call: (signal: AbortSignal) => Promise<ToolOutcome<O>>, target?: ServiceId) => {
       current.current?.abort();
       const controller = new AbortController();
       current.current = controller;
       setState((s) => ({ busy: true, outcome: s.outcome }));
-      const outcome = await runAction(call, controller.signal, { onAsleep: rewake });
+      const outcome = await runAction(call, controller.signal, { onAsleep: () => rewake(target) });
       if (outcome !== null) setState({ busy: false, outcome });
       return outcome;
     },
@@ -39,10 +44,10 @@ export function useAction<O>(initial: ToolOutcome<O> | null = null): Action<O> {
   );
 
   const set = useCallback(
-    (outcome: ToolOutcome<O> | null) => {
+    (outcome: ToolOutcome<O> | null, target?: ServiceId) => {
       current.current?.abort();
       setState({ busy: false, outcome });
-      if (outcome && !outcome.ok && outcome.kind === "asleep") rewake();
+      if (outcome && !outcome.ok && outcome.kind === "asleep") rewake(target);
     },
     [rewake],
   );

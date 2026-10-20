@@ -15,10 +15,11 @@ import { Outcome } from "@/components/tools/Outcome";
 import { Panel, WithReceipt } from "@/components/tools/Panel";
 import { BUTTON, BUTTON_QUIET, MONO_BLOCK } from "@/components/tools/styles";
 import { ToolReceipt } from "@/components/tools/ToolReceipt";
-import { useWakeReady } from "@/components/tools/WakeGate";
+import { useRewake, useWakeReady } from "@/components/tools/WakeGate";
 import { callTool } from "../client";
 import { ms, plural, utc } from "../format";
 import type { FailedOutcome, ToolOutcome } from "../outcome";
+import { needsLoad } from "../run-action";
 import { useAction } from "../use-action";
 import { fleetView, type HostAnswer, rankMs } from "./fleet";
 
@@ -41,7 +42,7 @@ const P = "slowquery";
 function hostFailure(f: FailedOutcome): { state: "asleep" | "down" | "unknown"; detail?: string } {
   switch (f.kind) {
     case "asleep":
-      return { state: "asleep" };
+      return { state: "asleep", detail: "bastion is waking it" };
     case "rate_limited":
       return { state: "unknown", detail: `rate limited · retry in ${f.retryAfterS} s` };
     case "downstream_error":
@@ -55,6 +56,7 @@ function hostFailure(f: FailedOutcome): { state: "asleep" | "down" | "unknown"; 
 
 export function SlowqueryWorkbench({ initial = {} }: { initial?: SlowqueryState }) {
   const ready = useWakeReady();
+  const rewake = useRewake();
   const [fleet, setFleet] = useState<HostAnswer[] | null>(initial.fleet ?? null);
   const [reading, setReading] = useState(false);
   const [chosen, setChosen] = useState(initial.chosen ?? null);
@@ -74,19 +76,25 @@ export function SlowqueryWorkbench({ initial = {} }: { initial?: SlowqueryState 
     );
     setFleet(answers);
     setReading(false);
+    // Ruling AI: an asleep host is woken by name — the gate's own demo, or a routed host behind it.
+    for (const a of answers) {
+      if (!a.outcome.ok && a.outcome.kind === "asleep") rewake(a.service);
+    }
   };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, when the gate opens
   useEffect(() => {
     if (!ready) return;
-    if (fleet === null) void readFleet();
-    if (branch.outcome === null)
+    // The demo's own answer failing (asleep) re-gates the page; when it reopens, read again.
+    const demo = fleet?.find((h) => h.service === "slowquery")?.outcome ?? null;
+    if (fleet === null || needsLoad(demo)) void readFleet();
+    if (needsLoad(branch.outcome))
       void branch.run((signal) => callTool(slowquery.branch, {}, { signal }));
   }, [ready]);
 
   const choose = (service: SlowqueryHost, id: string) => {
     setChosen({ service, id });
-    void detail.run((signal) => callTool(slowquery.query, { service, id }, { signal }));
+    void detail.run((signal) => callTool(slowquery.query, { service, id }, { signal }), service);
   };
 
   const view = fleet === null ? null : fleetView(fleet);
@@ -216,7 +224,12 @@ export function SlowqueryWorkbench({ initial = {} }: { initial?: SlowqueryState 
         {chosen === null ? (
           <p className="font-mono text-xs text-fg-muted">Choose a fingerprint’s plan above.</p>
         ) : null}
-        <Outcome state={detail} product={P} what="the plan">
+        <Outcome
+          state={detail}
+          product={chosen?.service ?? P}
+          what="the plan"
+          wakes={chosen?.service}
+        >
           {(d, requestId) => (
             <PlanView detail={d} service={chosen?.service ?? "slowquery"} requestId={requestId} />
           )}

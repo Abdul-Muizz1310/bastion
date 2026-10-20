@@ -21,8 +21,9 @@ import { useBudgets } from "../BudgetProvider";
 import { callTool } from "../client";
 import { plural } from "../format";
 import { SamplePicker } from "../inkthread/SamplePicker";
-import type { FailedOutcome, ToolOutcome } from "../outcome";
+import type { ToolOutcome } from "../outcome";
 import { pollTool } from "../poll";
+import { needsLoad } from "../run-action";
 import { useAction } from "../use-action";
 import { type UploadAnswer, uploadPdf } from "./upload";
 
@@ -37,6 +38,7 @@ export type InkgridState = {
   samples?: ToolOutcome<{ items: InkthreadDocument[] }>;
   doc?: string;
   reading?: ToolOutcome<Reading>;
+  upload?: ToolOutcome<UploadAnswer>;
 };
 
 const JOB_POLL_MS = 3_000;
@@ -58,10 +60,9 @@ export function InkgridWorkbench({
   const { refresh } = useBudgets();
   const samples = useAction(initial.samples ?? null);
   const reading = useAction(initial.reading ?? null);
-  const upload = useAction<UploadAnswer>(null);
+  const upload = useAction<UploadAnswer>(initial.upload ?? null);
   const [doc, setDoc] = useState<string | null>(initial.doc ?? linked);
   const [job, setJob] = useState<JobState>({ phase: "idle" });
-  const [uploadFailure, setUploadFailure] = useState<FailedOutcome | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const following = useRef<AbortController | null>(null);
   useEffect(() => () => following.current?.abort(), []);
@@ -73,25 +74,26 @@ export function InkgridWorkbench({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, when the gate opens
   useEffect(() => {
-    if (!ready || samples.outcome !== null) return;
+    if (!ready) return;
+    if (!needsLoad(samples.outcome)) {
+      // The samples came back; a reading that failed (asleep) is read again.
+      if (doc !== null && needsLoad(reading.outcome)) read(doc);
+      return;
+    }
     void samples
       .run((signal) => callTool(inkthread.samples, {}, { signal }))
       .then((outcome) => {
-        if (reading.outcome !== null) return;
+        if (!needsLoad(reading.outcome)) return;
         const first = doc ?? (outcome?.ok ? (outcome.data.items[0]?.id ?? null) : null);
         if (first) read(first);
       });
   }, [ready]);
 
   async function uploadAndRead(file: File) {
-    setUploadFailure(null);
     const answer = await upload.run((signal) => uploadPdf(file, { signal }));
     refresh();
-    if (answer === null) return;
-    if (!answer.ok) {
-      setUploadFailure(answer);
-      return;
-    }
+    // A refused upload is already the action's outcome (and an asleep one re-wakes inkthread).
+    if (answer === null || !answer.ok) return;
     const { document_id: id, job_id: jobId } = answer.data;
     setDoc(id);
     if (jobId === null) {
@@ -122,7 +124,8 @@ export function InkgridWorkbench({
         : end.kind === "timeout"
           ? "the job did not finish within 10 minutes"
           : null;
-    if (end.kind === "failed") setUploadFailure(end.failure);
+    // Ruling AI: through the action, so an asleep job poll re-wakes inkthread like any call.
+    if (end.kind === "failed") upload.set(end.failure);
     setJob({ phase: "ended", job: null, problem });
   }
 
@@ -185,7 +188,9 @@ export function InkgridWorkbench({
               read, and the reading goes with the document after an hour.
             </p>
             <JobLine job={job} />
-            {uploadFailure ? <OutcomeNotice failure={uploadFailure} product="inkthread" /> : null}
+            {upload.outcome && !upload.outcome.ok ? (
+              <OutcomeNotice failure={upload.outcome} product="inkthread" />
+            ) : null}
           </div>
         </div>
       </Panel>

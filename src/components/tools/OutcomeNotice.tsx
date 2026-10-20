@@ -1,11 +1,28 @@
 import type { FailedOutcome } from "@/features/tools/outcome";
+import type { ServiceId } from "@/platform/registry/products";
 import { AuditLink } from "./AuditLink";
+import { useGateServices } from "./WakeGate";
+import { rewakePlan, type WakePlan } from "./wake-model";
 
 /**
  * A failed action, said for what it is (spec 21 §5.1 invariant 4). The platform's limits — asleep,
  * rate limited, today's budget spent — are named as such and never as the product failing; the
- * product's own answer keeps its status and reason; bastion's own trouble says it is bastion's.
+ * product's own answer keeps its status and reason; bastion's own trouble says it is bastion's. An
+ * asleep answer names what bastion is waking for it, or says nothing is (Ruling AI).
  */
+
+const SLEEP = "Free Render services sleep after 15 minutes and take about a minute to wake.";
+
+function wakingWords(plan: WakePlan): string {
+  switch (plan.kind) {
+    case "gate":
+      return `${SLEEP} bastion is waking ${plan.services.join(" and ")} again above; the actions come back once it answers.`;
+    case "side":
+      return `${SLEEP} bastion is waking ${plan.service} now; try again once it answers.`;
+    case "none":
+      return `${SLEEP} Nothing on this page wakes it: try again in a minute.`;
+  }
+}
 
 type Tone = "limit" | "product" | "bastion";
 
@@ -15,13 +32,17 @@ const TONE_CLASS: Readonly<Record<Tone, string>> = {
   bastion: "border-border-bright text-foreground",
 };
 
-function describe(f: FailedOutcome, product: string): { tone: Tone; title: string; body?: string } {
+function describe(
+  f: FailedOutcome,
+  product: string,
+  plan: WakePlan,
+): { tone: Tone; title: string; body?: string } {
   switch (f.kind) {
     case "asleep":
       return {
         tone: "limit",
         title: `${product} is asleep (it did not answer in time)`,
-        body: "Free Render services sleep after 15 minutes and take about a minute to wake. bastion is waking it again above; the actions come back once it answers.",
+        body: wakingWords(plan),
       };
     case "rate_limited":
       return {
@@ -60,8 +81,18 @@ function describe(f: FailedOutcome, product: string): { tone: Tone; title: strin
   }
 }
 
-export function OutcomeNotice({ failure, product }: { failure: FailedOutcome; product: string }) {
-  const { tone, title, body } = describe(failure, product);
+export function OutcomeNotice({
+  failure,
+  product,
+  wakes,
+}: {
+  failure: FailedOutcome;
+  product: string;
+  /** The service the call went to, when it is not the gate's own (a routed read). */
+  wakes?: ServiceId;
+}) {
+  const plan = rewakePlan(useGateServices(), wakes);
+  const { tone, title, body } = describe(failure, product, plan);
   return (
     <div
       data-kind={failure.kind}

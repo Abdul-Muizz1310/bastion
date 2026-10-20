@@ -8,6 +8,7 @@ import {
   magpie,
   type ScrapeResult,
 } from "@/capabilities/magpie";
+import { AuditLink } from "@/components/tools/AuditLink";
 import { BudgetedAction } from "@/components/tools/BudgetedAction";
 import { Outcome } from "@/components/tools/Outcome";
 import { Panel, WithReceipt } from "@/components/tools/Panel";
@@ -17,6 +18,7 @@ import { useBudgets } from "../BudgetProvider";
 import { callTool } from "../client";
 import { plural, short, utc } from "../format";
 import type { ToolOutcome } from "../outcome";
+import { needsLoad } from "../run-action";
 import { useAction } from "../use-action";
 
 /**
@@ -54,7 +56,7 @@ export function MagpieWorkbench({ initial = {} }: { initial?: MagpieState }) {
   // Once magpie is awake: its sources, then the first one that has items.
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, when the gate opens
   useEffect(() => {
-    if (!ready || sources.outcome !== null) return;
+    if (!ready || !needsLoad(sources.outcome)) return;
     void sources
       .run((signal) => callTool(magpie.sources, {}, { signal }))
       .then((outcome) => {
@@ -76,37 +78,40 @@ export function MagpieWorkbench({ initial = {} }: { initial?: MagpieState }) {
       <div className="grid gap-8 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         <Panel id="magpie-sources" title="sources" hint="YAML scrapers, one per site">
           <Outcome state={sources} product={P} what="the sources">
-            {(list) => (
-              <fieldset className="space-y-2">
-                <legend className="sr-only">pick a source</legend>
-                {list.map((s) => (
-                  <label
-                    key={s.name}
-                    className="flex cursor-pointer gap-3 rounded-[3px] border border-border px-3 py-2.5 transition-colors hover:border-fg-muted has-[:checked]:border-accent-violet has-[:checked]:bg-accent-violet-soft"
-                  >
-                    <input
-                      type="radio"
-                      name="magpie-source"
-                      value={s.name}
-                      checked={source === s.name}
-                      onChange={() => choose(s.name)}
-                      disabled={!ready}
-                      className="mt-1 accent-[var(--accent-violet)]"
-                    />
-                    <span className="min-w-0 font-mono text-xs">
-                      <span translate="no" className="block text-foreground">
-                        {s.name}
+            {(list, requestId) => (
+              <div className="space-y-3">
+                <fieldset className="space-y-2">
+                  <legend className="sr-only">pick a source</legend>
+                  {list.map((s) => (
+                    <label
+                      key={s.name}
+                      className="flex cursor-pointer gap-3 rounded-[3px] border border-border px-3 py-2.5 transition-colors hover:border-fg-muted has-[:checked]:border-accent-violet has-[:checked]:bg-accent-violet-soft"
+                    >
+                      <input
+                        type="radio"
+                        name="magpie-source"
+                        value={s.name}
+                        checked={source === s.name}
+                        onChange={() => choose(s.name)}
+                        disabled={!ready}
+                        className="mt-1 accent-[var(--accent-violet)]"
+                      />
+                      <span className="min-w-0 font-mono text-xs">
+                        <span translate="no" className="block text-foreground">
+                          {s.name}
+                        </span>
+                        <span className="block text-fg-muted">{s.description}</span>
+                        <span className="mt-1 block text-fg-muted tabular-nums">
+                          {plural(s.item_count, "item")} · last run{" "}
+                          {s.last_run_at ? utc(s.last_run_at) : "never"}
+                          {s.last_status ? ` · ${s.last_status}` : ""}
+                        </span>
                       </span>
-                      <span className="block text-fg-muted">{s.description}</span>
-                      <span className="mt-1 block text-fg-muted tabular-nums">
-                        {plural(s.item_count, "item")} · last run{" "}
-                        {s.last_run_at ? utc(s.last_run_at) : "never"}
-                        {s.last_status ? ` · ${s.last_status}` : ""}
-                      </span>
-                    </span>
-                  </label>
-                ))}
-              </fieldset>
+                    </label>
+                  ))}
+                </fieldset>
+                <AuditLink requestId={requestId} />
+              </div>
             )}
           </Outcome>
           {sources.outcome === null && !sources.busy ? (

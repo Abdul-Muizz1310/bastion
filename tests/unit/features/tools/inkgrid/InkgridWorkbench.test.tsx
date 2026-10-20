@@ -11,7 +11,7 @@ import type { InkthreadDocument, Reading } from "@/capabilities/inkthread";
 import { InkgridWorkbench } from "@/features/tools/inkgrid/InkgridWorkbench";
 import { fixture } from "../../../capabilities/harness";
 import { budgetsWith, buttonNamed, isDisabled, Seeded } from "../../../components/tools/gate-fixtures";
-import { links, textOf } from "../../../helpers/html";
+import { links, sliceByAttr, textOf } from "../../../helpers/html";
 import { auditHrefs, copyButtons, ok, RID } from "../outcomes";
 
 /**
@@ -75,6 +75,12 @@ describe("InkgridWorkbench", () => {
     expect(text).toMatch(/39 disagreements/);
     expect(auditHrefs(html)).toContain(`/audit/${RID}`);
     expect(copyButtons(html)).toContain("copy the inkgrid verification receipt");
+  });
+
+  it("shows an upload or job that met a sleeping inkthread as asleep, waking inkthread (Ruling AI)", () => {
+    const html = render({}, { samples: ok(samples, "rid-samples"), upload: { ok: false, kind: "asleep", requestId: "rid-up" } });
+    const notice = textOf(sliceByAttr(html, "data-kind", "asleep"));
+    expect(notice).toMatch(/bastion is waking inkthread again above/);
   });
 
   it("links the same document to inkthread's graph", () => {

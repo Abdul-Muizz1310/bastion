@@ -8,6 +8,7 @@ import {
   paperTrail,
 } from "@/capabilities/paper-trail";
 import type { ReceiptTone } from "@/components/receipts/ReceiptCard";
+import { AuditLink } from "@/components/tools/AuditLink";
 import { BudgetedAction } from "@/components/tools/BudgetedAction";
 import { FieldError } from "@/components/tools/FieldError";
 import { Outcome } from "@/components/tools/Outcome";
@@ -20,6 +21,7 @@ import { callTool, getRoute } from "../client";
 import { plural, utc } from "../format";
 import type { ToolOutcome } from "../outcome";
 import { pollTool } from "../poll";
+import { needsLoad } from "../run-action";
 import { useAction } from "../use-action";
 import { type TranscriptCheck, transcriptCheckSchema } from "./check-result";
 import { readRounds } from "./rounds";
@@ -116,7 +118,7 @@ export function PaperTrailWorkbench({ initial = {} }: { initial?: PaperTrailStat
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, when the gate opens
   useEffect(() => {
-    if (!ready || recent.outcome !== null) return;
+    if (!ready || !needsLoad(recent.outcome)) return;
     void recent.run((signal) => callTool(paperTrail.list, { limit: 5 }, { signal }));
   }, [ready]);
 
@@ -181,27 +183,33 @@ export function PaperTrailWorkbench({ initial = {} }: { initial?: PaperTrailStat
 
         <Panel id="pt-recent" title="recent debates" hint="open one: no budget spent">
           <Outcome state={recent} product={P} what="the recent debates">
-            {(page) =>
+            {(page, requestId) =>
               page.items.length === 0 ? (
-                <p className="font-mono text-xs text-fg-muted">No debates yet.</p>
+                <div className="space-y-3">
+                  <p className="font-mono text-xs text-fg-muted">No debates yet.</p>
+                  <AuditLink requestId={requestId} />
+                </div>
               ) : (
-                <ul className="space-y-2">
-                  {page.items.map((d) => (
-                    <li key={d.id}>
-                      <button
-                        type="button"
-                        onClick={() => void open(d.id)}
-                        disabled={!ready}
-                        className="w-full rounded-[3px] border border-border px-3 py-2 text-left font-mono text-xs transition-colors hover:border-fg-muted hover:bg-surface-hover disabled:cursor-not-allowed"
-                      >
-                        <span className="line-clamp-2 text-foreground">{d.claim}</span>
-                        <span className="mt-1 block text-fg-muted">
-                          {d.verdict ?? d.status} · {utc(d.created_at)}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                <div className="space-y-3">
+                  <ul className="space-y-2">
+                    {page.items.map((d) => (
+                      <li key={d.id}>
+                        <button
+                          type="button"
+                          onClick={() => void open(d.id)}
+                          disabled={!ready}
+                          className="w-full rounded-[3px] border border-border px-3 py-2 text-left font-mono text-xs transition-colors hover:border-fg-muted hover:bg-surface-hover disabled:cursor-not-allowed"
+                        >
+                          <span className="line-clamp-2 text-foreground">{d.claim}</span>
+                          <span className="mt-1 block text-fg-muted">
+                            {d.verdict ?? d.status} · {utc(d.created_at)}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <AuditLink requestId={requestId} />
+                </div>
               )
             }
           </Outcome>

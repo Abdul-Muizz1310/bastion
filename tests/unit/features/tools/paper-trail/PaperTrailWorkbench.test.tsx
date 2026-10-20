@@ -54,6 +54,13 @@ describe("PaperTrailWorkbench", () => {
     expect(textOf(html)).toMatch(/none left — resets 00:00 UTC/);
   });
 
+  it("links the recent debates read to its audit trail", () => {
+    const list = fixture("paper-trail", "list.json");
+    const html = render({ recent: ok(list, "rid-recent") });
+    expect(textOf(html)).toContain(done.claim);
+    expect(auditHrefs(html)).toContain("/audit/rid-recent");
+  });
+
   it("shows the rounds that have finished while the debate runs", () => {
     const text = textOf(render({ debate: ok(running, "rid-get"), following: true }));
     expect(text).toMatch(/proponent/);

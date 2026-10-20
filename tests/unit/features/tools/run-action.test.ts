@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ToolOutcome } from "@/features/tools/outcome";
-import { runAction } from "@/features/tools/run-action";
+import { needsLoad, runAction } from "@/features/tools/run-action";
 
 /**
  * One workbench action (spec 21 §5.1, review fix 2): its outcome, or null when the page moved on —
@@ -44,5 +44,20 @@ describe("runAction", () => {
     );
     expect(outcome).toBeNull();
     expect(onAsleep).not.toHaveBeenCalled();
+  });
+});
+
+describe("needsLoad (Ruling AI)", () => {
+  it("loads what was never loaded", () => {
+    expect(needsLoad(null)).toBe(true);
+  });
+
+  it("loads again what failed — an asleep first load retries once the gate reopens", () => {
+    expect(needsLoad({ ok: false, kind: "asleep", requestId: "r" })).toBe(true);
+    expect(needsLoad({ ok: false, kind: "unreachable", requestId: null })).toBe(true);
+  });
+
+  it("never reloads what already loaded", () => {
+    expect(needsLoad({ ok: true, data: [], status: 200, requestId: "r" })).toBe(false);
   });
 });

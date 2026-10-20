@@ -14,9 +14,11 @@ import { wakeService } from "@/features/tools/wake";
 import type { ServiceId } from "@/platform/registry/products";
 import { BUTTON_QUIET } from "./styles";
 import {
+  claimRewake,
   gateView,
   initialWake,
   rewakeAll,
+  rewakePlan,
   type WakeState,
   wakeAnswered,
   wakeStarted,
@@ -30,18 +32,28 @@ import {
  * to assistive tech, never the ticking seconds.
  */
 
-type GateControls = { ready: boolean; rewake: () => void };
+type GateControls = {
+  ready: boolean;
+  services: readonly ServiceId[];
+  /** Wakes what an asleep answer from `target` (default: the gate's own service) calls for. */
+  rewake: (target?: ServiceId) => void;
+};
 
-const GateContext = createContext<GateControls>({ ready: false, rewake: () => {} });
+const GateContext = createContext<GateControls>({ ready: false, services: [], rewake: () => {} });
 
 /** Whether the product this workbench operates is live (false outside a gate). */
 export function useWakeReady(): boolean {
   return useContext(GateContext).ready;
 }
 
-/** Puts the product back to waking — what an action that met an asleep service calls. */
-export function useRewake(): () => void {
+/** What an action that met an asleep service calls (Ruling AI: the gate, a routed host, or none). */
+export function useRewake(): (target?: ServiceId) => void {
   return useContext(GateContext).rewake;
+}
+
+/** The services this gate wakes — what a notice names when it says what is being woken. */
+export function useGateServices(): readonly ServiceId[] {
+  return useContext(GateContext).services;
 }
 
 export function WakeGate({
@@ -92,18 +104,36 @@ export function WakeGate({
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
-  // Review fix 2: a call that met an asleep service closes the gate again and wakes everything —
-  // unless a wake is already in flight, which will answer for it.
+  // Review fix 2 and Ruling AI: an asleep answer from the gate's own service closes the gate again
+  // and wakes everything (the latch lets only the first of parallel answers through); one from a
+  // routed host wakes that host in the background; with nothing to wake, nothing happens.
   const wakingRef = useRef(waking);
   wakingRef.current = waking;
-  const rewake = useCallback(() => {
-    if (wakingRef.current || latest.current.services.length === 0) return;
+  const sideWakes = useRef(new Set<ServiceId>());
+  const sideAbort = useRef(new AbortController());
+  useEffect(() => {
+    const controller = new AbortController();
+    sideAbort.current = controller;
+    return () => controller.abort();
+  }, []);
+  const rewake = useCallback((target?: ServiceId) => {
+    const plan = rewakePlan(latest.current.services, target);
+    if (plan.kind === "none") return;
+    if (plan.kind === "side") {
+      if (sideWakes.current.has(plan.service)) return;
+      sideWakes.current.add(plan.service);
+      void wakeService(plan.service, sideAbort.current.signal)
+        .catch(() => {})
+        .finally(() => sideWakes.current.delete(plan.service));
+      return;
+    }
+    if (!claimRewake(wakingRef)) return;
     setState((s) => rewakeAll(s, Date.now()));
     setAttempt((n) => n + 1);
   }, []);
 
   return (
-    <GateContext value={{ ready: view.ready, rewake }}>
+    <GateContext value={{ ready: view.ready, services, rewake }}>
       <div
         data-gate={view.state}
         className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-[var(--radius)] border border-border bg-surface/60 px-4 py-3 md:px-5"

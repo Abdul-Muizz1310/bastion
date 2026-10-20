@@ -49,9 +49,10 @@ describe("MagpieWorkbench", () => {
     expect(isDisabled(buttonNamed(html, /scrape hackernews once/))).toBe(true);
   });
 
-  it("lists the sources to pick from", () => {
-    const text = textOf(render());
-    for (const s of sources) expect(text).toContain(s.name);
+  it("lists the sources to pick from, linking the read to its audit trail", () => {
+    const html = render();
+    for (const s of sources) expect(textOf(html)).toContain(s.name);
+    expect(auditHrefs(html)).toContain("/audit/rid-sources");
   });
 
   it("shows a scrape's items with their content hashes, and its receipt", () => {

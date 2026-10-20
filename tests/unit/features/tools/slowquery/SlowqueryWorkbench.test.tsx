@@ -11,7 +11,7 @@ import type { BranchSwitch, QueryDetail, QueryRow } from "@/capabilities/slowque
 import { SlowqueryWorkbench } from "@/features/tools/slowquery/SlowqueryWorkbench";
 import { fixture } from "../../../capabilities/harness";
 import { buttonNamed, isDisabled, Seeded } from "../../../components/tools/gate-fixtures";
-import { textOf } from "../../../helpers/html";
+import { sliceByAttr, textOf } from "../../../helpers/html";
 import { auditHrefs, copyButtons, ok, RID } from "../outcomes";
 
 /**
@@ -69,6 +69,17 @@ describe("SlowqueryWorkbench", () => {
     expect(text).toMatch(/slowquery plan/);
     expect(auditHrefs(html)).toContain(`/audit/${RID}`);
     expect(copyButtons(html)).toContain("copy the slowquery plan receipt");
+  });
+
+  it("names the routed host it wakes when a plan read finds it asleep (Ruling AI)", () => {
+    const html = render({
+      fleet,
+      chosen: { service: "magpie", id: detail.fingerprint.id },
+      detail: { ok: false, kind: "asleep", requestId: "rid-q" },
+    });
+    const notice = textOf(sliceByAttr(html, "data-kind", "asleep"));
+    expect(notice).toMatch(/bastion is waking magpie now/);
+    expect(notice).not.toMatch(/again above/);
   });
 
   it("shows the demo's branch after a switch", () => {

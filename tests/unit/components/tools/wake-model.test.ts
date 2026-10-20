@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  claimRewake,
   gateView,
   initialWake,
   rewakeAll,
+  rewakePlan,
   wakeAnswered,
   wakeStarted,
 } from "@/components/tools/wake-model";
@@ -150,5 +152,32 @@ describe("the wake gate", () => {
 
   it("re-gating a product with no service leaves it live", () => {
     expect(gateView(rewakeAll(initialWake([]), T0), "bastion", T0).ready).toBe(true);
+  });
+});
+
+describe("rewakePlan (Ruling AI)", () => {
+  it("re-wakes the gate's own services when the call went to one of them", () => {
+    expect(rewakePlan(["inkthread"], undefined)).toEqual({ kind: "gate", services: ["inkthread"] });
+    expect(rewakePlan(["slowquery"], "slowquery")).toEqual({ kind: "gate", services: ["slowquery"] });
+  });
+
+  it("wakes a routed host in the background, not the gate's service", () => {
+    expect(rewakePlan(["slowquery"], "magpie")).toEqual({ kind: "side", service: "magpie" });
+  });
+
+  it("wakes a product's service in the background from bastion's page, which has none", () => {
+    expect(rewakePlan([], "magpie")).toEqual({ kind: "side", service: "magpie" });
+  });
+
+  it("wakes nothing when there is nothing to wake", () => {
+    expect(rewakePlan([], undefined)).toEqual({ kind: "none" });
+  });
+});
+
+describe("claimRewake (Ruling AI)", () => {
+  it("lets exactly one of two parallel asleep answers start a re-wake", () => {
+    const latch = { current: false };
+    expect([claimRewake(latch), claimRewake(latch)]).toEqual([true, false]);
+    expect(latch.current).toBe(true);
   });
 });

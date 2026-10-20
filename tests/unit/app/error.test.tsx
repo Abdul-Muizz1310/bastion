@@ -34,3 +34,20 @@ describe("the error page", () => {
     expect(links(html).some((l) => l.href === "/")).toBe(true);
   });
 });
+
+describe("the error page, by where the error happened (Ruling AI)", () => {
+  it("with a digest, points to the server log under that reference", () => {
+    const text = textOf(html);
+    expect(text).toMatch(/server log/);
+    expect(text).toContain("4021337");
+  });
+
+  it("without a digest, says it happened in the browser and offers a reload — never a server log", () => {
+    const local = renderToStaticMarkup(<ErrorPage error={new Error("x is undefined")} reset={() => {}} />);
+    const text = textOf(local);
+    expect(text).toMatch(/happened in your browser/);
+    expect(text).not.toMatch(/server log/);
+    expect(text).not.toContain("x is undefined");
+    expect(local).toMatch(/<button[^>]*type="button"[^>]*>reload the page<\/button>/);
+  });
+});

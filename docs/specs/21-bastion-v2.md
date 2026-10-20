@@ -151,7 +151,11 @@ guessed state; a 429 says when to retry. Actions stay disabled until every servi
 other end offers a retry. bastion has no service of its own: its gate is live at once. Only phase
 changes are announced to assistive tech, not every second. A call that later meets an asleep
 service closes the gate again: every service goes back to waking and the actions stay disabled
-until the wake route says live (review fix 2).
+until the wake route says live (review fix 2). Ruling AI: the notice names what is being woken —
+the gate's own services ("again above"), a routed host woken in the background (a slowquery read
+of magpie; a call made from bastion's own page wakes the called service), or nothing at all; two
+asleep answers in parallel start one re-wake; a first load that failed runs again once the gate
+reopens.
 
 **Budgets.** The page renders with today's budgets (`budgetsLeft()`; unavailable ⇒ none shown) and
 re-reads `GET /api/platform/budgets` after every budgeted action. A budgeted action shows its meter

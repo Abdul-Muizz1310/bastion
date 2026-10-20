@@ -77,6 +77,29 @@ export function rewakeAll(state: WakeState, now: number): WakeState {
   return state.services.reduce((s, service) => wakeStarted(s, service, now), state);
 }
 
+/**
+ * Ruling AI — what an asleep answer wakes: the gate's own services when the call went to one of them
+ * (the gate closes again), a routed host in the background when it went elsewhere (a slowquery read
+ * of magpie, a call made from bastion's own page), or nothing at all.
+ */
+export type WakePlan =
+  | { kind: "gate"; services: readonly ServiceId[] }
+  | { kind: "side"; service: ServiceId }
+  | { kind: "none" };
+
+export function rewakePlan(gate: readonly ServiceId[], target: ServiceId | undefined): WakePlan {
+  if (target !== undefined && !gate.includes(target)) return { kind: "side", service: target };
+  if (gate.length === 0) return { kind: "none" };
+  return { kind: "gate", services: gate };
+}
+
+/** Ruling AI: the first caller takes the latch; a second asleep answer in parallel does not. */
+export function claimRewake(latch: { current: boolean }): boolean {
+  if (latch.current) return false;
+  latch.current = true;
+  return true;
+}
+
 const COLD_START_MS = 1_500;
 
 function rowOf(service: ServiceId, wake: ServiceWake | undefined, now: number): GateRow {

@@ -15,6 +15,7 @@ import { useBudgets } from "../BudgetProvider";
 import { callTool, postRoute } from "../client";
 import { plural, utc } from "../format";
 import type { ToolOutcome } from "../outcome";
+import { needsLoad } from "../run-action";
 import { useAction } from "../use-action";
 import { contractOf } from "./contract";
 import { type ProofAnswer, type ProofStepAnswer, proofAnswerSchema } from "./proof-answer";
@@ -80,7 +81,7 @@ export function FeathersWorkbench({ initial = {} }: { initial?: FeathersState })
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, when the gate opens
   useEffect(() => {
-    if (ready && users.outcome === null) list();
+    if (ready && needsLoad(users.outcome)) list();
   }, [ready]);
 
   const create = async () => {

@@ -21,6 +21,7 @@ import { useWakeReady } from "@/components/tools/WakeGate";
 import { callTool } from "../client";
 import { plural, short } from "../format";
 import type { ToolOutcome } from "../outcome";
+import { needsLoad } from "../run-action";
 import { type Action, useAction } from "../use-action";
 import { SamplePicker } from "./SamplePicker";
 
@@ -68,11 +69,16 @@ export function InkthreadWorkbench({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, when the gate opens
   useEffect(() => {
-    if (!ready || samples.outcome !== null) return;
+    if (!ready) return;
+    if (!needsLoad(samples.outcome)) {
+      // The samples came back; a graph that failed (asleep) is read again.
+      if (doc !== null && needsLoad(graph.outcome)) load(doc);
+      return;
+    }
     void samples
       .run((signal) => callTool(inkthread.samples, {}, { signal }))
       .then((outcome) => {
-        if (graph.outcome !== null) return;
+        if (!needsLoad(graph.outcome)) return;
         const first = doc ?? (outcome?.ok ? (outcome.data.items[0]?.id ?? null) : null);
         if (first) load(first);
       });
