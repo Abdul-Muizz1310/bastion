@@ -37,6 +37,8 @@ export function stageCtx(over: Partial<StageContext> & { outputs?: StageContext[
     requestId: "req-dossier-1",
     outputs: {},
     now: new Date("2026-10-20T10:00:00Z"),
+    attempt: 1,
+    startedAt: new Date("2026-10-20T10:00:00Z"),
     signal: new AbortController().signal,
     ...over,
   };

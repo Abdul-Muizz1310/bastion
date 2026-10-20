@@ -148,6 +148,8 @@ describe("advance — one stage per invocation", () => {
       requestId: "req-dossier-1",
       outputs: { wake: { live: ["magpie"] }, gather: { job: "j1" } },
       now: NOW,
+      attempt: 1,
+      startedAt: expect.any(Date),
       signal: expect.any(AbortSignal),
     });
   });

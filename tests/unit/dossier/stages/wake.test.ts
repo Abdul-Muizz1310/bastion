@@ -38,47 +38,39 @@ describe("wake stage", () => {
     expect(d.probe).toHaveBeenCalledWith("inkthread", 8_000);
   });
 
-  it("waits and remembers when it first started", async () => {
+  it("waits, reporting who is live and who is asleep", async () => {
     const out = await wakeStage(deps({ inkprint: "asleep" }))(stageCtx());
     expect(out).toEqual({
       kind: "waiting",
-      output: {
-        since: "2026-10-20T10:00:00.000Z",
-        live: ["paper-trail"],
-        asleep: ["inkprint"],
-      },
+      output: { live: ["paper-trail"], asleep: ["inkprint"] },
       retryInMs: POLL_MS,
     });
   });
 
-  it("keeps the first-seen time across polls and errors at 90 s with the asleep service", async () => {
-    const since = "2026-10-20T10:00:00.000Z";
+  it("errors at 90 s from the attempt's start with the asleep service", async () => {
+    const startedAt = new Date("2026-10-20T10:00:00.000Z");
     const handler = wakeStage(deps({ inkprint: "down" }));
     const early = await handler(
-      stageCtx({
-        outputs: { wake: { since } },
-        now: new Date(Date.parse(since) + WAKE_DEADLINE_MS - 1),
-      }),
+      stageCtx({ startedAt, now: new Date(startedAt.getTime() + WAKE_DEADLINE_MS - 1) }),
     );
     expect(early.kind).toBe("waiting");
     const late = await handler(
-      stageCtx({
-        outputs: { wake: { since } },
-        now: new Date(Date.parse(since) + WAKE_DEADLINE_MS),
-      }),
+      stageCtx({ startedAt, now: new Date(startedAt.getTime() + WAKE_DEADLINE_MS) }),
     );
     expect(late).toEqual({ kind: "error", error: "service_asleep:inkprint", retryable: true });
   });
 
-  it("ignores a malformed previous output", async () => {
+  it("a retry (attempt 2) with an old previous output gets a full 90 s from its own start (Ruling Q)", async () => {
+    const startedAt = new Date("2026-10-20T10:10:00.000Z");
     const out = await wakeStage(deps({ inkprint: "asleep" }))(
-      stageCtx({ outputs: { wake: ["x"] } }),
+      stageCtx({
+        attempt: 2,
+        startedAt,
+        now: new Date(startedAt.getTime() + 3_000),
+        outputs: { wake: { since: "2026-10-20T10:00:00.000Z", live: [], asleep: ["inkprint"] } },
+      }),
     );
-    expect(out).toMatchObject({ kind: "waiting", output: { since: "2026-10-20T10:00:00.000Z" } });
-    const out2 = await wakeStage(deps({ inkprint: "asleep" }))(
-      stageCtx({ outputs: { wake: { since: "nope" } } }),
-    );
-    expect(out2).toMatchObject({ kind: "waiting", output: { since: "2026-10-20T10:00:00.000Z" } });
+    expect(out.kind).toBe("waiting");
   });
 
   it("never fails or waits on slowquery", async () => {

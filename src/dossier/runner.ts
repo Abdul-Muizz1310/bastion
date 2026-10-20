@@ -185,6 +185,8 @@ export async function advance(
       requestId: dossier.requestId,
       outputs: stageOutputs(steps, claimed.stage),
       now: now(),
+      attempt: claimed.attempt,
+      startedAt: claimed.startedAt ?? now(),
     },
     budgetMs,
   );

@@ -78,6 +78,9 @@ export type StageContext = {
   requestId: string;
   outputs: Partial<Record<Stage, Json>>;
   now: Date;
+  /** The current attempt (1-based), and when it started: polls keep both, a retry resets them. */
+  attempt: number;
+  startedAt: Date;
   /** Aborted when the stage's budget runs out: pass it to every downstream call. */
   signal: AbortSignal;
 };

@@ -12,8 +12,8 @@ import { POLL_MS, type StageContext, type StageHandler, type StageOutcome } from
  * up on the answer. So each poll's 8 s `/health` probe is itself the kick; the stage then returns
  * `waiting` for POLL_MS and probes again. No separate fire-and-forget request is needed.
  *
- * The stage's first start is kept in its own output (`since`), which the runner hands back on each
- * poll as `ctx.outputs.wake`. After WAKE_DEADLINE_MS the first service still not live is a
+ * The window is measured from `ctx.startedAt`, the start of the current attempt: polls keep it and a
+ * retry (Ruling Q) resets it, so every attempt gets the full window. After WAKE_DEADLINE_MS the first service still not live is a
  * retryable `service_asleep:<id>` error.
  */
 
@@ -32,18 +32,9 @@ export function requiredServices(sources: readonly string[], hasDocuments: boole
   return out;
 }
 
-function sinceOf(previous: unknown, now: Date): Date {
-  if (typeof previous === "object" && previous !== null && !Array.isArray(previous)) {
-    const since = (previous as Record<string, unknown>).since;
-    if (typeof since === "string" && !Number.isNaN(Date.parse(since))) return new Date(since);
-  }
-  return now;
-}
-
 export function wakeStage(deps: WakeDeps): StageHandler {
   return async (ctx: StageContext): Promise<StageOutcome> => {
     const required = requiredServices(ctx.dossier.sources, await deps.hasDocuments(ctx.dossier.id));
-    const since = sinceOf(ctx.outputs.wake, ctx.now);
     const [results] = await Promise.all([
       Promise.all(required.map((id) => deps.probe(id, PROBE_MS))),
       // Best effort: the fleet's slowquery service is nudged awake but never waited on or failed on.
@@ -52,12 +43,12 @@ export function wakeStage(deps: WakeDeps): StageHandler {
     const live = required.filter((_, i) => results[i]?.state === "live");
     const asleep = required.filter((id) => !live.includes(id));
     if (asleep.length === 0) return { kind: "ok", output: { live } };
-    if (ctx.now.getTime() - since.getTime() >= WAKE_DEADLINE_MS) {
+    if (ctx.now.getTime() - ctx.startedAt.getTime() >= WAKE_DEADLINE_MS) {
       return { kind: "error", error: `service_asleep:${asleep[0]}`, retryable: true };
     }
     return {
       kind: "waiting",
-      output: { since: since.toISOString(), live, asleep },
+      output: { live, asleep },
       retryInMs: POLL_MS,
     };
   };
