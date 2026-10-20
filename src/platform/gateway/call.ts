@@ -61,6 +61,11 @@ export type Capability<I, O> = {
   cost: "free" | "quota" | "llm";
   /** Required when `cost` is `llm`: model calls are the scarcest thing the platform spends. */
   budget?: BudgetKey;
+  /**
+   * How many units of `budget` one call spends (Ruling K: budgets count units, not calls — a
+   * 12-certificate batch is 12 certificates). A positive safe integer; 1 when absent.
+   */
+  budgetUnits?: (input: I) => number;
   /** A per-visitor limit for this capability, on top of the gateway's 30 calls a minute. */
   perVisitorPerMin?: number;
   timeoutMs?: number;
@@ -115,6 +120,18 @@ function assertCapability<I, O>(cap: Capability<I, O>): void {
   if (cap.cost === "llm" && cap.budget === undefined) {
     throw new TypeError(`capability ${cap.id}: an llm capability needs a daily budget`);
   }
+  if (cap.budgetUnits !== undefined && cap.budget === undefined) {
+    throw new TypeError(`capability ${cap.id}: budget units need a budget to count against`);
+  }
+}
+
+/** The units one call spends — checked like the rest of the capability, before any side effect. */
+function budgetUnits<I, O>(cap: Capability<I, O>, input: I): number {
+  const units = cap.budgetUnits?.(input) ?? 1;
+  if (!Number.isSafeInteger(units) || units < 1) {
+    throw new TypeError(`capability ${cap.id}: budget units must be a positive integer`);
+  }
+  return units;
 }
 
 function routedService<I, O>(cap: Capability<I, O>, input: I): ServiceId {
@@ -438,6 +455,7 @@ export async function callCapability<I, O>(
     });
   }
   const service = routedService(cap, parsed.data);
+  const units = budgetUnits(cap, parsed.data);
   const built = buildRequest(cap, service, parsed.data);
   if (!built.ok)
     return refuse(service, { ok: false, error: "invalid_input", detail: built.detail });
@@ -458,7 +476,7 @@ export async function callCapability<I, O>(
   const day = new Date();
   const budget = cap.budget;
   if (budget !== undefined) {
-    const reserved = await reserveBudget(budget, 1, day);
+    const reserved = await reserveBudget(budget, units, day);
     if (!reserved.ok) {
       return finish({
         ok: false,
@@ -468,7 +486,7 @@ export async function callCapability<I, O>(
     }
   }
   const release = async () => {
-    if (budget !== undefined) await releaseBudget(budget, 1, day);
+    if (budget !== undefined) await releaseBudget(budget, units, day);
   };
 
   let token: string;

@@ -208,6 +208,8 @@ const certifyBatch: Capability<z.infer<typeof certifyBatchInput>, CertificateBat
   grant: "editor",
   cost: "quota",
   budget: "certify",
+  // Ruling K: the certify budget counts certificates, so a batch spends one unit per item.
+  budgetUnits: (i) => i.items.length,
   // One embedding request for up to 50 texts.
   timeoutMs: 60_000,
 };

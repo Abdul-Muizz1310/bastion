@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { inkprint } from "@/capabilities/inkprint";
+import { budgetsLeft } from "@/platform/budget";
 import {
   base,
   call,
@@ -8,6 +9,7 @@ import {
   expectParses,
   fixture,
   fixtureBytes,
+  json,
   sent,
   stubGateway,
 } from "./harness";
@@ -90,6 +92,19 @@ describe("inkprint.certifyBatch", () => {
       body: { items: [item, item] },
     });
     expect(data).toMatchObject({ certificates: [{ certificate_id: CERT }, {}] });
+  });
+
+  it("counts one certify unit per item (Ruling K)", async () => {
+    // The in-process counter is shared by this file's tests: leave exactly 3 units for today.
+    const { limit, left } = (await budgetsLeft()).certify;
+    vi.stubEnv("BUDGET_CERTIFY", String(limit - left + 3));
+    await expectParses(inkprint.certifyBatch, { items: [item, item] }, batch);
+    expect(inkprint.certifyBatch.budgetUnits?.({ items: [item, item, item] })).toBe(3);
+    const result = await call(inkprint.certifyBatch, { items: [item, item] });
+    expect(result).toMatchObject({ ok: false, error: "budget_exhausted" });
+    expect(await call(inkprint.certifyBatch, { items: [item] }, json(batch))).toMatchObject({
+      ok: true,
+    });
   });
 
   it("refuses a certificate record without its fingerprints", async () => {

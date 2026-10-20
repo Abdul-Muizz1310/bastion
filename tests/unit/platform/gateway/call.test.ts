@@ -794,3 +794,97 @@ describe("callCapability — PEM text", () => {
     });
   });
 });
+
+describe("callCapability — budgets count units, not calls (Ruling K)", () => {
+  type Batch = { items: string[] };
+  const seal: Capability<Batch, { ok: boolean }> = {
+    id: "test.seal",
+    service: "inkprint",
+    method: "POST",
+    path: () => "/certificates/batch",
+    body: (i) => i,
+    input: z.object({ items: z.array(z.string()).min(1) }),
+    output: z.object({ ok: z.boolean() }),
+    grant: "editor",
+    cost: "quota",
+    budget: "certify",
+    budgetUnits: (i) => i.items.length,
+  };
+  const three = { items: ["a", "b", "c"] };
+  const certifyLeft = async () => (await budget.budgetsLeft()).certify.left;
+
+  beforeEach(() => {
+    vi.stubEnv("BUDGET_CERTIFY", "5");
+    fetchMock.mockImplementation(async () => Response.json({ ok: true }));
+  });
+
+  it("reserves as many units as the input says (a 3-item batch reserves 3)", async () => {
+    expect((await gateway.callCapability(seal, three, ctx)).ok).toBe(true);
+    expect(await certifyLeft()).toBe(2);
+  });
+
+  it.each([
+    ["a 4xx", () => Response.json({ detail: "bad item" }, { status: 422 })],
+    ["a downstream 429", () => new Response("slow", { status: 429 })],
+  ])("gives all the units back on %s", async (_label, answer) => {
+    fetchMock.mockResolvedValueOnce(answer());
+    const result = await gateway.callCapability(seal, three, ctx);
+    expect(result.ok).toBe(false);
+    expect(await certifyLeft()).toBe(5);
+  });
+
+  it("keeps all the units on a 5xx (they may have been spent)", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("boom", { status: 500 }));
+    await gateway.callCapability(seal, three, ctx);
+    expect(await certifyLeft()).toBe(2);
+  });
+
+  it("refuses a batch larger than what is left, without fetching or reserving any of it", async () => {
+    await gateway.callCapability(seal, three, ctx);
+    expect(await certifyLeft()).toBe(2);
+    const result = await gateway.callCapability(seal, three, ctx);
+    expect(result).toMatchObject({ ok: false, error: "budget_exhausted", status: 429 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(await certifyLeft()).toBe(2);
+  });
+
+  it("still fits a batch that uses exactly what is left", async () => {
+    await gateway.callCapability(seal, three, ctx);
+    expect((await gateway.callCapability(seal, { items: ["d", "e"] }, ctx)).ok).toBe(true);
+    expect(await certifyLeft()).toBe(0);
+  });
+
+  it("gives all the units back when the token cannot be minted", async () => {
+    vi.stubEnv("BASTION_SIGNING_KEY_PRIVATE", "");
+    await expect(gateway.callCapability(seal, three, ctx)).rejects.toThrow(ConfigError);
+    expect(await certifyLeft()).toBe(5);
+  });
+
+  it("reserves one unit when a capability declares no units", async () => {
+    const single = { ...seal, budgetUnits: undefined };
+    await gateway.callCapability(single, three, ctx);
+    expect(await certifyLeft()).toBe(4);
+  });
+
+  it.each([
+    ["zero", 0],
+    ["a fraction", 1.5],
+    ["a negative", -3],
+    ["NaN", Number.NaN],
+    ["Infinity", Number.POSITIVE_INFINITY],
+    ["an unsafe integer", 2 ** 53],
+  ])("throws on units that are %s, before any side effect", async (_label, units) => {
+    const bad = { ...seal, budgetUnits: () => units };
+    await expect(gateway.callCapability(bad, three, ctx)).rejects.toThrow(TypeError);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(check).not.toHaveBeenCalled();
+    expect(appendEvent).not.toHaveBeenCalled();
+    expect(await certifyLeft()).toBe(5);
+  });
+
+  it("throws on units declared without a budget to count them against", async () => {
+    const bad = { ...seal, budget: undefined };
+    await expect(gateway.callCapability(bad, three, ctx)).rejects.toThrow(TypeError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
