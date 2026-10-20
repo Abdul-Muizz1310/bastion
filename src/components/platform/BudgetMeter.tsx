@@ -11,7 +11,7 @@ const LEVEL_CELL: Readonly<Record<Level, string>> = {
   ok: "bg-accent-violet",
   low: "bg-warning",
   empty: "bg-error",
-  off: "bg-fg-faint",
+  off: "bg-line-faint",
 };
 
 const LEVEL_TEXT: Readonly<Record<Level, string>> = {

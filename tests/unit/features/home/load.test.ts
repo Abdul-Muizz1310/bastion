@@ -3,8 +3,8 @@ import type { PublicDossier } from "@/dossier/gallery";
 import { loadHome } from "@/features/home/load";
 
 /**
- * Spec 21 §3.1: the home page reads the 12 most recent public dossiers (the gallery keeps the 6 most
- * recent succeeded) and today's debate budget. Neither may take the landing page down: a database
+ * Spec 21 §3.1: the home page reads the 6 most recent succeeded public dossiers (filtered in SQL,
+ * Ruling AF) and today's debate budget. Neither may take the landing page down: a database
  * error marks the gallery unavailable, a budget-store error hides the meter.
  */
 
@@ -44,14 +44,22 @@ beforeEach(() => {
 });
 
 describe("loadHome", () => {
-  it("reads the 12 most recent public dossiers and keeps the 6 most recent succeeded", async () => {
+  it("asks the database for the 6 most recent succeeded dossiers (Ruling AF)", async () => {
+    listPublicDossiers.mockResolvedValue(Array.from({ length: 6 }, (_, i) => dossier(i + 2)));
+    const home = await loadHome(deps);
+    expect(listPublicDossiers).toHaveBeenCalledWith(6, { status: "succeeded" });
+    expect(home.gallery).toMatchObject({ kind: "ok" });
+    if (home.gallery.kind !== "ok") throw new Error("unreachable");
+    expect(home.gallery.dossiers).toHaveLength(6);
+  });
+
+  it("still shows only succeeded dossiers, at most 6, whatever the reader returns", async () => {
     listPublicDossiers.mockResolvedValue([
       dossier(1, "running"),
       ...Array.from({ length: 8 }, (_, i) => dossier(i + 2)),
       dossier(10, "failed"),
     ]);
     const home = await loadHome(deps);
-    expect(listPublicDossiers).toHaveBeenCalledWith(12);
     expect(home.gallery.kind).toBe("ok");
     if (home.gallery.kind !== "ok") throw new Error("unreachable");
     expect(home.gallery.dossiers.map((d) => d.claim)).toEqual([

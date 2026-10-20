@@ -1,4 +1,4 @@
-import { count, desc, inArray, isNotNull, sql } from "drizzle-orm";
+import { count, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { dossierDocuments, dossiers, evidenceItems } from "@/lib/db/schema";
 
@@ -20,7 +20,20 @@ export type PublicDossier = {
   products: string[];
 };
 
-export async function listPublicDossiers(limit = 12): Promise<PublicDossier[]> {
+export const DOSSIER_STATUSES = ["pending", "running", "succeeded", "failed"] as const;
+export type DossierStatus = (typeof DOSSIER_STATUSES)[number];
+
+/**
+ * The most recent public dossiers, newest first. `status` filters in SQL (Ruling AF), so a burst of
+ * newer unfinished dossiers cannot crowd finished ones out of a short list.
+ */
+export async function listPublicDossiers(
+  limit = 12,
+  filter: { status?: DossierStatus } = {},
+): Promise<PublicDossier[]> {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new RangeError(`listPublicDossiers: limit must be a whole number 1..100, not ${limit}`);
+  }
   const db = getDb();
   const rows = await db
     .select({
@@ -33,6 +46,7 @@ export async function listPublicDossiers(limit = 12): Promise<PublicDossier[]> {
       createdAt: dossiers.createdAt,
     })
     .from(dossiers)
+    .where(filter.status === undefined ? undefined : eq(dossiers.status, filter.status))
     .orderBy(desc(dossiers.createdAt), desc(dossiers.id))
     .limit(limit);
   if (rows.length === 0) return [];

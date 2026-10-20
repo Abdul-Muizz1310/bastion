@@ -160,3 +160,45 @@ describe.skipIf(!LOCAL)("createDossier (Postgres)", () => {
     );
   });
 });
+
+describe.skipIf(!LOCAL)("listPublicDossiers ?status (Ruling AF, Postgres)", () => {
+  it("filters in SQL, so a burst of newer unfinished dossiers cannot crowd out finished ones", async () => {
+    // Far-future timestamps make these the newest rows whatever else the database holds.
+    const at = (minute: number) => new Date(Date.UTC(2100, 0, 1, 0, minute));
+    const rows = [
+      { claim: "integration: ok oldest", status: "succeeded", createdAt: at(1) },
+      { claim: "integration: ok middle", status: "succeeded", createdAt: at(2) },
+      { claim: "integration: ok newest", status: "succeeded", createdAt: at(3) },
+      { claim: "integration: failed", status: "failed", createdAt: at(4) },
+      { claim: "integration: running", status: "running", createdAt: at(5) },
+      { claim: "integration: pending", status: "pending", createdAt: at(6) },
+    ] as const;
+    const ids = await getDb()
+      .insert(dossiers)
+      .values(
+        rows.map((r) => ({
+          ...r,
+          sources: ["hn"],
+          mode: "rapid" as const,
+          requestId: `it-gallery-status-${randomUUID()}`,
+        })),
+      )
+      .returning({ id: dossiers.id });
+    created.push(...ids.map((r) => r.id));
+
+    const unfiltered = await listPublicDossiers(3);
+    expect(unfiltered.map((d) => d.claim)).toEqual([
+      "integration: pending",
+      "integration: running",
+      "integration: failed",
+    ]);
+
+    const finished = await listPublicDossiers(2, { status: "succeeded" });
+    expect(finished.map((d) => d.claim)).toEqual(["integration: ok newest", "integration: ok middle"]);
+    expect(finished.every((d) => d.status === "succeeded")).toBe(true);
+
+    const failed = await listPublicDossiers(12, { status: "failed" });
+    expect(failed[0]?.claim).toBe("integration: failed");
+    expect(failed.every((d) => d.status === "failed")).toBe(true);
+  });
+});

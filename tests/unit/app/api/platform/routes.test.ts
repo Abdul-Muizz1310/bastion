@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { check, probe, wake: wakeProbe } = vi.hoisted(() => ({
   check: vi.fn(),
@@ -35,15 +35,40 @@ beforeEach(() => {
   wakeProbe.mockImplementation(async (s: string) => health(s));
 });
 
-describe("GET /api/platform/status", () => {
-  it("is dynamic and probes with the 8 s budget", async () => {
+describe("GET /api/platform/status (Ruling AE)", () => {
+  // The route keeps one shared round for 30 s; each test starts a minute after the last.
+  let clock = Date.parse("2026-10-20T10:00:00.000Z");
+  beforeEach(() => {
+    clock += 60_000;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(clock);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("is dynamic and probes every service with the 8 s budget", async () => {
     expect(status.dynamic).toBe("force-dynamic");
     const res = await status.GET();
     const body = await res.json();
     expect(body.services).toHaveLength(6);
     expect(probe).toHaveBeenCalledTimes(6);
     for (const call of probe.mock.calls) expect(call[1]).toBe(8000);
-    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("lets the CDN share the answer for 30 s", async () => {
+    const res = await status.GET();
+    expect(res.headers.get("cache-control")).toBe("public, s-maxage=30");
+  });
+
+  it("serves one probe round to every request within 30 s, and a new one after", async () => {
+    await status.GET();
+    vi.setSystemTime(clock + 29_000);
+    await Promise.all([status.GET(), status.GET()]);
+    expect(probe).toHaveBeenCalledTimes(6);
+    vi.setSystemTime(clock + 30_000);
+    await status.GET();
+    expect(probe).toHaveBeenCalledTimes(12);
   });
 });
 

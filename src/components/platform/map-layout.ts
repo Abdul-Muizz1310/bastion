@@ -117,6 +117,8 @@ export type MapLayout = {
   id: "wide" | "tall";
   width: number;
   height: number;
+  /** The narrowest the canvas is ever drawn, in CSS px, at the breakpoint it first shows. */
+  minRenderWidth: number;
   /** Font sizes in canvas units. */
   type: { name: number; hub: number; meta: number; label: number };
   nodes: Readonly<Record<MapNodeId, Box>>;
@@ -125,63 +127,68 @@ export type MapLayout = {
 
 const seg = (arrow: boolean, ...points: Point[]): Segment => ({ points, arrow });
 
-/** Desktop: sources on the left, signing and debate on the right, bastion and slowquery between. */
+/**
+ * Desktop: sources on the left, signing and debate on the right, bastion and slowquery between.
+ * Sized so node text and flow labels render at 12 px or more on the narrowest lg screen.
+ */
 export const WIDE: MapLayout = {
   id: "wide",
-  width: 1200,
+  width: 1120,
   height: 640,
-  type: { name: 17, hub: 26, meta: 12.5, label: 11.5 },
+  // 1024 viewport − 17 scrollbar − 48 main padding − 2 panel border (no canvas padding at lg).
+  minRenderWidth: 957,
+  type: { name: 19, hub: 28, meta: 14.5, label: 14.5 },
   nodes: {
-    magpie: { x: 52, y: 52, w: 196, h: 84 },
-    inkthread: { x: 52, y: 278, w: 196, h: 84 },
-    inkgrid: { x: 52, y: 504, w: 196, h: 84 },
-    inkprint: { x: 952, y: 52, w: 196, h: 84 },
-    "paper-trail": { x: 952, y: 278, w: 196, h: 84 },
-    feathers: { x: 952, y: 504, w: 196, h: 84 },
-    bastion: { x: 470, y: 250, w: 260, h: 140 },
-    slowquery: { x: 502, y: 504, w: 196, h: 84 },
-    "feathers-demo": { x: 752, y: 526, w: 132, h: 40 },
+    magpie: { x: 44, y: 44, w: 200, h: 92 },
+    inkthread: { x: 44, y: 266, w: 200, h: 92 },
+    inkgrid: { x: 44, y: 492, w: 200, h: 92 },
+    inkprint: { x: 876, y: 44, w: 200, h: 92 },
+    "paper-trail": { x: 876, y: 266, w: 200, h: 92 },
+    feathers: { x: 876, y: 492, w: 200, h: 92 },
+    bastion: { x: 424, y: 240, w: 272, h: 144 },
+    slowquery: { x: 460, y: 492, w: 200, h: 92 },
+    "feathers-demo": { x: 908, y: 410, w: 136, h: 36 },
   },
   flows: {
     "magpie-inkprint": {
-      segments: [seg(true, [248, 80], [952, 80])],
+      segments: [seg(true, [244, 76], [876, 76])],
       junctions: [],
-      label: { x: 600, y: 70, anchor: "middle" },
+      label: { x: 560, y: 64, anchor: "middle" },
     },
     "inkgrid-inkthread": {
-      segments: [seg(true, [150, 504], [150, 362])],
+      segments: [seg(true, [144, 492], [144, 358])],
       junctions: [],
-      label: { x: 162, y: 437, anchor: "start" },
+      label: { x: 156, y: 430, anchor: "start" },
     },
     "inkthread-inkprint": {
-      segments: [seg(true, [248, 320], [300, 320], [300, 112], [952, 112])],
+      segments: [seg(true, [244, 312], [296, 312], [296, 108], [876, 108])],
       junctions: [],
-      label: { x: 600, y: 134, anchor: "middle" },
+      label: { x: 560, y: 132, anchor: "middle" },
     },
     "inkprint-paper-trail": {
-      segments: [seg(true, [1050, 136], [1050, 278])],
+      segments: [seg(true, [976, 136], [976, 266])],
       junctions: [],
-      label: { x: 1038, y: 211, anchor: "end" },
+      label: { x: 964, y: 206, anchor: "end" },
     },
     "services-slowquery": {
       segments: [
-        seg(false, [52, 104], [22, 104], [22, 616], [600, 616]),
-        seg(false, [52, 330], [22, 330]),
-        seg(false, [1148, 104], [1178, 104], [1178, 616], [600, 616]),
-        seg(false, [1148, 330], [1178, 330]),
-        seg(true, [600, 616], [600, 588]),
+        seg(false, [44, 100], [16, 100], [16, 612], [560, 612]),
+        seg(false, [44, 322], [16, 322]),
+        seg(false, [1076, 100], [1104, 100], [1104, 612], [560, 612]),
+        seg(false, [1076, 322], [1104, 322]),
+        seg(true, [560, 612], [560, 584]),
       ],
       junctions: [
-        [22, 330],
-        [1178, 330],
-        [600, 616],
+        [16, 322],
+        [1104, 322],
+        [560, 612],
       ],
-      label: { x: 612, y: 607, anchor: "start" },
+      label: { x: 572, y: 604, anchor: "start" },
     },
     "feathers-scaffold": {
-      segments: [seg(true, [952, 546], [884, 546])],
+      segments: [seg(true, [976, 492], [976, 446])],
       junctions: [],
-      label: { x: 918, y: 534, anchor: "middle" },
+      label: { x: 966, y: 474, anchor: "end" },
     },
   },
 };
@@ -191,6 +198,8 @@ export const TALL: MapLayout = {
   id: "tall",
   width: 400,
   height: 944,
+  // A 360 px phone − 32 main padding − 2 panel border − 16 canvas padding.
+  minRenderWidth: 310,
   type: { name: 15, hub: 22, meta: 12.5, label: 11.5 },
   nodes: {
     magpie: { x: 30, y: 24, w: 160, h: 80 },

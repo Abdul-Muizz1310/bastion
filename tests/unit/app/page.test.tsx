@@ -112,7 +112,7 @@ describe("Home page (spec 21 §3.1)", () => {
       ...Array.from({ length: 7 }, (_, i) => dossier(i + 2)),
     ]);
     const html = await renderHome();
-    expect(mockList).toHaveBeenCalledWith(12);
+    expect(mockList).toHaveBeenCalledWith(6, { status: "succeeded" });
     const gallery = sliceByAttr(html, "data-section", "gallery");
     const hrefs = links(gallery).map((l) => l.href);
     expect(hrefs).toHaveLength(6);

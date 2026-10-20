@@ -70,9 +70,17 @@ Invariants and cases:
    aborts the request in flight.
 4. The status body is parsed, not cast; a malformed body or a non-2xx answer counts as a failed request.
 5. No edge passes through a node, every edge starts on its source's border and ends on its target's.
-6. Reduced motion: no pulsing glyphs and no moving packets on the edges.
+6. Reduced motion: no pulsing glyphs and no moving packets on the edges. Motion that starts by itself
+   stops within 5 s (WCAG 2.2.2).
+7. One shared probe round (Ruling AE): `GET /api/platform/status` reuses a round for 30 s for every
+   visitor — Upstash when configured, in-process otherwise — and answers `cache-control: public,
+   s-maxage=30`. Requests that arrive while a round runs share it; a failed round is never cached; a
+   broken shared store only costs a probe.
+8. Legibility: node text and flow labels render at 12 px or more on the narrowest lg screen; every
+   text colour token reaches 4.5:1 on background, surface and surface-hover.
 
-**Gallery.** The 6 most recent `succeeded` dossiers among the 12 `GET /api/dossiers` returns, each as a
+**Gallery.** The 6 most recent `succeeded` dossiers, filtered in SQL (`GET /api/dossiers?status=succeeded`,
+Ruling AF; an unknown or repeated `status` is a 422), so the gallery fills whenever 6 exist. Each is a
 receipt: verdict and confidence, evidence count, documents, products used, a link to `/d/<id>`. No
 finished dossier ⇒ an empty state that links to `/dossier`. The database unreachable ⇒ the page still
 renders, with the gallery marked unavailable.

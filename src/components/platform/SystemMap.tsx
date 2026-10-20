@@ -53,7 +53,7 @@ export function SystemMap() {
         <HealthSummary serviceIds={SERVICE_IDS} />
       </header>
 
-      <div className="px-2 py-4 md:px-4">
+      <div className="px-2 py-4 md:px-4 lg:px-0">
         <MapCanvas layout={WIDE} className="hidden w-full lg:block" />
         <MapCanvas layout={TALL} className="mx-auto block w-full max-w-[440px] lg:hidden" />
       </div>

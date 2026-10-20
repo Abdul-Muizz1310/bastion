@@ -8,6 +8,7 @@ import {
   NODE_ROLE,
   type Point,
   pathOf,
+  WIDE,
 } from "@/components/platform/map-layout";
 import { PRODUCTS } from "@/platform/registry/products";
 
@@ -168,6 +169,61 @@ describe.each(LAYOUTS)("the $id layout", (layout) => {
     expect(label.x).toBeLessThanOrEqual(layout.width);
     expect(label.y).toBeGreaterThanOrEqual(0);
     expect(label.y).toBeLessThanOrEqual(layout.height);
+  });
+});
+
+// Advance widths in em: JetBrains Mono (body) is 0.6; Martian Mono at 87.5 % width (names) ≈ 0.66.
+const BODY_EM = 0.6;
+const NAME_EM = 0.66;
+
+describe("the wide canvas at its narrowest (lg)", () => {
+  it("is drawn no narrower than the lg breakpoint leaves it", () => {
+    // 1024 viewport − 17 scrollbar − 48 main padding − 2 panel border; the canvas has no padding at lg.
+    expect(WIDE.minRenderWidth).toBe(957);
+  });
+
+  it("renders node text and flow labels at 12 px or more", () => {
+    const scale = WIDE.minRenderWidth / WIDE.width;
+    expect(WIDE.type.meta * scale).toBeGreaterThanOrEqual(12);
+    expect(WIDE.type.label * scale).toBeGreaterThanOrEqual(12);
+    expect(WIDE.type.name).toBeGreaterThan(WIDE.type.meta);
+    expect(WIDE.type.hub).toBeGreaterThan(WIDE.type.name);
+  });
+});
+
+describe.each(LAYOUTS)("text fits the $id layout", (layout) => {
+  const { meta, name, label, hub } = layout.type;
+
+  it("fits every product's name, role and widest state line inside its node", () => {
+    for (const p of PRODUCTS) {
+      const box = layout.nodes[p.id];
+      const isHub = p.id === "bastion";
+      const inset = isHub ? 22 : 16;
+      const nameWidth = p.name.length * (isHub ? hub : name) * NAME_EM;
+      const roleWidth = (NODE_ROLE[p.id]?.length ?? 0) * meta * BODY_EM;
+      const state = isHub ? "live · serving this page" : "live · 9999 ms"; // the longest state line
+      const stateWidth = 1.3 * meta + state.length * meta * BODY_EM;
+      expect(inset + nameWidth, `${p.id} name`).toBeLessThanOrEqual(box.w - 24);
+      expect(inset + roleWidth, `${p.id} role`).toBeLessThanOrEqual(box.w - 8);
+      expect(inset + stateWidth, `${p.id} state`).toBeLessThanOrEqual(box.w - 8);
+    }
+    const chip = layout.nodes["feathers-demo"];
+    expect("feathers-demo".length * meta * BODY_EM).toBeLessThanOrEqual(chip.w - 12);
+  });
+
+  it.each(FLOWS)("keeps the $id label clear of every node", (flow) => {
+    const { x, y, anchor } = layout.flows[flow.id].label;
+    const width = flow.label.length * label * BODY_EM;
+    const left = anchor === "start" ? x : anchor === "end" ? x - width : x - width / 2;
+    const top = y - label * 0.78;
+    const bottom = y + label * 0.22;
+    expect(left).toBeGreaterThanOrEqual(0);
+    expect(left + width).toBeLessThanOrEqual(layout.width);
+    for (const id of NODE_IDS) {
+      const b = layout.nodes[id];
+      const overlaps = left < b.x + b.w && left + width > b.x && top < b.y + b.h && bottom > b.y;
+      expect(overlaps, `${flow.id} label over ${id}`).toBe(false);
+    }
   });
 });
 

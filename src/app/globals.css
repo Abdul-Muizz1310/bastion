@@ -13,8 +13,12 @@
   --foreground: #fafafa;
   --surface: #12121a;
   --surface-hover: #1a1a25;
-  --fg-muted: #8a8aa3; /* 5.9:1 on the background: the lowest-contrast text colour */
-  --fg-faint: #4a4a63; /* 2.3:1: decoration only (rules, empty cells), never text */
+  /* Text colours reach 4.5:1 on background, surface and surface-hover
+     (tests/unit/app/globals-contrast.test.ts). */
+  --fg-muted: #8a8aa3; /* 5.9 / 5.5 / 5.1 */
+  --fg-faint: #82829c; /* 5.3 / 5.0 / 4.6: secondary text, a step below muted */
+  /* Decoration only (empty cells, idle dots), never text: 2.3:1. */
+  --line-faint: #4a4a63;
   --border: #1e1e2e;
   --border-bright: #2a2a3d;
   --accent-violet: #a78bfa;
@@ -51,6 +55,7 @@
   --color-error: var(--error);
   --color-fg-muted: var(--fg-muted);
   --color-fg-faint: var(--fg-faint);
+  --color-line-faint: var(--line-faint);
   --color-mac-red: var(--mac-red);
   --color-mac-yellow: var(--mac-yellow);
   --color-mac-green: var(--mac-green);

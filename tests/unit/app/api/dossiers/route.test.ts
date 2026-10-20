@@ -22,7 +22,10 @@ vi.mock("@/dossier/create", async (orig) => ({
   ...(await orig<typeof import("@/dossier/create")>()),
   createDossier,
 }));
-vi.mock("@/dossier/gallery", () => ({ listPublicDossiers }));
+vi.mock("@/dossier/gallery", async (orig) => ({
+  ...(await orig<typeof import("@/dossier/gallery")>()),
+  listPublicDossiers,
+}));
 vi.mock("@/dossier/chain", async (orig) => ({
   ...(await orig<typeof import("@/dossier/chain")>()),
   chainAdvance,
@@ -137,11 +140,31 @@ describe("POST /api/dossiers", () => {
 });
 
 describe("GET /api/dossiers", () => {
+  const get = (query = "") => route.GET(new NextRequest(`https://bastion.test/api/dossiers${query}`));
+
   it("lists the public gallery", async () => {
     listPublicDossiers.mockResolvedValue([{ id: ID }]);
-    const res = await route.GET();
-    expect(listPublicDossiers).toHaveBeenCalledWith(12);
+    const res = await get();
+    expect(listPublicDossiers).toHaveBeenCalledWith(12, {});
     expect(await res.json()).toEqual({ dossiers: [{ id: ID }] });
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
+
+  it.each(["succeeded", "failed", "running", "pending"])(
+    "filters by ?status=%s (Ruling AF)",
+    async (status) => {
+      await get(`?status=${status}`);
+      expect(listPublicDossiers).toHaveBeenCalledWith(12, { status });
+    },
+  );
+
+  it.each(["?status=SUCCEEDED", "?status=", "?status=done", "?status=succeeded&status=failed"])(
+    "refuses %s with 422 before reading anything",
+    async (query) => {
+      const res = await get(query);
+      expect(res.status).toBe(422);
+      expect(await res.json()).toMatchObject({ error: "invalid_input" });
+      expect(listPublicDossiers).not.toHaveBeenCalled();
+    },
+  );
 });

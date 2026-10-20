@@ -1,16 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { after, type NextRequest } from "next/server";
+import { z } from "zod";
 import { chainAdvance } from "@/dossier/chain";
 import { createBodySchema, createDossier } from "@/dossier/create";
-import { listPublicDossiers } from "@/dossier/gallery";
+import { DOSSIER_STATUSES, listPublicDossiers } from "@/dossier/gallery";
 import { errorResponse } from "@/platform/gateway/http";
 import { createRateLimiter } from "@/platform/ratelimit";
 import { visitorFromRequest } from "@/platform/visitor";
 
 /**
  * `/api/dossiers` (spec 21 §3). POST composes a dossier from a claim and evidence (web sources and
- * PDFs), answers 202 and starts the runner after the response. GET is the home gallery: the 12 most
- * recent dossiers, public fields only. Composing is limited to 3 an hour per visitor on top of the
+ * PDFs), answers 202 and starts the runner after the response. GET is the gallery: the 12 most
+ * recent dossiers, public fields only, optionally `?status=` one status (Ruling AF). Composing is limited to 3 an hour per visitor on top of the
  * daily `debate` budget it reserves.
  */
 
@@ -83,7 +84,21 @@ export async function POST(req: NextRequest): Promise<Response> {
   );
 }
 
-export async function GET(): Promise<Response> {
-  const dossiers = await listPublicDossiers(GALLERY_SIZE);
+const statusQuery = z.enum(DOSSIER_STATUSES).optional();
+
+export async function GET(req: NextRequest): Promise<Response> {
+  const values = req.nextUrl.searchParams.getAll("status");
+  const status = values.length > 1 ? { success: false as const } : statusQuery.safeParse(values[0]);
+  if (!status.success) {
+    return errorResponse(422, {
+      error: "invalid_input",
+      detail: `status must be one of ${DOSSIER_STATUSES.join(", ")}`,
+      requestId: randomUUID(),
+    });
+  }
+  const dossiers = await listPublicDossiers(
+    GALLERY_SIZE,
+    status.data === undefined ? {} : { status: status.data },
+  );
   return Response.json({ dossiers }, { headers: { "cache-control": "no-store" } });
 }
