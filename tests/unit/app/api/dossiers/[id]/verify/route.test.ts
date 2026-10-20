@@ -31,6 +31,10 @@ import type { Check } from "@/dossier/verify";
 import { isVisitorId } from "@/platform/visitor";
 
 const ID = "550e8400-e29b-41d4-a716-446655440000";
+const STEPS = [
+  { stage: "wake", status: "ok" },
+  { stage: "envelope", status: "ok" },
+];
 const ROW = {
   id: ID,
   requestId: "req-dossier-1",
@@ -59,7 +63,7 @@ beforeEach(() => {
   vi.stubEnv("IRON_SESSION_PASSWORD", "x".repeat(32));
   m.check.mockReset().mockResolvedValue({ success: true, limit: 10, remaining: 9 });
   m.findDossier.mockReset().mockResolvedValue(ROW);
-  m.loadSteps.mockReset().mockResolvedValue([{ stage: "wake", status: "ok" }]);
+  m.loadSteps.mockReset().mockResolvedValue(STEPS);
   m.verifyDossier.mockReset().mockResolvedValue(CHECKS);
   m.appendEvent.mockReset().mockResolvedValue(1);
 });
@@ -88,7 +92,9 @@ describe("POST /api/dossiers/[id]/verify", () => {
 
   it("verifies as the system actor (Ruling W), under a fresh request id (not the dossier's)", async () => {
     const res = await post();
-    const [dossier, ctx] = m.verifyDossier.mock.calls[0] ?? [];
+    const [dossier, ctx, steps] = m.verifyDossier.mock.calls[0] ?? [];
+    // The step rows the route read (Ruling Z) go along: a failed dossier is judged by them (AB).
+    expect(steps).toEqual(STEPS);
     // The whole row: the checks bind what the page shows (claim, verdict, confidence, envelope).
     expect(dossier).toEqual(ROW);
     expect(ctx.actor).toBe("bastion");

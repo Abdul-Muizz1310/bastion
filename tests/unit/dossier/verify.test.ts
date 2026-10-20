@@ -554,6 +554,7 @@ describe("envelope", () => {
     perf: perfReceipt(),
     documents: documents(),
     evidence: evidenceRows(),
+    envelopeStep: "ok" as const,
     key: ok(publicKeyBody()),
     ...over,
   });
@@ -716,15 +717,13 @@ describe("envelope", () => {
   });
 
   describe("certified evidence implies an envelope, whatever envelope_id says (Ruling AA)", () => {
-    it.each(["succeeded", "failed"] as const)(
-      "fails a %s dossier whose certificates no envelope binds",
-      (status) => {
-        const dossier = { ...DOSSIER, status, envelopeId: null };
-        const c = envelopeCheck(inputs({ envelope: null, dossier }));
-        expectState(c, "fail");
-        expect(c?.detail).toContain("no envelope");
-      },
-    );
+    it("fails a succeeded dossier whose certificates no envelope binds", () => {
+      const dossier = { ...DOSSIER, envelopeId: null };
+      const c = envelopeCheck(inputs({ envelope: null, dossier, envelopeStep: "ok" }));
+      expectState(c, "fail");
+      expect(c?.detail).toContain("no envelope");
+      expectState(envelopeCheck(inputs({ envelope: null, dossier, envelopeStep: null })), "fail");
+    });
 
     it.each(["pending", "running"] as const)(
       "is unavailable, never a pass, while a %s dossier has no envelope yet",
@@ -733,6 +732,27 @@ describe("envelope", () => {
         expectState(envelopeCheck(inputs({ envelope: null, dossier })), "unavailable");
       },
     );
+
+    describe("a failed dossier is judged by its envelope step (Ruling AB)", () => {
+      const failedDossier = { ...DOSSIER, status: "failed" as const, envelopeId: null };
+
+      it.each(["pending", "error", "skipped"] as const)(
+        "envelope step %s: the dossier failed before sealing — unavailable, never a pass",
+        (envelopeStep) => {
+          const c = envelopeCheck(inputs({ envelope: null, dossier: failedDossier, envelopeStep }));
+          expectState(c, "unavailable");
+          expect(c?.detail).toBe("the dossier failed before sealing");
+        },
+      );
+
+      it("envelope step ok but no envelope receipt: fail", () => {
+        const c = envelopeCheck(
+          inputs({ envelope: null, dossier: failedDossier, envelopeStep: "ok" }),
+        );
+        expectState(c, "fail");
+        expect(c?.detail).toContain("no envelope receipt");
+      });
+    });
   });
 
   it("is not a check at all for a dossier with no envelope, none named and nothing certified", () => {

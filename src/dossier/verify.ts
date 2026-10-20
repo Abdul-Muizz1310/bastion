@@ -23,6 +23,7 @@ import {
   perfReceiptHash,
 } from "./receipt-math";
 import type { StoredReceipt } from "./receipts";
+import type { StepStatus } from "./stages";
 
 /**
  * "Verify everything" (spec 21 §6.5), the pure core: each check takes what bastion stored and what
@@ -466,6 +467,8 @@ export type EnvelopeInputs = {
   documents: readonly DossierDocument[];
   /** The evidence rows: certified ones imply an envelope that binds them (Ruling AA). */
   evidence: readonly CertifiedRow[];
+  /** The envelope stage's step status (null when there is no row): a failed dossier's judge. */
+  envelopeStep: StepStatus | null;
   /** inkprint's `/public-key.pem`, fetched now. */
   key: GatewayResult<RawBody> | null;
 };
@@ -477,14 +480,24 @@ function missingEnvelope(i: EnvelopeInputs): Verdict | null {
     return FAIL(`the dossier names envelope ${envelopeId} but holds no envelope receipt`);
   }
   if (!i.evidence.some((e) => e.certificateId !== null)) return null;
-  // Ruling AA: certified evidence is bound by an envelope, whatever envelope_id says. A dossier
-  // still running may not have reached the envelope stage yet: unchecked, never a pass.
-  return status === "pending" || status === "running"
-    ? {
+  // Ruling AA: certified evidence is bound by an envelope, whatever envelope_id says.
+  const missing = FAIL("certified evidence, but no envelope receipt binds it");
+  switch (status) {
+    case "pending":
+    case "running":
+      // It may not have reached the envelope stage yet: unchecked, never a pass.
+      return {
         state: "unavailable",
         detail: "the dossier is still running; no envelope binds its certificates yet",
-      }
-    : FAIL("certified evidence, but no envelope receipt binds it");
+      };
+    case "failed":
+      // Ruling AB: only an envelope stage that finished ok owes a receipt.
+      return i.envelopeStep === "ok"
+        ? missing
+        : { state: "unavailable", detail: "the dossier failed before sealing" };
+    case "succeeded":
+      return missing;
+  }
 }
 
 const sameSet = (a: readonly string[], b: readonly string[]) =>

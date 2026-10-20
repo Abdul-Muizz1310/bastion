@@ -5,6 +5,7 @@ import type { Check } from "@/dossier/verify";
 import { verifyDossier } from "@/dossier/verify-live";
 import { SYSTEM_ACTOR } from "@/platform/audit/event";
 import { appendEvent } from "@/platform/audit/write";
+import type { CallContext } from "@/platform/gateway/call";
 import { errorResponse } from "@/platform/gateway/http";
 import { createRateLimiter } from "@/platform/ratelimit";
 import { clientAddress, visitorFromRequest } from "@/platform/visitor";
@@ -59,15 +60,12 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
   let legacy: boolean;
   let checks: Check[];
   try {
-    legacy = (await loadSteps(dossier.id)).length === 0;
-    // The whole row: the checks bind what the page shows to what they verify.
-    checks = legacy
-      ? []
-      : await verifyDossier(dossier, {
-          actor: SYSTEM_ACTOR,
-          requestId,
-          clientIp: clientAddress(req),
-        });
+    const steps = await loadSteps(dossier.id);
+    legacy = steps.length === 0;
+    // The whole row (the checks bind what the page shows to what they verify) and the step rows
+    // (a failed dossier is judged by its envelope step, Ruling AB).
+    const call: CallContext = { actor: SYSTEM_ACTOR, requestId, clientIp: clientAddress(req) };
+    checks = legacy ? [] : await verifyDossier(dossier, call, steps);
   } catch (err) {
     console.error("verify failed", { dossierId: dossier.id, requestId, err });
     return errorResponse(500, { error: "verify_failed", requestId });

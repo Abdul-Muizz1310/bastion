@@ -183,8 +183,9 @@ and each evidence row's certificate and excerpt. A receipt the dossier row impli
 `fail` (Rulings Y and AA):
 
 - an `envelope_id` with no envelope receipt;
-- certified evidence with no envelope receipt, whatever `envelope_id` says (`unavailable` while the
-  dossier is still pending or running);
+- certified evidence with no envelope receipt, whatever `envelope_id` says. It is `unavailable` while
+  the dossier is still pending or running. For a failed dossier it is `fail` only if its envelope step is
+  ok; otherwise `unavailable`, "the dossier failed before sealing" (Ruling AB);
 - a succeeded dossier with no perf, audit or transcript receipt;
 - a verdict with no transcript;
 - a certified evidence row with no certificate receipt.

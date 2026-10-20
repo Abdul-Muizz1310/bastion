@@ -42,7 +42,7 @@ beforeEach(() => {
 
 describe("verifyDossier (wired)", () => {
   it("reads the dossier's receipts, documents and events through the adapters", async () => {
-    await verifyDossier(DOSSIER, CTX);
+    await verifyDossier(DOSSIER, CTX, []);
     expect(m.listReceipts).toHaveBeenCalledWith(DOSSIER.id);
     expect(m.listEvidence).toHaveBeenCalledWith(DOSSIER.id);
     expect(m.listDocuments).toHaveBeenCalledWith(DOSSIER.id);
@@ -50,7 +50,7 @@ describe("verifyDossier (wired)", () => {
   });
 
   it("asks each issuer through the gateway with its free capability and the caller's context", async () => {
-    await verifyDossier(DOSSIER, CTX);
+    await verifyDossier(DOSSIER, CTX, []);
     const calls = m.callCapability.mock.calls.map(([cap, input, ctx]) => [cap.id, input, ctx]);
     expect(calls).toEqual(
       expect.arrayContaining([
@@ -70,7 +70,7 @@ describe("verifyDossier (wired)", () => {
   });
 
   it("with every issuer asleep, nothing that needs one passes", async () => {
-    const checks = await verifyDossier(DOSSIER, CTX);
+    const checks = await verifyDossier(DOSSIER, CTX, []);
     const live = checks.filter((c) =>
       ["certificates", "transcript", "envelope", "documents"].includes(c.name),
     );

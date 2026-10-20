@@ -8,6 +8,7 @@ import type { GatewayResult, RawBody } from "@/platform/gateway/result";
 import { listDocuments } from "./documents";
 import { listEvidence } from "./evidence";
 import { listReceipts, type StoredReceipt } from "./receipts";
+import type { StepRow } from "./stages";
 import {
   auditBound,
   auditCheck,
@@ -51,8 +52,11 @@ export type VerifyDeps = {
   graph: (ctx: CallContext, documentId: string) => Promise<GatewayResult<Graph>>;
 };
 
+/** The dossier's step rows as the caller read them: a failed dossier is judged by them. */
+export type DossierSteps = readonly Pick<StepRow, "stage" | "status">[];
+
 export function dossierVerifier(deps: VerifyDeps) {
-  return async (dossier: DossierFacts, ctx: CallContext): Promise<Check[]> => {
+  return async (dossier: DossierFacts, ctx: CallContext, steps: DossierSteps): Promise<Check[]> => {
     const [stored, evidence, docs] = await Promise.all([
       deps.receipts(dossier.id),
       deps.evidence(dossier.id),
@@ -102,6 +106,7 @@ export function dossierVerifier(deps: VerifyDeps) {
       perf,
       documents: docs,
       evidence,
+      envelopeStep: steps.find((s) => s.stage === "envelope")?.status ?? null,
       key: inkprintKey,
     });
     const checks = [

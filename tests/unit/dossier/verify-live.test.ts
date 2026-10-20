@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { StoredReceipt } from "@/dossier/receipts";
+import { STAGES } from "@/dossier/stages";
 import { CHECK_NAMES } from "@/dossier/verify";
 import { dossierVerifier, type VerifyDeps } from "@/dossier/verify-live";
 import type { DossierDocument, EvidenceItem } from "@/lib/db/schema";
@@ -35,6 +36,20 @@ const CTX: CallContext = {
   clientIp: "203.0.113.9",
 };
 
+type Steps = Parameters<ReturnType<typeof dossierVerifier>>[2];
+/** Every stage ran ok: the runner's rows for the golden (succeeded) dossier. */
+const ALL_OK: Steps = STAGES.map((stage) => ({ stage, status: "ok" as const }));
+const failedAt = (stage: (typeof STAGES)[number]): Steps =>
+  STAGES.map((s, i) => ({
+    stage: s,
+    status:
+      i < STAGES.indexOf(stage)
+        ? ("ok" as const)
+        : s === stage
+          ? ("error" as const)
+          : ("pending" as const),
+  }));
+
 /** A dossier still running: it implies no envelope, perf or audit receipt, and shows no verdict. */
 const UNFINISHED = {
   ...DOSSIER,
@@ -64,7 +79,12 @@ function fakes(
     graph: vi.fn(async () => ok(GRAPH)),
     ...deps,
   } satisfies VerifyDeps;
-  return { deps: all, verify: dossierVerifier(all) };
+  const verifier = dossierVerifier(all);
+  return {
+    deps: all,
+    verify: (dossier: Parameters<typeof verifier>[0], ctx: CallContext, steps: Steps = ALL_OK) =>
+      verifier(dossier, ctx, steps),
+  };
 }
 
 describe("verifyDossier", () => {
@@ -199,6 +219,26 @@ describe("verifyDossier", () => {
     const { verify } = fakes({ publicKey: vi.fn(async () => failed("asleep", 504)) });
     const states = Object.fromEntries((await verify(DOSSIER, CTX)).map((c) => [c.name, c.state]));
     expect(states).toMatchObject({ envelope: "unavailable", audit: "unavailable" });
+  });
+
+  describe("a failed dossier without an envelope is judged by its envelope step (Ruling AB)", () => {
+    const failedRow = { ...DOSSIER, status: "failed" as const, envelopeId: null };
+    const stored = () => allReceipts().filter((r) => r.kind !== "envelope");
+
+    it("failed before sealing (the debate stage errored): unavailable", async () => {
+      const { verify } = fakes({ stored: stored() });
+      const checks = await verify(failedRow, CTX, failedAt("debate"));
+      expect(checks.find((c) => c.name === "envelope")).toMatchObject({
+        state: "unavailable",
+        detail: "the dossier failed before sealing",
+      });
+    });
+
+    it("the envelope step ok but no envelope receipt: fail", async () => {
+      const { verify } = fakes({ stored: stored() });
+      const checks = await verify(failedRow, CTX, failedAt("record"));
+      expect(checks.find((c) => c.name === "envelope")?.state).toBe("fail");
+    });
   });
 
   it("does not ask inkprint when the dossier certified nothing", async () => {
