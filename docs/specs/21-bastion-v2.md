@@ -810,7 +810,9 @@ production host or database.
 set; never in CI): one rapid dossier against the deployment named by `PLAYWRIGHT_BASE_URL`, followed
 over SSE without opening its page (nothing nudges it), which must succeed through a single-invocation
 stage longer than the old 10 s hand-off window (the first live run stopped right there, §6.2) and
-then pass every verification check in the browser. It spends one debate.
+then pass every verification check in the browser. It spends one debate. It attaches the dossier's
+chain trace (§6.2) to its report whether it passes or fails, and fails early — with the trace — once
+no step has changed for 3 minutes.
 
 ## 11. Sub-projects and order
 

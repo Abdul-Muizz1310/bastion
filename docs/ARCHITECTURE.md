@@ -120,6 +120,16 @@ retry start a run the same way (both `maxDuration` 300). The e2e suite crosses a
 12 s seal that fails once with a retryable 503, with no page open, and reads the app's log back to
 prove no hand-off let go early.
 
+**The chain's trace** (diagnostic). Every hop writes one JSON line per event, tagged
+`dossier-chain`, with ids, stages, statuses and milliseconds only: the entry (chained or not, the
+caller's invocation id, this instance's id and request count, its region), the claim or why nothing
+was claimed (a lease held, not yet due by this clock, lost to another caller), the outcome and its
+ms, the decision, the answer, and then — inside the `after()` work — whether it ran, how late its
+timer fired, the fetch, and the successor's answer (status, elapsed, the successor's invocation id,
+the platform's request id). With Upstash the lines also go to a per-dossier list, read back at
+`GET /api/dossiers/[id]/chain-trace`, because a platform may not keep what a function logs after
+its answer.
+
 **Recovery.** The dossier page nudges `advance` when its frontier stage has been due for 5 s
 (a lease that expired, a `not_before` that passed), backing off on failure; a crashed invocation's
 stage becomes claimable again when its lease ends. A wait capped at 15 minutes becomes an error.

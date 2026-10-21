@@ -66,7 +66,17 @@ test("live: a rapid dossier runs on its own chain past the 10 s handoff and veri
   const { dossier_id: id } = z.object({ dossier_id: z.uuid() }).parse(await created.json());
   test.info().annotations.push({ type: "dossier", description: `${baseURL}/d/${id}` });
 
-  const done = await finishedDossier(baseURL ?? "", id, 15 * 60_000, 5_000);
+  // The chain's trace (spec 21 §6.2) goes into the report whether the run passes or fails.
+  let done: Awaited<ReturnType<typeof finishedDossier>>;
+  try {
+    done = await finishedDossier(baseURL ?? "", id, 15 * 60_000, 5_000, 3 * 60_000);
+  } finally {
+    const trace = await request.get(`/api/dossiers/${id}/chain-trace`);
+    await test.info().attach("chain-trace.json", {
+      body: trace.ok() ? await trace.text() : `chain trace unavailable: HTTP ${trace.status()}`,
+      contentType: trace.ok() ? "application/json" : "text/plain",
+    });
+  }
   const timings = done.steps.map(
     (s: StreamStep) => `${s.stage} ${s.status} ${stageMs(s) ?? "–"} ms`,
   );

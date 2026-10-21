@@ -144,5 +144,21 @@ test.describe("21-e2e: dossiers", () => {
       .split("\n")
       .filter((line) => line.includes(HANDOFF_LET_GO) && line.includes(id));
     expect(early).toEqual([]);
+
+    // The chain's trace (spec 21 §6.2): every hop's two ends join — each answer a hand-off read
+    // names the invocation that logged a chained entry from that hand-off's own invocation.
+    const traced = serverLog("main")
+      .split("\n")
+      .filter((line) => line.startsWith('{"tag":"dossier-chain"') && line.includes(id))
+      .map((line) => z.record(z.string(), z.json()).parse(JSON.parse(line)));
+    const responses = traced.filter((e) => e.event === "chain.response");
+    const entries = traced.filter((e) => e.event === "advance.entry" && e.chained === true);
+    expect(responses.length).toBeGreaterThanOrEqual(8);
+    for (const r of responses) {
+      expect(r.status).toBe(200);
+      expect(entries).toContainEqual(
+        expect.objectContaining({ invocation: r.successor, from: r.invocation }),
+      );
+    }
   });
 });

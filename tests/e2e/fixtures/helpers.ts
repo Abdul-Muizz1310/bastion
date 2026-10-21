@@ -139,19 +139,33 @@ export async function streamSnapshot(
   }
 }
 
-/** Polls the public stream until the dossier is succeeded or failed, or the deadline passes. */
+/**
+ * Polls the public stream until the dossier is succeeded or failed, or the deadline passes. With
+ * `stallMs`, it also gives up once no step's status or attempt has changed for that long — a stalled
+ * chain fails fast instead of waiting out the deadline.
+ */
 export async function finishedDossier(
   baseURL: string,
   dossierId: string,
   timeoutMs: number,
   pollMs = 2_000,
+  stallMs = Number.POSITIVE_INFINITY,
 ): Promise<{ status: string; steps: StreamStep[] }> {
   const deadline = Date.now() + timeoutMs;
+  let seen = "";
+  let changedAt = Date.now();
   for (;;) {
     const snapshot = await streamSnapshot(baseURL, dossierId);
     if (snapshot.status === "succeeded" || snapshot.status === "failed") return snapshot;
+    const where = snapshot.steps.map((s) => `${s.stage}:${s.status}:${s.attempt}`).join(" ");
+    if (where !== seen) {
+      seen = where;
+      changedAt = Date.now();
+    }
+    if (Date.now() - changedAt > stallMs) {
+      throw new Error(`dossier ${dossierId} stalled: no step changed for ${stallMs} ms (${where})`);
+    }
     if (Date.now() > deadline) {
-      const where = snapshot.steps.map((s) => `${s.stage}:${s.status}`).join(" ");
       throw new Error(
         `dossier ${dossierId} still ${snapshot.status} after ${timeoutMs} ms (${where})`,
       );
