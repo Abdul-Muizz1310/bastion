@@ -9,7 +9,7 @@
 ![react](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=black)
 ![ts](https://img.shields.io/badge/TypeScript-strict-3178c6?style=flat-square&logo=typescript&logoColor=white)
 ![neon](https://img.shields.io/badge/Neon-Postgres-00e599?style=flat-square&logo=postgresql&logoColor=white)
-![tests](https://img.shields.io/badge/tests-2945%20unit%20·%2085%20integration%20·%2020%20e2e-6e9f18?style=flat-square)
+![tests](https://img.shields.io/badge/tests-3028%20unit%20·%2088%20integration%20·%2021%20e2e-6e9f18?style=flat-square)
 ![coverage](https://img.shields.io/badge/coverage-89.5%25%20lines-brightgreen?style=flat-square)
 [![ci](https://img.shields.io/github/actions/workflow/status/Abdul-Muizz1310/bastion/ci.yml?style=flat-square&label=ci)](https://github.com/Abdul-Muizz1310/bastion/actions/workflows/ci.yml)
 ![license](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)
@@ -262,11 +262,11 @@ Measured on 2026-10-21 (Node 24.19, Linux):
 
 | Metric | Value |
 |---|---|
-| **Unit** | 2,945 tests in 193 files |
-| **Coverage** (unit) | 89.6 % lines · 87.7 % statements · 83.9 % branches · 80.6 % functions |
-| **Per-module floors** (90 % lines) | `src/capabilities` 100 % · `src/platform` 98.9 % · `src/dossier` 94.3 % |
-| **Integration** | 85 tests in 12 files, against a real Postgres (append-only triggers, concurrent claims, receipts, verification) |
-| **End to end** | 20 Playwright specs in 6 files against the built app and a stub of every service, 1.8 min (the asleep case waits out the 90 s wake); plus 1 live smoke, run only by hand |
+| **Unit** | 3,028 tests in 199 files |
+| **Coverage** (unit) | 89.6 % lines · 87.7 % statements · 83.8 % branches · 80.7 % functions |
+| **Per-module floors** (90 % lines) | `src/capabilities` 100 % · `src/platform` 98.9 % · `src/dossier` 93.0 % |
+| **Integration** | 88 tests in 13 files, against a real Postgres (append-only triggers, concurrent claims, the sweep's selection, a sweep and a nudge on one dossier, receipts, verification) |
+| **End to end** | 21 Playwright specs in 6 files against the built app and a stub of every service, 1.8 min (the asleep case waits out the 90 s wake); plus 1 live smoke, run only by hand |
 | **Methodology** | Spec-TDD: the spec first (`docs/specs/21-bastion-v2.md` §10 lists the e2e cases), then failing tests, then code |
 
 CI (`.github/workflows/ci.yml`) runs lint and types, the unit tier with coverage, the build, the integration tier against a Postgres service, and the e2e suite. The live smoke (`BASTION_LIVE_SMOKE=1 PLAYWRIGHT_BASE_URL=…`) spends one real debate and never runs in CI.
