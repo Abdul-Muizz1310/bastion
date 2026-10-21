@@ -29,16 +29,12 @@ export const TENANTS = ["main", "limits"] as const;
 export type Tenant = (typeof TENANTS)[number];
 
 /**
- * The stub-only magpie source behind the hand-off case (spec 21 §10.1 case 5): its batch scrape takes
+ * The stub-only magpie source behind the no-page case (spec 21 §10.1 case 5): its batch scrape takes
  * SLOW_STAGE_MS, and the first seal of a dossier citing it takes as long and then answers a retryable
  * 503 — the first live smoke's failure.
  */
 export const SLOW_SOURCE = "slow-wire";
 export const SLOW_STAGE_MS = 12_000;
-/** The hand-off's old fixed window: a stage longer than this lost its successor chain on Vercel. */
-export const OLD_HANDOFF_MS = 10_000;
-/** What the runner logs when a hand-off lets go before its successor answered (src/dossier/chain.ts). */
-export const HANDOFF_LET_GO = "the hand-off let go before the next advance answered";
 
 /** The main app's sweep token for this run only (spec 21 §6.2 "The sweep"); not a secret. */
 export const E2E_SWEEP_TOKEN = "e2e-sweep-token-for-the-local-stub-run";

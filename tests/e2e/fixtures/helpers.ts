@@ -100,8 +100,7 @@ const statusSchema = z.object({ status: z.string() });
 
 /**
  * One look at a dossier through its public SSE stream: the first tick sends every step row, then
- * the status. Reading the stream never advances the runner (only the page's nudge and the runner's
- * own chain do).
+ * the status. Reading the stream never advances the runner (only the page's nudge and the sweep do).
  */
 export async function streamSnapshot(
   baseURL: string,
@@ -142,7 +141,7 @@ export async function streamSnapshot(
 /**
  * Polls the public stream until the dossier is succeeded or failed, or the deadline passes. With
  * `stallMs`, it also gives up once no step's status or attempt has changed for that long — a stalled
- * chain fails fast instead of waiting out the deadline.
+ * run fails fast instead of waiting out the deadline.
  */
 export async function finishedDossier(
   baseURL: string,
@@ -178,4 +177,32 @@ export async function finishedDossier(
 export function stageMs(step: StreamStep): number | null {
   if (step.startedAt === null || step.finishedAt === null) return null;
   return Date.parse(step.finishedAt) - Date.parse(step.startedAt);
+}
+
+// ---- the sweep ------------------------------------------------------------------------------
+
+export const sweptSchema = z.object({
+  swept: z.array(
+    z.object({
+      dossierId: z.string(),
+      stages: z.array(z.object({ stage: z.string(), status: z.string() })),
+      dossier: z.string().nullable(),
+      stopped: z.string(),
+    }),
+  ),
+  ms: z.number(),
+});
+export type SweepAnswer = z.infer<typeof sweptSchema>;
+
+/**
+ * One call of `POST /api/dossiers/sweep` with the deployment's token (spec 21 §6.2 "The sweep"): it
+ * drives every due dossier in the foreground and answers what it ran. Waits out its 300 s.
+ */
+export async function sweepOnce(ctx: APIRequestContext, token: string): Promise<SweepAnswer> {
+  const res = await ctx.post("/api/dossiers/sweep", {
+    headers: { authorization: `Bearer ${token}` },
+    timeout: 310_000,
+  });
+  expect(res.status(), await res.text()).toBe(200);
+  return sweptSchema.parse(await res.json());
 }

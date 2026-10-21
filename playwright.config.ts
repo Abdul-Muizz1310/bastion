@@ -51,7 +51,7 @@ function stubRunServers(): WebServer[] {
 
   const app = (tenant: Tenant, port: number, budgets: Readonly<Record<string, string>>) => ({
     name: tenant,
-    // The app's output goes to .e2e/<tenant>.log (case 5 reads the runner's hand-off warnings back).
+    // The app's output goes to .e2e/<tenant>.log (cases 3 and 5 read its drive.stage lines back).
     command: `pnpm exec next start --port ${port} 2>&1 | tee "${serverLogFile(__dirname, tenant)}"`,
     url: `http://localhost:${port}/api/health`,
     reuseExistingServer: false,
