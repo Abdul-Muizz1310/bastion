@@ -162,6 +162,41 @@ export function nextRunnable(steps: readonly StepRow[], now: Date): Stage | null
   return step !== null && isClaimable(step, now) ? step.stage : null;
 }
 
+export type IdleReason =
+  | { reason: "no_steps" }
+  | { reason: "finished" }
+  | {
+      reason: "error_stage" | "lease_held" | "not_due" | "claimable";
+      stage: Stage;
+      status: StepStatus;
+      attempt: number;
+      /** `not_before` and the lease's end, relative to `now` (ms; negative is past). */
+      notBeforeInMs: number;
+      leaseUntilInMs: number;
+    };
+
+/**
+ * Why an advance claimed nothing (pure; spec 21 §6.2 "The chain's trace"): no steps, finished, an
+ * error stage waiting for a retry, a lease still held, a stage not yet due by this clock — or a
+ * stage claimable now, which means another caller won the claim.
+ */
+export function idleReason(steps: readonly StepRow[], now: Date): IdleReason {
+  if (steps.length === 0) return { reason: "no_steps" };
+  const step = frontier(steps);
+  if (step === null) return { reason: "finished" };
+  const facts = {
+    stage: step.stage,
+    status: step.status,
+    attempt: step.attempt,
+    notBeforeInMs: step.notBefore.getTime() - now.getTime(),
+    leaseUntilInMs: step.leaseUntil.getTime() - now.getTime(),
+  };
+  if (step.status === "error") return { reason: "error_stage", ...facts };
+  if (facts.leaseUntilInMs >= 0) return { reason: "lease_held", ...facts };
+  if (facts.notBeforeInMs > 0) return { reason: "not_due", ...facts };
+  return { reason: "claimable", ...facts };
+}
+
 /** When the frontier stage becomes claimable; null when the dossier has finished or failed. */
 export function claimableAt(steps: readonly StepRow[]): Date | null {
   const step = frontier(steps);

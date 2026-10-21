@@ -275,3 +275,82 @@ describe("deferChain", () => {
     expect(chain).toHaveBeenCalledExactlyOnceWith(ORIGIN, ID, 0);
   });
 });
+
+/** Spec 21 §6.2 "The chain's trace": the hand-off says what it did, in order, with ids only. */
+describe("chainAdvance — its trace", () => {
+  const ORIGIN = "https://bastion.test";
+  const START = 1_000_000;
+
+  function traced(respond: () => Promise<Response>) {
+    let clock = START;
+    const events: Array<Record<string, unknown>> = [];
+    const deps = {
+      now: () => clock,
+      sleep: async (ms: number) => {
+        clock += ms;
+      },
+      timeout: () => new AbortController().signal,
+      fetch: vi.fn(async (_url: URL, _init: RequestInit) => respond()),
+      trace: {
+        invocation: "a1b2c3d4",
+        emit: async (e: Record<string, unknown>) => {
+          events.push(e);
+        },
+      },
+    };
+    return { deps, events };
+  }
+
+  it("says it ran, how its sleep went, what it fetched and how the successor answered", async () => {
+    const { deps, events } = traced(
+      async () =>
+        new Response("{}", {
+          status: 200,
+          headers: { "x-bastion-invocation": "e5f6a7b8", "x-vercel-id": "fra1::iad1::x1-17" },
+        }),
+    );
+    await chainAdvance(ORIGIN, ID, 3000, START + 285_000, deps);
+    const base = { dossierId: ID, invocation: "a1b2c3d4" };
+    expect(events).toEqual([
+      { ...base, event: "chain.after", delayMs: 3000 },
+      { ...base, event: "chain.sleep", plannedMs: 3000, actualMs: 3000 },
+      { ...base, event: "chain.fetch", host: "bastion.test", windowMs: 282_000 },
+      {
+        ...base,
+        event: "chain.response",
+        status: 200,
+        elapsedMs: 0,
+        successor: "e5f6a7b8",
+        vercelId: "fra1::iad1::x1-17",
+        mitigated: null,
+      },
+      { ...base, event: "chain.settled", totalMs: 3000 },
+    ]);
+    // The successor learns who called it, so the two ends of a hop can be joined.
+    expect(new Headers(deps.fetch.mock.calls[0]?.[1]?.headers).get("x-bastion-chain-from")).toBe(
+      "a1b2c3d4",
+    );
+  });
+
+  it("traces a hand-off that let go, and one that failed", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const letGo = traced(async () => {
+      throw new DOMException("timed out", "TimeoutError");
+    });
+    await chainAdvance(ORIGIN, ID, 0, START + 285_000, letGo.deps);
+    expect(letGo.events.map((e) => e.event)).toEqual([
+      "chain.after",
+      "chain.fetch",
+      "chain.letgo",
+      "chain.settled",
+    ]);
+    const failed = traced(async () => {
+      throw new TypeError("fetch failed");
+    });
+    await chainAdvance(ORIGIN, ID, 0, START + 285_000, failed.deps);
+    expect(failed.events).toContainEqual(
+      expect.objectContaining({ event: "chain.error", error: "TypeError: fetch failed" }),
+    );
+  });
+});
+

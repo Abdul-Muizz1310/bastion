@@ -6,6 +6,7 @@ import {
   claimStep,
   dossierError,
   dossierStatus,
+  idleReason,
   initialSteps,
   LEASE_MS,
   MAX_ATTEMPTS,
@@ -635,3 +636,54 @@ describe("stepRowSchema (rows read back from Postgres)", () => {
     expect(stepRowSchema.safeParse({ ...row("wake"), output: undefined }).success).toBe(false);
   });
 });
+
+/**
+ * Spec 21 §6.2 "The chain's trace": when an advance claims nothing, why — so a chained call that
+ * arrives early (clock skew), finds a lease still held, or races another caller can be told apart.
+ */
+describe("idleReason", () => {
+  const T = new Date("2026-10-21T07:16:46.000Z");
+  const plus = (ms: number) => new Date(T.getTime() + ms);
+  const D = "550e8400-e29b-41d4-a716-446655440000";
+  const steps = (patch: Partial<Record<Stage, Partial<StepRow>>>) =>
+    initialSteps(D, plus(-60_000)).map((r) => ({ ...r, ...patch[r.stage] }));
+  const done = (stages: Stage[]) =>
+    Object.fromEntries(stages.map((s) => [s, { status: "ok" as const }])) as Partial<
+      Record<Stage, Partial<StepRow>>
+    >;
+
+  it("names a dossier with no steps", () => {
+    expect(idleReason([], T)).toEqual({ reason: "no_steps" });
+  });
+
+  it("names a finished dossier", () => {
+    expect(idleReason(steps(done([...STAGES])), T)).toMatchObject({ reason: "finished" });
+  });
+
+  it("names an error stage, with the frontier's facts", () => {
+    expect(idleReason(steps({ ...done(["wake"]), gather: { status: "error", attempt: 3 } }), T)).toEqual({
+      reason: "error_stage",
+      stage: "gather",
+      status: "error",
+      attempt: 3,
+      notBeforeInMs: -60_000,
+      leaseUntilInMs: -T.getTime(),
+    });
+  });
+
+  it("names a lease still held, with how long it has to run", () => {
+    const s = steps({ ...done(["wake"]), gather: { status: "running", attempt: 1, leaseUntil: plus(200_000) } });
+    expect(idleReason(s, T)).toMatchObject({ reason: "lease_held", stage: "gather", leaseUntilInMs: 200_000 });
+  });
+
+  it("names a stage not due yet — a chained call that came early by this clock", () => {
+    const s = steps({ ...done(["wake", "gather", "read", "seal"]), debate: { status: "waiting", notBefore: plus(120) } });
+    expect(idleReason(s, T)).toMatchObject({ reason: "not_due", stage: "debate", notBeforeInMs: 120 });
+  });
+
+  it("names a stage that is claimable now — another caller won the claim", () => {
+    const s = steps(done(["wake", "gather", "read", "seal"]));
+    expect(idleReason(s, T)).toMatchObject({ reason: "claimable", stage: "debate", attempt: 0 });
+  });
+});
+

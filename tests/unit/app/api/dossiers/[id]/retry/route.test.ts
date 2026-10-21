@@ -28,6 +28,11 @@ vi.mock("@/dossier/chain", async (orig) => ({
   ...(await orig<typeof import("@/dossier/chain")>()),
   chainAdvance,
 }));
+const { chainTracer } = vi.hoisted(() => ({ chainTracer: vi.fn(async () => {}) }));
+vi.mock("@/dossier/chain-trace", async (orig) => ({
+  ...(await orig<typeof import("@/dossier/chain-trace")>()),
+  chainTracer,
+}));
 vi.mock("next/server", async (orig) => ({
   ...(await orig<typeof import("next/server")>()),
   // after() takes a function (run once the response closes) or a promise (kept alive at once).
@@ -118,13 +123,23 @@ describe("POST /api/dossiers/[id]/retry", () => {
     expect(isVisitorId(actor)).toBe(true);
     expect(afterCallbacks).toHaveLength(1);
     for (const cb of afterCallbacks) await cb();
-    expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 0, DEADLINE);
+    expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 0, DEADLINE, expect.anything());
+  });
+
+  it("traces the start of the chain and hands its invocation id to the hand-off (spec 21 §6.2)", async () => {
+    chainTracer.mockClear();
+    await post(JSON.stringify({ stage: "debate" }));
+    const first = (chainTracer.mock.calls[0] as unknown[] | undefined)?.[0];
+    expect(first).toMatchObject({ event: "start.chain", route: "retry", dossierId: ID });
+    const invocation = (first as { invocation: string }).invocation;
+    expect(invocation).toMatch(/^[0-9a-f]{8}$/);
+    expect(chainAdvance.mock.calls[0]?.[4]).toMatchObject({ trace: { invocation } });
   });
 
   it("hands after() the restart as a promise, which a client gone before the answer cannot drop", async () => {
     await post(JSON.stringify({ stage: "debate" }));
     expect(afterKinds).toEqual(["promise"]);
-    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0, DEADLINE);
+    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0, DEADLINE, expect.anything());
   });
 
   it("answers 404 for an unknown dossier", async () => {

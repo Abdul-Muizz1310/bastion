@@ -414,6 +414,26 @@ A dossier is rows, not a promise. `dossier_steps` holds one row per stage with `
 - Compose and "retry from this stage" start a run the same way: their first advance is a promise
   handed to `after()` with the same deadline (both routes declare `maxDuration` 300), so the create or
   retry invocation stays until the first stage has answered.
+- **The chain's trace** (diagnostic, after the second live smoke, 2026-10-21: a dossier whose seal
+  ran 15.8 s was never advanced again, and a retried one advanced 35–66 s late). Every hop writes one
+  structured line per event — `console.info` of `{"tag":"dossier-chain", at, event, dossierId,
+  invocation, …}` with ids, stages, statuses and milliseconds only, never a token, header value or
+  body — and, when Upstash is configured, the same line to a per-dossier list
+  (`diag:chain:<id>`, newest 500, kept 2 days), because a platform may not keep the log lines a
+  function writes after its answer. Events: `advance.entry` (chained by the runner or not, the
+  caller's invocation id from `x-bastion-chain-from`, this instance's id, how many requests it has
+  served, its region, the host asked), `advance.refused` (a visitor limit), `advance.claim` (stage,
+  attempt) or `advance.idle` (why nothing was claimed: no steps, finished, an error stage, a lease
+  still held, not yet due, or claimable but lost — with the frontier's `not_before` and lease relative
+  to this instance's clock), `advance.outcome` (stage, status, ms, recorded), `chain.decision` (the
+  delay or none), `advance.answer` (HTTP status, total ms); then, inside the `after()` work,
+  `chain.after` (it ran, and how long after the answer was decided), `chain.sleep` (planned against
+  actual — a late timer means the instance was frozen), `chain.fetch` (host, window),
+  `chain.response` (status, elapsed, the successor's invocation id from `x-bastion-invocation`, the
+  platform's request id and mitigation header), `chain.letgo`, `chain.error` and `chain.settled`.
+  Compose and retry write `start.chain` and the same `chain.*` events. `GET
+  /api/dossiers/[id]/chain-trace` (30 a minute per visitor; 503 without Upstash) returns the list,
+  oldest first. Writing a trace line never fails or delays a stage by more than 500 ms.
 - Progress reaches the page through the existing SSE route (polling `dossier_events`, `maxDuration` 300).
 
 ### 6.3 Data model (migration on the `shadow-admin` branch)

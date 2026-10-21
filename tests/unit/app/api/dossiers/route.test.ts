@@ -38,6 +38,11 @@ vi.mock("@/dossier/chain", async (orig) => ({
   ...(await orig<typeof import("@/dossier/chain")>()),
   chainAdvance,
 }));
+const { chainTracer } = vi.hoisted(() => ({ chainTracer: vi.fn(async () => {}) }));
+vi.mock("@/dossier/chain-trace", async (orig) => ({
+  ...(await orig<typeof import("@/dossier/chain-trace")>()),
+  chainTracer,
+}));
 vi.mock("next/server", async (orig) => ({
   ...(await orig<typeof import("next/server")>()),
   // after() takes a function (run once the response closes) or a promise (kept alive at once).
@@ -105,7 +110,17 @@ describe("POST /api/dossiers", () => {
     expect(body).toEqual({ dossier_id: ID, request_id: res.headers.get("x-request-id"), url: `/d/${ID}` });
     expect(res.headers.get("cache-control")).toBe("no-store");
     await afterCallbacks[0]?.();
-    expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 0, DEADLINE);
+    expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 0, DEADLINE, expect.anything());
+  });
+
+  it("traces the start of the chain and hands its invocation id to the hand-off (spec 21 §6.2)", async () => {
+    chainTracer.mockClear();
+    await post(valid);
+    const first = (chainTracer.mock.calls[0] as unknown[] | undefined)?.[0];
+    expect(first).toMatchObject({ event: "start.chain", route: "create", dossierId: ID });
+    const invocation = (first as { invocation: string }).invocation;
+    expect(invocation).toMatch(/^[0-9a-f]{8}$/);
+    expect(chainAdvance.mock.calls[0]?.[4]).toMatchObject({ trace: { invocation } });
   });
 
   it("hands after() the first advance as a promise, which a client gone before the 202 cannot drop", async () => {
@@ -113,7 +128,7 @@ describe("POST /api/dossiers", () => {
     // kept alive with waitUntil — the same form the advance route uses.
     await post(valid);
     expect(afterKinds).toEqual(["promise"]);
-    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0, DEADLINE);
+    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0, DEADLINE, expect.anything());
   });
 
   it("passes the parsed, defaulted input and the visitor to the service", async () => {
