@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { z } from "zod";
-import { HANDOFF_MS, SLOW_SOURCE } from "./fixtures/env";
-import { finishedDossier, gateLive, stageMs } from "./fixtures/helpers";
+import { HANDOFF_LET_GO, OLD_HANDOFF_MS, SLOW_SOURCE } from "./fixtures/env";
+import { finishedDossier, gateLive, serverLog, stageMs } from "./fixtures/helpers";
 
 /**
  * spec 21 §6 and §10.1 cases 3–5: a dossier composed in the browser runs to its receipt and is
@@ -109,11 +109,11 @@ test.describe("21-e2e: dossiers", () => {
     expect(body.dossier).toMatchObject({ id: GOLDEN_ID, status: "succeeded" });
   });
 
-  test("case 5: with no page open, the runner's own chain crosses a 12 s stage to the end", async ({
+  test("case 5: with no page open, the chain crosses two stages longer than the old 10 s hand-off", async ({
     request,
     baseURL,
   }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(150_000);
     const answer = await request.post("/api/dossiers", {
       data: {
         claim: "Hacker News lists the USPTO basic filing fee as 350 dollars.",
@@ -126,12 +126,23 @@ test.describe("21-e2e: dossiers", () => {
     expect(url).toBe(`/d/${id}`);
 
     // Followed only through the public stream, which never advances anything: every stage after
-    // the first is started by the previous invocation's after() handoff, which lets go at 10 s.
-    const done = await finishedDossier(baseURL ?? "", id, 100_000);
+    // the first is started by the previous invocation's after() hand-off. The scrape takes 12 s;
+    // the first seal takes 12 s and answers a retryable 503, due again in 5 s — the first live
+    // smoke's failure, where the chain never asked again.
+    const done = await finishedDossier(baseURL ?? "", id, 130_000);
     expect(done.status).toBe("succeeded");
     const gather = done.steps.find((s) => s.stage === "gather");
     expect(gather?.status).toBe("ok");
-    expect(gather === undefined ? null : stageMs(gather)).toBeGreaterThan(HANDOFF_MS);
+    expect(gather === undefined ? null : stageMs(gather)).toBeGreaterThan(OLD_HANDOFF_MS);
+    const seal = done.steps.find((s) => s.stage === "seal");
+    expect(seal).toMatchObject({ status: "ok", attempt: 2 });
     for (const step of done.steps) expect(["ok", "skipped"]).toContain(step.status);
+
+    // Each hand-off held its connection until the next invocation answered: none of this
+    // dossier's let go early, the one thing `next start` survives and Vercel does not.
+    const early = serverLog("main")
+      .split("\n")
+      .filter((line) => line.includes(HANDOFF_LET_GO) && line.includes(id));
+    expect(early).toEqual([]);
   });
 });

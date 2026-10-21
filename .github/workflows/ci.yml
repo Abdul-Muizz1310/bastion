@@ -115,4 +115,6 @@ jobs:
           path: |
             playwright-report/
             test-results/
+            .e2e/*.log
+          include-hidden-files: true
           retention-days: 7

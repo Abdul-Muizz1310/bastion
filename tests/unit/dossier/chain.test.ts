@@ -6,6 +6,8 @@ import {
   chainAdvance,
   chainDelayMs,
   deferChain,
+  HANDOFF_MARGIN_MS,
+  handoffDeadline,
   isAdvanceToken,
 } from "@/dossier/chain";
 import type { AdvanceResult } from "@/dossier/runner";
@@ -96,72 +98,135 @@ describe("advance tokens", () => {
   });
 });
 
+/**
+ * The hand-off (spec 21 §6.2, fix after the first live smoke): on Vercel an invocation whose caller
+ * disconnects before it answers loses its after() work, so the caller holds the connection until the
+ * next advance has answered — bounded only by its own invocation's deadline, never a short timer.
+ */
+describe("handoffDeadline", () => {
+  it("is the caller's start plus its maxDuration, less a 15 s margin", () => {
+    expect(HANDOFF_MARGIN_MS).toBe(15_000);
+    expect(handoffDeadline(1_000_000, 300)).toBe(1_000_000 + 285_000);
+  });
+
+  it.each([0, 15, -1, Number.NaN, 1.5])("refuses a maxDuration of %s s", (s) => {
+    expect(() => handoffDeadline(1_000_000, s)).toThrow(RangeError);
+  });
+});
+
 describe("chainAdvance", () => {
-  it("sleeps, then POSTs this dossier's advance route with the internal header", async () => {
+  const ORIGIN = "https://bastion.test";
+  const START = 1_000_000;
+
+  /** A fake clock: sleep moves it, now reads it, timeout records the window each fetch asks for. */
+  function harness(respond: () => Promise<Response> = async () => new Response("{}")) {
+    let clock = START;
+    const windows: number[] = [];
     const order: string[] = [];
-    const sleep = vi.fn(async (ms: number) => {
-      order.push(`sleep ${ms}`);
-    });
-    const fetch = vi.fn(async (_url: URL, _init: RequestInit) => {
-      order.push("fetch");
-      return new Response("{}", { status: 200 });
-    });
-    await chainAdvance("https://bastion.test", ID, 3000, { fetch, sleep });
+    const deps = {
+      now: () => clock,
+      sleep: vi.fn(async (ms: number) => {
+        order.push(`sleep ${ms}`);
+        clock += ms;
+      }),
+      timeout: vi.fn((ms: number) => {
+        windows.push(ms);
+        return new AbortController().signal;
+      }),
+      fetch: vi.fn(async (_url: URL, _init: RequestInit) => {
+        order.push("fetch");
+        return respond();
+      }),
+    };
+    return { deps, windows, order };
+  }
+
+  it("sleeps, then POSTs this dossier's advance route with the internal header", async () => {
+    const { deps, order } = harness();
+    await chainAdvance(ORIGIN, ID, 3000, START + 285_000, deps);
     expect(order).toEqual(["sleep 3000", "fetch"]);
-    const [url, init] = fetch.mock.calls[0] ?? [];
+    const [url, init] = deps.fetch.mock.calls[0] ?? [];
     expect(String(url)).toBe(`https://bastion.test/api/dossiers/${ID}/advance`);
     expect(init?.method).toBe("POST");
     expect(new Headers(init?.headers).get(ADVANCE_HEADER)).toBe(advanceToken(ID));
     expect(init?.signal).toBeInstanceOf(AbortSignal);
   });
 
-  it("uses the platform fetch and a real timer by default", async () => {
-    const fetch = vi.fn(async () => new Response("{}"));
-    vi.stubGlobal("fetch", fetch);
-    try {
-      await chainAdvance("https://bastion.test", ID, 1);
-    } finally {
-      vi.unstubAllGlobals();
-    }
-    expect(fetch).toHaveBeenCalledTimes(1);
+  it("holds the connection until the next advance answers, up to the caller's deadline — no 10 s timer", async () => {
+    const { deps, windows } = harness();
+    await chainAdvance(ORIGIN, ID, 0, START + 285_000, deps);
+    expect(windows).toEqual([285_000]);
+  });
+
+  it("measures the window from after its sleep", async () => {
+    const { deps, windows } = harness();
+    await chainAdvance(ORIGIN, ID, 3000, START + 285_000, deps);
+    expect(windows).toEqual([282_000]);
+  });
+
+  it("still asks for 1 s when the caller's deadline has passed", async () => {
+    const { deps, windows } = harness();
+    await chainAdvance(ORIGIN, ID, 0, START - 5_000, deps);
+    expect(windows).toEqual([1_000]);
+  });
+
+  it("is done once the next advance has answered — it never waits for that invocation's own hand-off", async () => {
+    const answer = new Response(JSON.stringify({ ran: "seal" }), { status: 200 });
+    const { deps } = harness(async () => answer);
+    await expect(chainAdvance(ORIGIN, ID, 0, START + 285_000, deps)).resolves.toBeUndefined();
+    expect(deps.fetch).toHaveBeenCalledTimes(1);
+    // The answer is read to its end, so the connection is released, not left half-open.
+    expect(answer.bodyUsed).toBe(true);
   });
 
   it("does not sleep when the next stage is due", async () => {
-    const sleep = vi.fn(async () => {});
-    const fetch = vi.fn(async () => new Response("{}"));
-    await chainAdvance("https://bastion.test", ID, 0, { fetch, sleep });
-    expect(sleep).not.toHaveBeenCalled();
-    expect(fetch).toHaveBeenCalledTimes(1);
+    const { deps } = harness();
+    await chainAdvance(ORIGIN, ID, 0, START + 285_000, deps);
+    expect(deps.sleep).not.toHaveBeenCalled();
+    expect(deps.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("swallows and logs a failed handoff — the page's nudge and lease expiry still recover", async () => {
+  it("logs a hand-off that let go before the next advance answered — its own hand-off may be lost", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const fetch = vi.fn(async () => {
+    const { deps } = harness(async () => {
+      throw new DOMException("timed out", "TimeoutError");
+    });
+    await expect(chainAdvance(ORIGIN, ID, 0, START + 285_000, deps)).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("the hand-off let go before the next advance answered"),
+      expect.objectContaining({ dossierId: ID, windowMs: 285_000 }),
+    );
+  });
+
+  it("swallows and logs a failed hand-off — the page's nudge and lease expiry still recover", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { deps } = harness(async () => {
       throw new TypeError("fetch failed");
     });
-    await expect(
-      chainAdvance("https://bastion.test", ID, 0, { fetch, sleep: async () => {} }),
-    ).resolves.toBeUndefined();
+    await expect(chainAdvance(ORIGIN, ID, 0, START + 285_000, deps)).resolves.toBeUndefined();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("dossier chain"), expect.anything());
   });
 
-  it("logs a refused handoff (non-2xx)", async () => {
+  it("logs a refused hand-off (non-2xx)", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const fetch = vi.fn(async () => new Response("{}", { status: 429 }));
-    await chainAdvance("https://bastion.test", ID, 0, { fetch, sleep: async () => {} });
+    const { deps } = harness(async () => new Response("{}", { status: 429 }));
+    await chainAdvance(ORIGIN, ID, 0, START + 285_000, deps);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("dossier chain"),
       expect.objectContaining({ status: 429 }),
     );
   });
 
-  it("lets go after the handoff window without logging a failure", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const fetch = vi.fn(async () => {
-      throw new DOMException("timed out", "TimeoutError");
-    });
-    await chainAdvance("https://bastion.test", ID, 0, { fetch, sleep: async () => {} });
-    expect(warn).not.toHaveBeenCalled();
+  it("uses the platform fetch, a real timer and the real clock by default", async () => {
+    const fetch = vi.fn(async (_url: URL, _init: RequestInit) => new Response("{}"));
+    vi.stubGlobal("fetch", fetch);
+    try {
+      await chainAdvance(ORIGIN, ID, 1, Date.now() + 60_000);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
   });
 });
 

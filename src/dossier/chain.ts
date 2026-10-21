@@ -12,26 +12,51 @@ import type { AdvanceResult } from "./runner";
  * poll, a retry's 5–10 s backoff) the `after()` callback sleeps until then and chains; anything later
  * is left to the dossier page, which nudges `advance` while it is open, and to lease expiry.
  *
- * The handoff is fire-and-forget: the callback waits up to HANDOFF_MS for the next invocation to
- * answer and then lets go (the next invocation keeps running), so one invocation never stays alive
- * for the whole chain. Every failure is logged and swallowed.
+ * The hand-off holds on (fix after the first live smoke, spec 21 §6.2): on Vercel an invocation
+ * whose caller disconnects before it has answered loses its after() work, so a caller never lets go
+ * on a short timer. It holds the connection until the next invocation has **answered** — which it
+ * does as soon as its stage is recorded, before its own hand-off runs — or until the caller's own
+ * deadline (`handoffDeadline`: its start + maxDuration − HANDOFF_MARGIN_MS). Each invocation waits
+ * for its successor's answer only, so at most two invocations of a dossier live at once. Every
+ * failure is logged and swallowed; the page's nudge and lease expiry recover a lost hand-off.
  */
 
 export const ADVANCE_HEADER = "x-bastion-advance";
 /** HKDF `info` for the advance key — bump the version to invalidate every token at once. */
 export const ADVANCE_KEY_INFO = "bastion/advance/v1";
 export const CHAIN_WAIT_MAX_MS = 10_000;
-const HANDOFF_MS = 10_000;
+/** What a caller keeps of its own budget after waiting for its successor: time to finish cleanly. */
+export const HANDOFF_MARGIN_MS = 15_000;
+/** The shortest window a hand-off asks for, even past its deadline (the successor still starts). */
+const MIN_HANDOFF_MS = 1_000;
 
 export type ChainDeps = {
   fetch: (url: URL, init: RequestInit) => Promise<Response>;
   sleep: (ms: number) => Promise<void>;
+  now: () => number;
+  /** An abort signal that fires after `ms` — the hand-off's whole window, the answer's body included. */
+  timeout: (ms: number) => AbortSignal;
 };
 
 const defaultDeps: ChainDeps = {
   fetch: (url, init) => fetch(url, init),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  now: () => Date.now(),
+  timeout: (ms) => AbortSignal.timeout(ms),
 };
+
+/**
+ * When a hand-off must let go (epoch ms): the caller's start plus its route's `maxDuration`, less the
+ * margin it needs to finish. A route whose maxDuration leaves no room past the margin is a bug.
+ */
+export function handoffDeadline(startedAtMs: number, maxDurationS: number): number {
+  if (!Number.isInteger(maxDurationS) || maxDurationS * 1000 <= HANDOFF_MARGIN_MS) {
+    throw new RangeError(
+      `handoffDeadline: maxDuration must be a whole number of seconds above ${HANDOFF_MARGIN_MS / 1000}`,
+    );
+  }
+  return startedAtMs + maxDurationS * 1000 - HANDOFF_MARGIN_MS;
+}
 
 /** The internal header value for one dossier: base64url HMAC-SHA256(advance key, dossier id). */
 export function advanceToken(dossierId: string): string {
@@ -57,12 +82,11 @@ export function chainDelayMs(result: AdvanceResult, now: Date): number | null {
 /**
  * Registers a chain whose delay is decided later (spec 21 §6.2, Task 15). `schedule` — the route's
  * `after` — receives, at once, a promise that settles after `decide` is called: it chains with the
- * decided delay, or does nothing for null. The route calls this before running its stage because a
- * stage can outlast the 10 s handoff, leaving the invocation with no caller: Next runs a *function*
- * given to `after()` only when the response closes, and a close that already happened never fires
- * again, so a function registered after such a stage is silently dropped. A promise is kept alive
- * with `waitUntil` and needs no close. Only the first decision counts; `chain` is `chainAdvance`,
- * which never rejects.
+ * decided delay, or does nothing for null. The route calls this before running its stage: Next runs
+ * a *function* given to `after()` only when the response closes, and a close that already happened
+ * never fires again, while a promise is kept alive with `waitUntil` and needs no close. Only the
+ * first decision counts; `chain` is `chainAdvance` bound to the route's deadline, which never
+ * rejects.
  */
 export function deferChain(
   origin: string,
@@ -84,16 +108,21 @@ export async function chainAdvance(
   origin: string,
   dossierId: string,
   delayMs: number,
-  deps: ChainDeps = defaultDeps,
+  deadlineMs: number,
+  overrides: Partial<ChainDeps> = {},
 ): Promise<void> {
+  const deps: ChainDeps = { ...defaultDeps, ...overrides };
   if (delayMs > 0) await deps.sleep(delayMs);
   const url = new URL(`/api/dossiers/${encodeURIComponent(dossierId)}/advance`, origin);
+  const windowMs = Math.max(MIN_HANDOFF_MS, deadlineMs - deps.now());
   try {
     const res = await deps.fetch(url, {
       method: "POST",
       headers: { [ADVANCE_HEADER]: advanceToken(dossierId) },
-      signal: AbortSignal.timeout(HANDOFF_MS),
+      signal: deps.timeout(windowMs),
     });
+    // Read to the end: the successor has answered, and the connection is released, not left open.
+    await res.arrayBuffer();
     if (!res.ok) {
       console.warn("dossier chain: the next advance was refused", {
         dossierId,
@@ -101,8 +130,16 @@ export async function chainAdvance(
       });
     }
   } catch (err) {
-    // Letting go after the handoff window is the design, not a failure.
-    if (err instanceof DOMException && err.name === "TimeoutError") return;
+    if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      // The caller's own budget ran out first: the successor's hand-off may be lost on platforms
+      // that drop an invocation's after() work once its caller is gone.
+      // The id is in the message itself, so one log line names the dossier (the e2e reads it back).
+      console.warn(
+        `dossier chain: the hand-off let go before the next advance answered (dossier ${dossierId})`,
+        { dossierId, windowMs },
+      );
+      return;
+    }
     console.warn("dossier chain: handing off the next advance failed", {
       dossierId,
       error: err instanceof Error ? err.message : String(err),

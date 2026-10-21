@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { after, type NextRequest } from "next/server";
 import { z } from "zod";
-import { chainAdvance } from "@/dossier/chain";
+import { chainAdvance, handoffDeadline } from "@/dossier/chain";
 import { createBodySchema, createDossier } from "@/dossier/create";
 import { DOSSIER_STATUSES, listPublicDossiers } from "@/dossier/gallery";
 import { errorResponse } from "@/platform/gateway/http";
@@ -16,11 +16,14 @@ import { visitorFromRequest } from "@/platform/visitor";
  */
 
 export const dynamic = "force-dynamic";
+// The answer is quick; the after() hand-off then holds until the first stage has answered.
+export const maxDuration = 300;
 
 const GALLERY_SIZE = 12;
 const composeLimiter = createRateLimiter({ max: 3, windowMs: 3_600_000 });
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const startedAt = Date.now();
   const requestId = randomUUID();
 
   const mediaType = (req.headers.get("content-type") ?? "").split(";")[0]?.trim().toLowerCase();
@@ -78,8 +81,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   const origin = req.nextUrl.origin;
   const id = result.dossierId;
   // A promise, not a function: Next runs a function given to after() only when the response
-  // closes, and a client gone before it is written would leave the run unstarted (spec 21 §6.2).
-  after(chainAdvance(origin, id, 0));
+  // closes, and a client gone before it is written would leave the run unstarted. It holds until the
+  // first stage has answered, up to this invocation's own deadline (spec 21 §6.2).
+  after(chainAdvance(origin, id, 0, handoffDeadline(startedAt, maxDuration)));
   return Response.json(
     { dossier_id: id, request_id: requestId, url: `/d/${id}` },
     { status: 202, headers: { "cache-control": "no-store", "x-request-id": requestId } },

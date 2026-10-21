@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { type APIRequestContext, expect, type Locator, type Page, request } from "@playwright/test";
 import { z } from "zod";
 import { STUB_ORIGIN, type Tenant } from "./env";
+import { serverLogFile } from "./run-files";
 
 /**
  * What the e2e specs share (spec 21 §10.1): the stub's control routes, a wake gate reaching live,
@@ -44,6 +47,11 @@ export async function setLimitsFeathers(state: "asleep" | "awake"): Promise<void
   } finally {
     await ctx.dispose();
   }
+}
+
+/** What one app has written so far this run (`.e2e/<tenant>.log`, made by playwright.config.ts). */
+export function serverLog(tenant: Tenant): string {
+  return readFileSync(serverLogFile(join(__dirname, "..", "..", ".."), tenant), "utf8");
 }
 
 // ---- pages ----------------------------------------------------------------------------------

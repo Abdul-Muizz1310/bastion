@@ -5,6 +5,7 @@ import {
   chainAdvance,
   chainDelayMs,
   deferChain,
+  handoffDeadline,
   isAdvanceToken,
 } from "@/dossier/chain";
 import { HANDLERS } from "@/dossier/handlers";
@@ -21,12 +22,15 @@ import { visitorFromRequest } from "@/platform/visitor";
  *
  * Chaining: when a stage finished and the next is due within 10 s, `after()` sleeps until it is
  * due and POSTs this route again — see `@/dossier/chain`. The chain is registered before the stage
- * runs (`deferChain`): the previous invocation lets go of this one after 10 s, and Next drops a
- * function given to `after()` once the caller is gone, so a long stage would otherwise end the run.
+ * runs (`deferChain`), and the hand-off holds its connection until the next invocation has answered
+ * (on Vercel an invocation whose caller leaves early loses its after() work), up to this
+ * invocation's own deadline. This route answers as soon as its stage is recorded, so its caller
+ * waits for one stage, never for the rest of the chain.
  */
 
 export const dynamic = "force-dynamic";
-// One stage's 240 s budget, its recording, and the after() handoff to the next invocation.
+// One stage's 240 s budget, its recording, and the after() hand-off, which waits for the next
+// invocation's answer until 15 s before this one's end (`handoffDeadline`).
 export const maxDuration = 300;
 
 const advanceLimiter = createRateLimiter({ max: 60, windowMs: 60_000 });
@@ -34,6 +38,7 @@ const advanceLimiter = createRateLimiter({ max: 60, windowMs: 60_000 });
 type Context = { params: Promise<{ id: string }> };
 
 export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
+  const startedAt = Date.now();
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
@@ -49,7 +54,14 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
   }
 
   // Registered now, decided once the stage is recorded; the finally settles it on every path.
-  const decide = deferChain(req.nextUrl.origin, id, (task) => after(task), chainAdvance);
+  // It waits for its successor's answer up to its own deadline, never for the rest of the chain.
+  const deadline = handoffDeadline(startedAt, maxDuration);
+  const decide = deferChain(
+    req.nextUrl.origin,
+    id,
+    (task) => after(task),
+    (origin, dossierId, delayMs) => chainAdvance(origin, dossierId, delayMs, deadline),
+  );
   let delayMs: number | null = null;
   let result: Awaited<ReturnType<typeof advance>>;
   try {

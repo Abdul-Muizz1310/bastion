@@ -63,7 +63,9 @@ const certificateDetail = certificate.extend({ text: z.string() });
 const batchRecord = z.object({
   certificate_id: uuid,
   manifest: jsonObject,
-  fingerprints: z.object({ sha256: hex64, simhash, embedding_id: uuid }),
+  // null when inkprint's batched embedding call failed (a rate-limited provider): the certificate is
+  // still signed and verifiable; only semantic search skips it. Nothing in bastion reads it.
+  fingerprints: z.object({ sha256: hex64, simhash, embedding_id: uuid.nullable() }),
 });
 
 const verifyResponse = z.object({

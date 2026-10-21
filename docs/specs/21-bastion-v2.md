@@ -370,7 +370,7 @@ Invariants and cases:
 | wake | `GET /health` on every service the dossier needs, in parallel, up to 90 s | Which services are live |
 | gather | magpie `POST /api/scrape/batch` (skipped with no sources) | Web evidence candidates |
 | read | inkthread: uploads were started at compose time; poll `GET /jobs/{id}` until done; fetch graph + reading (skipped with no documents) | Passages and tables, with locators |
-| seal | inkprint `POST /certificates/batch` over the selected evidence (≤ 12 items) | A certificate per evidence item |
+| seal | inkprint `POST /certificates/batch` over the selected evidence (≤ 12 items) | A certificate per evidence item (an item inkprint could not embed is certified all the same, `embedding_id` null; nothing reads it) |
 | debate | paper-trail `POST /debates` with `evidence_pool` = the sealed items, which its planner prefers (a web search only for a sub-question the pool cannot answer); poll until done; fetch `transcript.json` | Verdict, confidence, transcript hash + signature |
 | measure | `GET /_slowquery/queries?request_id=` on every service the dossier called | Perf receipt (canonical JSON) and its SHA-256 |
 | envelope | inkprint `POST /dossiers/envelope` with the cert ids, transcript hash, perf hash and metadata (graph hashes, audit digest) | Envelope id + signature |
@@ -396,14 +396,24 @@ A dossier is rows, not a promise. `dossier_steps` holds one row per stage with `
   dossier page also calls `advance` whenever the stage it shows has an expired lease, so a run never stalls
   for good, and a crashed invocation is retried when its lease expires (max 3 attempts per stage).
 - The chain is registered **before** the stage runs, as a promise handed to `after()` that settles once
-  the stage is recorded (Task 15). Each handoff lets go of the next invocation after 10 s, so a stage
-  longer than that runs with its caller already gone; Next runs a *function* given to `after()` only when
-  the response closes, and a close that already happened never fires again — a chain registered after
-  such a stage would be dropped and the dossier would wait for a page to nudge it. A promise is kept alive
-  with `waitUntil` and needs no close. Every path settles it, in a `finally`: with the next delay, or
-  with nothing to chain (finished, failed, unknown dossier, an error — deciding the delay included).
-  Compose and "retry from this stage" hand their first advance to `after()` as a promise too, so a
-  client that leaves before the answer is written cannot leave a run unstarted.
+  the stage is recorded (Task 15). Next runs a *function* given to `after()` only when the response
+  closes, and a close that already happened never fires again; a promise is kept alive with `waitUntil`
+  and needs no close. Every path settles it, in a `finally`: with the next delay, or with nothing to
+  chain (finished, failed, unknown dossier, an error — deciding the delay included).
+- **The caller stays until the successor answers** (fix after the first live smoke, 2026-10-21). An
+  invocation whose caller disconnects before it has answered loses its `after()` work on Vercel: the
+  first live dossier's seal ran ~12 s, recorded a retryable error due in 5 s, and nothing ever asked
+  again. So a hand-off never lets go on a short timer: it holds the connection until the next
+  invocation **responds**, or until its own invocation is about to run out — its deadline is its
+  start + its `maxDuration` − 15 s (`HANDOFF_MARGIN_MS`), at least 1 s. The next invocation answers as
+  soon as its stage is recorded; its own hand-off runs after that answer, so each invocation waits for
+  its successor's response only, never for the rest of the chain: at most two invocations of one
+  dossier are alive at once, and a caller's wait is bounded by one stage (≤ 240 s). Running out of
+  that deadline is logged ("the hand-off let go before the next advance answered"); the page's nudge
+  and the lease recover the run.
+- Compose and "retry from this stage" start a run the same way: their first advance is a promise
+  handed to `after()` with the same deadline (both routes declare `maxDuration` 300), so the create or
+  retry invocation stays until the first stage has answered.
 - Progress reaches the page through the existing SSE route (polling `dossier_events`, `maxDuration` 300).
 
 ### 6.3 Data model (migration on the `shadow-admin` branch)
@@ -621,7 +631,9 @@ expired, or it is pending or waiting and its `nextAt` has passed (and no lease i
 calls `POST /api/dossiers/[id]/advance` when the frontier stage has been due for 5 s (the runner's
 own chain arrives exactly on time, so it normally wins), at most one call at a time; a 429 waits the
 `retryAfterS` it was given, any other failure backs off 15 s, doubling to 2 min; an error stage,
-a finished dossier or a 404 stops it.
+a finished dossier or a 404 stops it. A nudge holds its request until the stage it ran is recorded
+and answered (§6.2: an invocation whose caller leaves first can lose its hand-off); a page closed
+mid-call costs at most that hand-off, which the next nudge or the lease recovers.
 
 *The timeline.* The eight stages in stage order (Postgres returns the rows in no particular
 order), each status written in words beside a glyph (pending · running · waiting · ok · error ·
@@ -761,9 +773,12 @@ production host or database.
    words. Against the stub the signature checks fail (the stub cannot sign as inkprint) while bastion's
    own receipts pass — verification never passes what it could not prove.
 4. The golden dossier: "verify everything" answers 7 of 7 pass; the receipts bundle downloads.
-5. The handoff: a dossier composed through the API, with no page open to nudge it, crosses a stage
-   that takes 12 s — longer than the runner's 10 s handoff — and still reaches `succeeded` by its own
-   `after()` chain.
+5. The hand-off: a dossier composed through the API, with no page open to nudge it, crosses two
+   stages longer than the old 10 s hand-off — a 12 s scrape, then a 12 s seal that ends in a
+   retryable 503 due again in 5 s (the first live smoke's failure) — and still reaches `succeeded` by
+   its own `after()` chain, seal on its second attempt. The app's log is read back: no hand-off of
+   that dossier let go before its successor answered (a caller that leaves early is the one thing
+   `next start` survives and Vercel does not).
 6. Budget spent (limits): the compose page says no debates are left and holds the submit; the API
    answers 429 `budget_exhausted`, and the stub never sees a debate from that app.
 7. Asleep (limits): the map shows feathers asleep; its workbench gate reads asleep after the 90 s wake
@@ -774,7 +789,8 @@ production host or database.
 **Live smoke** (`tests/e2e/live/`, skipped unless `BASTION_LIVE_SMOKE=1` and `PLAYWRIGHT_BASE_URL` are
 set; never in CI): one rapid dossier against the deployment named by `PLAYWRIGHT_BASE_URL`, followed
 over SSE without opening its page (nothing nudges it), which must succeed through a single-invocation
-stage longer than 10 s and then pass every verification check in the browser. It spends one debate.
+stage longer than the old 10 s hand-off window (the first live run stopped right there, §6.2) and
+then pass every verification check in the browser. It spends one debate.
 
 ## 11. Sub-projects and order
 

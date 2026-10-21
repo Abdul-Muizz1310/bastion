@@ -33,6 +33,9 @@ const HASH = "a".repeat(64);
 const created = fixture("inkprint", "certificate-create.json");
 const detail = fixture("inkprint", "certificate.json");
 const batch = fixture("inkprint", "certificates-batch.json");
+// inkprint PR #16: when the batched embedding call fails (a free-tier Voyage 429) every item is
+// still certified — hash and Ed25519 signature — with `embedding_id: null`.
+const unembedded = fixture("inkprint", "certificates-batch-unembedded.json");
 const verified = fixture("inkprint", "verify.json");
 const verifiedBatch = fixture("inkprint", "verify-batch.json");
 const diffed = fixture("inkprint", "diff.json");
@@ -105,6 +108,25 @@ describe("inkprint.certifyBatch", () => {
     expect(result).toMatchObject({ ok: false, error: "budget_exhausted" });
     expect(await call(inkprint.certifyBatch, { items: [item] }, json(batch))).toMatchObject({
       ok: true,
+    });
+  });
+
+  it("parses a batch whose embedding call failed: certified all the same, embedding_id null", async () => {
+    const data = inkprint.certifyBatch.output.parse(
+      await expectParses(inkprint.certifyBatch, { items: [item, item] }, unembedded),
+    );
+    expect(data.certificates.length).toBeGreaterThan(0);
+    for (const c of data.certificates) expect(c.fingerprints.embedding_id).toBeNull();
+  });
+
+  it("still refuses an embedding_id that is neither a uuid nor null", async () => {
+    const bad = structuredClone(batch) as { certificates: { fingerprints: Record<string, unknown> }[] };
+    const first = bad.certificates[0];
+    if (!first) throw new Error("fixture");
+    first.fingerprints.embedding_id = "not-a-uuid";
+    expect(await call(inkprint.certifyBatch, { items: [item] }, json(bad))).toMatchObject({
+      ok: false,
+      error: "invalid_response",
     });
   });
 

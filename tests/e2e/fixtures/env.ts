@@ -28,11 +28,17 @@ export type StubServiceId = (typeof SERVICE_IDS)[number];
 export const TENANTS = ["main", "limits"] as const;
 export type Tenant = (typeof TENANTS)[number];
 
-/** The stub-only magpie source whose batch scrape outlasts the runner's 10 s handoff. */
+/**
+ * The stub-only magpie source behind the hand-off case (spec 21 §10.1 case 5): its batch scrape takes
+ * SLOW_STAGE_MS, and the first seal of a dossier citing it takes as long and then answers a retryable
+ * 503 — the first live smoke's failure.
+ */
 export const SLOW_SOURCE = "slow-wire";
-export const SLOW_SCRAPE_MS = 12_000;
-/** The runner's handoff window (`HANDOFF_MS` in src/dossier/chain.ts). */
-export const HANDOFF_MS = 10_000;
+export const SLOW_STAGE_MS = 12_000;
+/** The hand-off's old fixed window: a stage longer than this lost its successor chain on Vercel. */
+export const OLD_HANDOFF_MS = 10_000;
+/** What the runner logs when a hand-off lets go before its successor answered (src/dossier/chain.ts). */
+export const HANDOFF_LET_GO = "the hand-off let go before the next advance answered";
 
 /** Budgets for the main app: high enough that retries and parallel workers never run out. */
 export const MAIN_BUDGETS: Readonly<Record<string, string>> = {

@@ -108,12 +108,17 @@ stateDiagram-v2
 **Chaining.** Before the stage runs, the route registers the hand-off to the next invocation with
 `after()`, as a promise that settles once the stage is recorded: the next delay (now, or the 3 s
 of a waiting poll), or nothing to chain. The hand-off POSTs the same route with an internal HMAC
-header (so the runner never meets the visitor rate limit) and lets go after 10 s. Registering it
-first matters: a stage longer than that runs with its caller already gone, and Next runs a
-*function* given to `after()` only when the response closes — a close that has already happened.
-A promise is kept alive with `waitUntil` instead, and a `finally` settles it on every path. Compose
-and retry start a run the same way. The e2e suite crosses a 12 s stage with no page open to prove
-the chain holds.
+header (so the runner never meets the visitor rate limit) and **holds the connection until the next
+invocation has answered**: on Vercel an invocation whose caller leaves before it answers loses its
+`after()` work, so the first live dossier stopped after a 12 s seal when the old 10 s window let go.
+The wait is bounded by the caller's own deadline (its start + `maxDuration` − 15 s), and the next
+invocation answers as soon as its stage is recorded — its own hand-off runs after that answer — so
+each invocation waits for one stage, never for the rest of the chain, and at most two invocations
+of a dossier are alive at once. A *function* given to `after()` runs only when the response closes;
+a promise is kept alive with `waitUntil` and a `finally` settles it on every path. Compose and
+retry start a run the same way (both `maxDuration` 300). The e2e suite crosses a 12 s scrape and a
+12 s seal that fails once with a retryable 503, with no page open, and reads the app's log back to
+prove no hand-off let go early.
 
 **Recovery.** The dossier page nudges `advance` when its frontier stage has been due for 5 s
 (a lease that expired, a `not_before` that passed), backing off on failure; a crashed invocation's

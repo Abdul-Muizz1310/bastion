@@ -56,6 +56,8 @@ import { LEASE_MS, TIMEOUT_GRACE_MS } from "@/dossier/stages";
 const ID = "550e8400-e29b-41d4-a716-446655440000";
 const NOW = new Date("2026-10-20T12:00:00.000Z");
 const at = (ms: number) => new Date(NOW.getTime() + ms);
+/** The hand-off's deadline: this invocation's start + maxDuration (300 s) − the 15 s margin. */
+const DEADLINE = NOW.getTime() + 285_000;
 
 function post(headers: Record<string, string> = {}): Promise<Response> {
   const req = new NextRequest(`https://bastion.test/api/dossiers/${ID}/advance`, {
@@ -157,7 +159,25 @@ describe("POST /api/dossiers/[id]/advance", () => {
     await post();
     expect(afterCallbacks).toHaveLength(1);
     await runAfter();
-    expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 0);
+    expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 0, DEADLINE);
+  });
+
+  it("hands off with its own deadline — its start plus maxDuration, less 15 s — however long the stage ran", async () => {
+    advance.mockImplementation(async () => {
+      vi.setSystemTime(at(100_000)); // the stage took 100 s
+      return result();
+    });
+    await post();
+    await runAfter();
+    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0, DEADLINE);
+  });
+
+  it("answers as soon as its stage is recorded, while its own hand-off is still pending (no nesting)", async () => {
+    // Its caller waits for this answer only — never for the rest of the chain.
+    chainAdvance.mockReturnValue(new Promise(() => {}));
+    const res = await post();
+    expect(res.status).toBe(200);
+    expect(chainAdvance).toHaveBeenCalledTimes(1);
   });
 
   it("registers the chain before the stage runs, as a promise a disconnect cannot drop", async () => {
@@ -170,14 +190,14 @@ describe("POST /api/dossiers/[id]/advance", () => {
     await post();
     expect(afterKinds).toEqual(["promise"]);
     await runAfter();
-    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0);
+    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0, DEADLINE);
   });
 
   it("re-advances a waiting stage once its 3 s poll is due", async () => {
     advance.mockResolvedValue(result({ status: "waiting", nextAt: at(3000) }));
     await post();
     await runAfter();
-    expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 3000);
+    expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 3000, DEADLINE);
   });
 
   it("schedules nothing when the dossier is finished, failed, or nothing ran", async () => {

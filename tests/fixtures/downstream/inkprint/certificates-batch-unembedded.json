@@ -1,0 +1,140 @@
+{
+  "certificates": [
+    {
+      "certificate_id": "2b9f6a1e-4c3d-4e5f-9a7b-8c6d5e4f3a2b",
+      "manifest": {
+        "@context": "https://c2pa.org/statements/v1",
+        "version": "2.2",
+        "title": "Content Credential for 2b9f6a1e-4c3d-4e5f-9a7b-8c6d5e4f3a2b",
+        "instance_id": "urn:uuid:2b9f6a1e-4c3d-4e5f-9a7b-8c6d5e4f3a2b",
+        "format": "text/plain",
+        "claim_generator": "inkprint/0.1.0",
+        "claim_generator_info": [
+          {
+            "name": "inkprint",
+            "version": "0.1.0"
+          }
+        ],
+        "legal_notice": "This certificate is issued by inkprint for informational purposes only.",
+        "assertions": [
+          {
+            "label": "c2pa.actions.v2",
+            "data": {
+              "actions": [
+                {
+                  "action": "c2pa.created",
+                  "when": "2026-10-20T09:30:11.204518+00:00",
+                  "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/humanEdits"
+                }
+              ]
+            }
+          },
+          {
+            "label": "c2pa.hash.data",
+            "data": {
+              "alg": "sha256",
+              "hash": "ef537f25c895bfa782526529a9b63d97aa631564d5d789c2b765448c8635fb6c",
+              "pad": ""
+            }
+          },
+          {
+            "label": "stds.schema-org.CreativeWork",
+            "data": {
+              "@context": "https://schema.org",
+              "@type": "CreativeWork",
+              "author": {
+                "@type": "Person",
+                "identifier": "bastion"
+              },
+              "dateCreated": "2026-10-20T09:30:11.204518+00:00",
+              "inLanguage": "en",
+              "contentSize": 44
+            }
+          }
+        ],
+        "signature": {
+          "alg": "Ed25519",
+          "key_id": "inkprint-ed25519-2026-04",
+          "value": "q83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJAA==",
+          "signed_assertions": [
+            "c2pa.hash.data",
+            "stds.schema-org.CreativeWork"
+          ]
+        }
+      },
+      "fingerprints": {
+        "sha256": "ef537f25c895bfa782526529a9b63d97aa631564d5d789c2b765448c8635fb6c",
+        "simhash": 1229782938247303441,
+        "embedding_id": null
+      }
+    },
+    {
+      "certificate_id": "4d6e8f0a-2b4c-4d6e-8f0a-2b4c6d8e0f1a",
+      "manifest": {
+        "@context": "https://c2pa.org/statements/v1",
+        "version": "2.2",
+        "title": "Content Credential for 4d6e8f0a-2b4c-4d6e-8f0a-2b4c6d8e0f1a",
+        "instance_id": "urn:uuid:4d6e8f0a-2b4c-4d6e-8f0a-2b4c6d8e0f1a",
+        "format": "text/plain",
+        "claim_generator": "inkprint/0.1.0",
+        "claim_generator_info": [
+          {
+            "name": "inkprint",
+            "version": "0.1.0"
+          }
+        ],
+        "legal_notice": "This certificate is issued by inkprint for informational purposes only.",
+        "assertions": [
+          {
+            "label": "c2pa.actions.v2",
+            "data": {
+              "actions": [
+                {
+                  "action": "c2pa.created",
+                  "when": "2026-10-20T09:30:11.204518+00:00",
+                  "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/humanEdits"
+                }
+              ]
+            }
+          },
+          {
+            "label": "c2pa.hash.data",
+            "data": {
+              "alg": "sha256",
+              "hash": "16367aacb67a4a017c8da8ab95682ccb390863780f7114dda0a0e0c55644c7c4",
+              "pad": ""
+            }
+          },
+          {
+            "label": "stds.schema-org.CreativeWork",
+            "data": {
+              "@context": "https://schema.org",
+              "@type": "CreativeWork",
+              "author": {
+                "@type": "Person",
+                "identifier": "bastion"
+              },
+              "dateCreated": "2026-10-20T09:30:11.204518+00:00",
+              "inLanguage": "en",
+              "contentSize": 44
+            }
+          }
+        ],
+        "signature": {
+          "alg": "Ed25519",
+          "key_id": "inkprint-ed25519-2026-04",
+          "value": "q83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJAA==",
+          "signed_assertions": [
+            "c2pa.hash.data",
+            "stds.schema-org.CreativeWork"
+          ]
+        }
+      },
+      "fingerprints": {
+        "sha256": "16367aacb67a4a017c8da8ab95682ccb390863780f7114dda0a0e0c55644c7c4",
+        "simhash": 42,
+        "embedding_id": null
+      }
+    }
+  ]
+}
