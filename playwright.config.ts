@@ -21,6 +21,7 @@ import { defineConfig, devices, type PlaywrightTestConfig } from "@playwright/te
 import {
   APP_PORT,
   APP_URL,
+  E2E_SWEEP_TOKEN,
   isLocalDatabase,
   LIMITS_BUDGETS,
   LIMITS_PORT,
@@ -88,7 +89,7 @@ function stubRunServers(): WebServer[] {
         E2E_STUB_KEY: files.keyPath,
       },
     },
-    app("main", APP_PORT, MAIN_BUDGETS),
+    app("main", APP_PORT, { ...MAIN_BUDGETS, BASTION_SWEEP_TOKEN: E2E_SWEEP_TOKEN }),
     app("limits", LIMITS_PORT, LIMITS_BUDGETS),
   ];
 }

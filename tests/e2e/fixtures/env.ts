@@ -40,6 +40,11 @@ export const OLD_HANDOFF_MS = 10_000;
 /** What the runner logs when a hand-off lets go before its successor answered (src/dossier/chain.ts). */
 export const HANDOFF_LET_GO = "the hand-off let go before the next advance answered";
 
+/** The main app's sweep token for this run only (spec 21 §6.2 "The sweep"); not a secret. */
+export const E2E_SWEEP_TOKEN = "e2e-sweep-token-for-the-local-stub-run";
+/** A dossier the seed leaves stalled at its first stage, for the sweep to drive (case 9). */
+export const STALLED_DOSSIER_ID = "5a11ed00-0000-4000-8000-000000000009";
+
 /** Budgets for the main app: high enough that retries and parallel workers never run out. */
 export const MAIN_BUDGETS: Readonly<Record<string, string>> = {
   BUDGET_DEBATE: "100",

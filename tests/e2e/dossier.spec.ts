@@ -2,8 +2,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { z } from "zod";
-import { HANDOFF_LET_GO, OLD_HANDOFF_MS, SLOW_SOURCE } from "./fixtures/env";
-import { finishedDossier, gateLive, serverLog, stageMs } from "./fixtures/helpers";
+import {
+  E2E_SWEEP_TOKEN,
+  HANDOFF_LET_GO,
+  OLD_HANDOFF_MS,
+  SLOW_SOURCE,
+  STALLED_DOSSIER_ID,
+} from "./fixtures/env";
+import { finishedDossier, gateLive, serverLog, stageMs, streamSnapshot } from "./fixtures/helpers";
 
 /**
  * spec 21 §6 and §10.1 cases 3–5: a dossier composed in the browser runs to its receipt and is
@@ -125,10 +131,10 @@ test.describe("21-e2e: dossiers", () => {
     const { dossier_id: id, url } = createdSchema.parse(await answer.json());
     expect(url).toBe(`/d/${id}`);
 
-    // Followed only through the public stream, which never advances anything: every stage after
-    // the first is started by the previous invocation's after() hand-off. The scrape takes 12 s;
-    // the first seal takes 12 s and answers a retryable 503, due again in 5 s — the first live
-    // smoke's failure, where the chain never asked again.
+    // Followed only through the public stream, which never advances anything: the first advance
+    // (the create route's hand-off) drives stage after stage in the foreground. The scrape takes
+    // 12 s; the first seal takes 12 s and answers a retryable 503, due again in 5 s — the loop
+    // sleeps through the backoff and runs the second attempt.
     const done = await finishedDossier(baseURL ?? "", id, 130_000);
     expect(done.status).toBe("succeeded");
     const gather = done.steps.find((s) => s.stage === "gather");
@@ -145,20 +151,66 @@ test.describe("21-e2e: dossiers", () => {
       .filter((line) => line.includes(HANDOFF_LET_GO) && line.includes(id));
     expect(early).toEqual([]);
 
-    // The chain's trace (spec 21 §6.2): every hop's two ends join — each answer a hand-off read
-    // names the invocation that logged a chained entry from that hand-off's own invocation.
+    // The chain's trace (spec 21 §6.2): every stage was driven and traced as such, and every hop
+    // there was joins — each answer a hand-off read names an invocation that logged a chained
+    // entry from that hand-off's own invocation.
     const traced = serverLog("main")
       .split("\n")
       .filter((line) => line.startsWith('{"tag":"dossier-chain"') && line.includes(id))
       .map((line) => z.record(z.string(), z.json()).parse(JSON.parse(line)));
+    const drivenStages = new Set(
+      traced.filter((e) => e.event === "drive.stage").map((e) => e.stage),
+    );
+    expect(drivenStages).toEqual(
+      new Set(["wake", "gather", "read", "seal", "debate", "measure", "envelope", "record"]),
+    );
     const responses = traced.filter((e) => e.event === "chain.response");
     const entries = traced.filter((e) => e.event === "advance.entry" && e.chained === true);
-    expect(responses.length).toBeGreaterThanOrEqual(8);
+    expect(responses.length).toBeGreaterThanOrEqual(1);
     for (const r of responses) {
       expect(r.status).toBe(200);
       expect(entries).toContainEqual(
         expect.objectContaining({ invocation: r.successor, from: r.invocation }),
       );
     }
+  });
+
+  test("case 9: the sweep refuses no token, and with it drives a stalled dossier to the end", async ({
+    request,
+    baseURL,
+  }) => {
+    test.setTimeout(150_000);
+    const refused = await request.post("/api/dossiers/sweep");
+    expect(refused.status()).toBe(401);
+    expect(refused.headers()["www-authenticate"]).toBe("Bearer");
+
+    // Seeded with every stage due and nobody to drive it.
+    expect((await streamSnapshot(baseURL ?? "", STALLED_DOSSIER_ID)).status).toBe("pending");
+
+    const answer = await request.post("/api/dossiers/sweep", {
+      headers: { authorization: `Bearer ${E2E_SWEEP_TOKEN}` },
+      timeout: 140_000,
+    });
+    expect(answer.status()).toBe(200);
+    const body = z
+      .object({
+        swept: z.array(
+          z.object({
+            dossierId: z.string(),
+            stages: z.array(z.object({ stage: z.string(), status: z.string() })),
+            dossier: z.string().nullable(),
+            stopped: z.string(),
+          }),
+        ),
+        ms: z.number(),
+      })
+      .parse(await answer.json());
+    const stalled = body.swept.find((s) => s.dossierId === STALLED_DOSSIER_ID);
+    expect(stalled).toMatchObject({ dossier: "succeeded", stopped: "done" });
+    expect(new Set(stalled?.stages.map((s) => s.stage))).toEqual(
+      new Set(["wake", "gather", "read", "seal", "debate", "measure", "envelope", "record"]),
+    );
+    const done = await finishedDossier(baseURL ?? "", STALLED_DOSSIER_ID, 10_000);
+    expect(done.status).toBe("succeeded");
   });
 });
