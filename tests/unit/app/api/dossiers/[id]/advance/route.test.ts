@@ -26,6 +26,12 @@ const {
     chainDelayMs: vi.fn(),
   };
 });
+const { chainTracer } = vi.hoisted(() => ({ chainTracer: vi.fn(async () => {}) }));
+vi.mock("@/dossier/chain-trace", async (orig) => ({
+  ...(await orig<typeof import("@/dossier/chain-trace")>()),
+  chainTracer,
+  instanceFacts: () => ({ instance: "0a1b2c3d", served: 7, coldStart: false, region: "iad1" }),
+}));
 
 vi.mock("@/platform/ratelimit", () => ({ createRateLimiter }));
 vi.mock("@/dossier/runner", async (orig) => ({
@@ -90,6 +96,7 @@ beforeEach(async () => {
   chainAdvance.mockReset().mockResolvedValue(undefined);
   afterCallbacks.length = 0;
   afterKinds.length = 0;
+  chainTracer.mockClear();
 });
 
 afterEach(() => {
@@ -144,7 +151,7 @@ describe("POST /api/dossiers/[id]/advance", () => {
 
   it("runs one stage with the default handlers and answers the result, uncached", async () => {
     const res = await post();
-    expect(advance).toHaveBeenCalledWith(ID, HANDLERS);
+    expect(advance).toHaveBeenCalledWith(ID, HANDLERS, { onTrace: expect.any(Function) });
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(await res.json()).toEqual({
@@ -159,7 +166,7 @@ describe("POST /api/dossiers/[id]/advance", () => {
     await post();
     expect(afterCallbacks).toHaveLength(1);
     await runAfter();
-    expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 0, DEADLINE);
+    expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 0, DEADLINE, expect.anything());
   });
 
   it("hands off with its own deadline — its start plus maxDuration, less 15 s — however long the stage ran", async () => {
@@ -169,7 +176,7 @@ describe("POST /api/dossiers/[id]/advance", () => {
     });
     await post();
     await runAfter();
-    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0, DEADLINE);
+    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0, DEADLINE, expect.anything());
   });
 
   it("answers as soon as its stage is recorded, while its own hand-off is still pending (no nesting)", async () => {
@@ -190,14 +197,14 @@ describe("POST /api/dossiers/[id]/advance", () => {
     await post();
     expect(afterKinds).toEqual(["promise"]);
     await runAfter();
-    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0, DEADLINE);
+    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0, DEADLINE, expect.anything());
   });
 
   it("re-advances a waiting stage once its 3 s poll is due", async () => {
     advance.mockResolvedValue(result({ status: "waiting", nextAt: at(3000) }));
     await post();
     await runAfter();
-    expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 3000, DEADLINE);
+    expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 3000, DEADLINE, expect.anything());
   });
 
   it("schedules nothing when the dossier is finished, failed, or nothing ran", async () => {
@@ -240,4 +247,63 @@ describe("POST /api/dossiers/[id]/advance", () => {
     await runAfter();
     expect(chainAdvance).not.toHaveBeenCalled();
   });
+
+  describe("its trace (spec 21 §6.2)", () => {
+    const traced = () => chainTracer.mock.calls.map((c) => (c as unknown[])[0] as Record<string, unknown>);
+
+    it("names this invocation in its answer and in every line, and hands it to its hand-off", async () => {
+      const res = await post();
+      const invocation = res.headers.get("x-bastion-invocation");
+      expect(invocation).toMatch(/^[0-9a-f]{8}$/);
+      for (const e of traced()) expect(e).toMatchObject({ dossierId: ID, invocation });
+      await runAfter();
+      expect(chainAdvance.mock.calls[0]?.[4]).toMatchObject({ trace: { invocation } });
+    });
+
+    it("traces the entry (not chained), the runner's claim, the decision and the answer", async () => {
+      await post();
+      const events = traced();
+      expect(events[0]).toMatchObject({
+        event: "advance.entry",
+        chained: false,
+        from: null,
+        host: "bastion.test",
+        instance: "0a1b2c3d",
+        served: 7,
+        coldStart: false,
+        region: "iad1",
+      });
+      expect(events.map((e) => e.event)).toEqual(["advance.entry", "chain.decision", "advance.answer"]);
+      expect(events[1]).toMatchObject({ delayMs: 0, ran: "wake", stepStatus: "ok", dossierStatus: "running" });
+      expect(events[2]).toMatchObject({ status: 200 });
+      // The runner's own events reach the same tracer through onTrace.
+      expect(advance.mock.calls[0]?.[2]).toMatchObject({ onTrace: expect.any(Function) });
+    });
+
+    it("traces a chained entry with its caller's invocation id, kept only if it is an id", async () => {
+      await post({ [ADVANCE_HEADER]: advanceToken(ID), "x-bastion-chain-from": "e5f6a7b8" });
+      expect(traced()[0]).toMatchObject({ event: "advance.entry", chained: true, from: "e5f6a7b8" });
+      chainTracer.mockClear();
+      await post({ "x-bastion-chain-from": "not an id" });
+      expect(traced()[0]).toMatchObject({ chained: false, from: null });
+    });
+
+    it("traces a visitor refused by the limit", async () => {
+      check.mockResolvedValue({ success: false, limit: 60, remaining: 0, retryAfter: 12 });
+      await post();
+      expect(traced().map((e) => e.event)).toEqual([
+        "advance.entry",
+        "advance.refused",
+        "advance.answer",
+      ]);
+      expect(traced().at(-1)).toMatchObject({ status: 429 });
+    });
+
+    it("traces the answer of an unknown dossier", async () => {
+      advance.mockRejectedValue(new UnknownDossierError(ID));
+      await post();
+      expect(traced().at(-1)).toMatchObject({ event: "advance.answer", status: 404 });
+    });
+  });
 });
+

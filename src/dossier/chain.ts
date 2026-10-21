@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { deriveKey } from "@/platform/secrets";
+import { type ChainEventName, type TraceValue, traceId } from "./chain-trace";
 import type { AdvanceResult } from "./runner";
 
 /**
@@ -22,6 +23,10 @@ import type { AdvanceResult } from "./runner";
  */
 
 export const ADVANCE_HEADER = "x-bastion-advance";
+/** The caller's invocation id, so the two ends of a hop can be joined in the trace (not a secret). */
+export const CHAIN_FROM_HEADER = "x-bastion-chain-from";
+/** The answering invocation's id, read back by its caller. */
+export const INVOCATION_HEADER = "x-bastion-invocation";
 /** HKDF `info` for the advance key — bump the version to invalidate every token at once. */
 export const ADVANCE_KEY_INFO = "bastion/advance/v1";
 export const CHAIN_WAIT_MAX_MS = 10_000;
@@ -36,13 +41,27 @@ export type ChainDeps = {
   now: () => number;
   /** An abort signal that fires after `ms` — the hand-off's whole window, the answer's body included. */
   timeout: (ms: number) => AbortSignal;
+  /** The calling invocation and where its trace lines go (spec 21 §6.2 "The chain's trace"). */
+  trace: ChainTrace;
 };
+
+export type ChainTrace = {
+  invocation: string;
+  emit: (
+    event: { event: ChainEventName; dossierId: string; invocation: string } & {
+      [field: string]: TraceValue;
+    },
+  ) => Promise<void>;
+};
+
+const silent: ChainTrace = { invocation: "-", emit: async () => {} };
 
 const defaultDeps: ChainDeps = {
   fetch: (url, init) => fetch(url, init),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now: () => Date.now(),
   timeout: (ms) => AbortSignal.timeout(ms),
+  trace: silent,
 };
 
 /**
@@ -112,17 +131,36 @@ export async function chainAdvance(
   overrides: Partial<ChainDeps> = {},
 ): Promise<void> {
   const deps: ChainDeps = { ...defaultDeps, ...overrides };
-  if (delayMs > 0) await deps.sleep(delayMs);
+  const { invocation } = deps.trace;
+  const note = (event: ChainEventName, fields: Record<string, TraceValue>) =>
+    deps.trace.emit({ event, dossierId, invocation, ...fields });
+  const began = deps.now();
+  await note("chain.after", { delayMs });
+  if (delayMs > 0) {
+    const slept = deps.now();
+    await deps.sleep(delayMs);
+    // A timer that fires late means the instance was frozen while this work waited.
+    await note("chain.sleep", { plannedMs: delayMs, actualMs: deps.now() - slept });
+  }
   const url = new URL(`/api/dossiers/${encodeURIComponent(dossierId)}/advance`, origin);
   const windowMs = Math.max(MIN_HANDOFF_MS, deadlineMs - deps.now());
+  await note("chain.fetch", { host: url.host, windowMs });
+  const sent = deps.now();
   try {
     const res = await deps.fetch(url, {
       method: "POST",
-      headers: { [ADVANCE_HEADER]: advanceToken(dossierId) },
+      headers: { [ADVANCE_HEADER]: advanceToken(dossierId), [CHAIN_FROM_HEADER]: invocation },
       signal: deps.timeout(windowMs),
     });
     // Read to the end: the successor has answered, and the connection is released, not left open.
     await res.arrayBuffer();
+    await note("chain.response", {
+      status: res.status,
+      elapsedMs: deps.now() - sent,
+      successor: traceId(res.headers.get(INVOCATION_HEADER)),
+      vercelId: traceId(res.headers.get("x-vercel-id")),
+      mitigated: traceId(res.headers.get("x-vercel-mitigated")),
+    });
     if (!res.ok) {
       console.warn("dossier chain: the next advance was refused", {
         dossierId,
@@ -131,6 +169,7 @@ export async function chainAdvance(
     }
   } catch (err) {
     if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      await note("chain.letgo", { elapsedMs: deps.now() - sent, windowMs });
       // The caller's own budget ran out first: the successor's hand-off may be lost on platforms
       // that drop an invocation's after() work once its caller is gone.
       // The id is in the message itself, so one log line names the dossier (the e2e reads it back).
@@ -138,11 +177,14 @@ export async function chainAdvance(
         `dossier chain: the hand-off let go before the next advance answered (dossier ${dossierId})`,
         { dossierId, windowMs },
       );
-      return;
+    } else {
+      const error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+      await note("chain.error", { elapsedMs: deps.now() - sent, error: error.slice(0, 200) });
+      console.warn("dossier chain: handing off the next advance failed", {
+        dossierId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
-    console.warn("dossier chain: handing off the next advance failed", {
-      dossierId,
-      error: err instanceof Error ? err.message : String(err),
-    });
   }
+  await note("chain.settled", { totalMs: deps.now() - began });
 }

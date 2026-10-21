@@ -445,3 +445,52 @@ describe("retryStage — retry from this stage (spec §6.4)", () => {
     expect(appendEvent).not.toHaveBeenCalled();
   });
 });
+
+/** Spec 21 §6.2 "The chain's trace": what the runner tells the route about its claim and outcome. */
+describe("advance — its trace", () => {
+  type Traced = { event: string } & Record<string, unknown>;
+  const recorder = () => {
+    const events: Traced[] = [];
+    const onTrace = (event: string, fields: Record<string, unknown>) => {
+      events.push({ event, ...fields });
+    };
+    return { events, onTrace };
+  };
+
+  it("reports the claim, then the outcome with how long the stage ran", async () => {
+    seed();
+    let t = NOW.getTime();
+    const wake = vi.fn<StageHandler>(async () => {
+      t += 1_500;
+      return { kind: "ok", output: {} };
+    });
+    const { events, onTrace } = recorder();
+    await advance(ID, handlers({ wake }), { now: () => new Date(t), onTrace });
+    expect(events).toEqual([
+      { event: "advance.claim", stage: "wake", attempt: 1, status: "running" },
+      { event: "advance.outcome", stage: "wake", status: "ok", ms: 1_500, recorded: true },
+    ]);
+  });
+
+  it("reports why nothing was claimed", async () => {
+    seed({ wake: { status: "running", attempt: 1, leaseUntil: at(100_000) } });
+    const { events, onTrace } = recorder();
+    const result = await advance(ID, handlers(), { now: clock, onTrace });
+    expect(result.ran).toBeNull();
+    expect(events).toEqual([
+      expect.objectContaining({ event: "advance.idle", reason: "lease_held", stage: "wake", leaseUntilInMs: 100_000 }),
+    ]);
+  });
+
+  it("reports an outcome it could not record (the lease was lost)", async () => {
+    seed();
+    vi.mocked(store.recordOutcome).mockResolvedValueOnce({ recorded: false });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { events, onTrace } = recorder();
+    await advance(ID, handlers(), { now: clock, onTrace });
+    expect(events).toContainEqual(
+      expect.objectContaining({ event: "advance.outcome", stage: "wake", recorded: false }),
+    );
+  });
+});
+

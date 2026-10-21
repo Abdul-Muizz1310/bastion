@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { after, type NextRequest } from "next/server";
 import { z } from "zod/v4";
 import { chainAdvance, handoffDeadline } from "@/dossier/chain";
+import { chainTracer, newInvocationId } from "@/dossier/chain-trace";
 import { retryStage } from "@/dossier/runner";
 import { STAGES } from "@/dossier/stages";
 import { errorResponse } from "@/platform/gateway/http";
@@ -76,7 +77,14 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
   // A promise, not a function: Next runs a function given to after() only when the response
   // closes, and a client gone before it is written would leave the run unstarted. It holds until the
   // first stage has answered, up to this invocation's own deadline (spec 21 §6.2).
-  after(chainAdvance(origin, id, 0, handoffDeadline(startedAt, maxDuration)));
+  // The chain's trace (spec 21 §6.2): this invocation starts the run.
+  const invocation = newInvocationId();
+  await chainTracer({ event: "start.chain", dossierId: id, invocation, route: "retry" });
+  after(
+    chainAdvance(origin, id, 0, handoffDeadline(startedAt, maxDuration), {
+      trace: { invocation, emit: chainTracer },
+    }),
+  );
   return Response.json(
     { stage: body.data.stage, dossier: result.dossier },
     { headers: { "cache-control": "no-store", "x-request-id": requestId } },

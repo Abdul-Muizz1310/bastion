@@ -8,6 +8,7 @@ import {
   type DossierRow,
   type DossierStatus,
   dossierStatus,
+  idleReason,
   STAGE_BUDGET_MS,
   type Stage,
   type StageContext,
@@ -40,7 +41,18 @@ export type AdvanceResult = {
   nextAt: Date | null;
 };
 
-export type AdvanceOptions = { now?: () => Date; stageBudgetMs?: number };
+/** What the runner tells its caller about a claim and an outcome (spec 21 §6.2 "The chain's trace"). */
+export type RunnerTrace = (
+  event: "advance.claim" | "advance.idle" | "advance.outcome",
+  fields: Record<string, string | number | boolean | null>,
+) => void | Promise<void>;
+
+export type AdvanceOptions = {
+  now?: () => Date;
+  stageBudgetMs?: number;
+  /** Must not throw: the route's tracer swallows its own failures. */
+  onTrace?: RunnerTrace;
+};
 
 export type RetryResult =
   | { ok: true; dossier: DossierStatus }
@@ -154,8 +166,14 @@ async function auditOutcome(dossier: DossierRow, row: StepRow): Promise<void> {
   });
 }
 
-async function idle(dossier: DossierRow, ran: Stage | null): Promise<AdvanceResult> {
+async function idle(
+  dossier: DossierRow,
+  ran: Stage | null,
+  now: Date,
+  onTrace: RunnerTrace | undefined,
+): Promise<AdvanceResult> {
   const steps = await loadSteps(dossier.id);
+  await onTrace?.("advance.idle", idleReason(steps, now));
   if (steps.length === 0) {
     // A v1 dossier has no step machine: report what it stored and run nothing.
     return { ran: null, status: null, dossier: dossier.status, nextAt: null };
@@ -172,9 +190,16 @@ export async function advance(
   const dossier = await findDossier(dossierId);
   if (dossier === null) throw new UnknownDossierError(dossierId);
 
-  const claimedPair = await claim(dossier.id, now());
-  if (claimedPair === null) return idle(dossier, null);
+  const onTrace = options.onTrace;
+  const claimedAt = now();
+  const claimedPair = await claim(dossier.id, claimedAt);
+  if (claimedPair === null) return idle(dossier, null, claimedAt, onTrace);
   const { previous, claimed } = claimedPair;
+  await onTrace?.("advance.claim", {
+    stage: claimed.stage,
+    attempt: claimed.attempt,
+    status: claimed.status,
+  });
 
   if (claimed.status === "error") {
     // An abandoned stage on its last attempt: the claim itself failed it (and synced the dossier).
@@ -190,6 +215,7 @@ export async function advance(
 
   const steps = await loadSteps(dossier.id);
   const budgetMs = options.stageBudgetMs ?? STAGE_BUDGET_MS;
+  const startedRun = now();
   const run = await runHandler(
     handlers[claimed.stage],
     {
@@ -205,13 +231,19 @@ export async function advance(
   const finished = now();
   const next = settle(claimed, run, finished, budgetMs);
   const recorded = await recordOutcome(claimed, next, finished);
+  await onTrace?.("advance.outcome", {
+    stage: claimed.stage,
+    status: next.status,
+    ms: finished.getTime() - startedRun.getTime(),
+    recorded: recorded.recorded,
+  });
   if (!recorded.recorded) {
     console.warn("dossier runner: lease lost before recording; result discarded", {
       dossierId: dossier.id,
       stage: claimed.stage,
       attempt: claimed.attempt,
     });
-    return idle(dossier, claimed.stage);
+    return idle(dossier, claimed.stage, finished, onTrace);
   }
   if (isTransition(previous, next)) await auditOutcome(dossier, next);
   return {

@@ -43,7 +43,7 @@ ignores), blank Upstash settings (budgets count in-process; rate limits are off)
 |---|---|
 | `home.spec.ts` | 8 map nodes, each a workbench link whose name holds its state in words; Tab reaches the map, Enter opens a node |
 | `workbenches.spec.ts` | each of the 8 workbenches' main action, clicked (inkthread by keyboard), hands back its receipt with copy button and audit link |
-| `dossier.spec.ts` | compose → run → receipt → verify (7 checks in words; the stub's unsigned receipts fail); the golden dossier verifies 7/7; a dossier with no page open crosses a 12 s scrape and a 12 s seal that fails once with a retryable 503 (the first live smoke's failure) on its own `after()` chain, and the app's log shows no hand-off let go before its successor answered |
+| `dossier.spec.ts` | compose → run → receipt → verify (7 checks in words; the stub's unsigned receipts fail); the golden dossier verifies 7/7; a dossier with no page open crosses a 12 s scrape and a 12 s seal that fails once with a retryable 503 (the first live smoke's failure) on its own `after()` chain, and the app's log shows no hand-off let go before its successor answered, and that every hop's two ends join in the chain's trace |
 | `limits.spec.ts` | no debates left: the submit is held, the API answers 429 and paper-trail is never called; an asleep service reads asleep, then live after "wake again" |
 | `pages.spec.ts` | `/audit` filters, a request's trail, `/time-travel`, `/platform` |
 | `metadata.spec.ts` | spec 20's head tags and metadata routes |
@@ -57,6 +57,7 @@ BASTION_LIVE_SMOKE=1 PLAYWRIGHT_BASE_URL=https://bastion-six.vercel.app pnpm tes
 
 With `PLAYWRIGHT_BASE_URL` set there is no stub and no seed: only `metadata.spec.ts` runs, plus the
 live smoke when `BASTION_LIVE_SMOKE=1`. The smoke spends one debate on that deployment: it composes
-one rapid dossier, follows it only over SSE (nothing nudges it), requires it to succeed through a
+one rapid dossier, follows it only over SSE (nothing nudges it; it gives up once no step has changed
+for 3 minutes), attaches the dossier's chain trace to the report either way, requires it to succeed through a
 single-invocation stage longer than the old 10 s hand-off window, and then passes every verification
 check in the browser. It never runs in CI.
