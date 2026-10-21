@@ -12,29 +12,30 @@ import {
   isAdvanceToken,
 } from "@/dossier/chain";
 import { chainTracer, instanceFacts, newInvocationId, traceId } from "@/dossier/chain-trace";
-import { HANDLERS } from "@/dossier/handlers";
-import { advance, UnknownDossierError } from "@/dossier/runner";
+import type { DriveResult } from "@/dossier/drive";
+import { driveDossier } from "@/dossier/drive-dossier";
+import { type AdvanceResult, UnknownDossierError } from "@/dossier/runner";
 import { errorResponse } from "@/platform/gateway/http";
 import { createRateLimiter } from "@/platform/ratelimit";
 import { visitorFromRequest } from "@/platform/visitor";
 
 /**
- * `POST /api/dossiers/[id]/advance` (spec 21 §6.2): claim the dossier's next runnable stage, run it
- * (one stage, ≤ 240 s), record it, answer the `AdvanceResult`. Idempotent: a concurrent call finds
- * nothing to claim. Anyone may nudge a dossier (the page does, while it is open); visitors are
- * limited to 60 a minute, while the runner's own chained calls carry the internal HMAC header.
+ * `POST /api/dossiers/[id]/advance` (spec 21 §6.2): drives the dossier **in the foreground** — the
+ * request runs stage after stage while its 300 s last (`driveDossier`: each round claims one stage,
+ * with the runner's claim, lease and fencing unchanged) — and answers the last round's result with
+ * the stages it ran and why it stopped. Idempotent: a concurrent caller finds nothing to claim.
+ * Anyone may nudge a dossier (the page does, while it is open); visitors are limited to 60 a minute,
+ * while the runner's own chained calls carry the internal HMAC header. The sweep drives due
+ * dossiers the same way.
  *
- * Chaining: when a stage finished and the next is due within 10 s, `after()` sleeps until it is
- * due and POSTs this route again — see `@/dossier/chain`. The chain is registered before the stage
- * runs (`deferChain`), and the hand-off holds its connection until the next invocation has answered
- * (on Vercel an invocation whose caller leaves early loses its after() work), up to this
- * invocation's own deadline. This route answers as soon as its stage is recorded, so its caller
- * waits for one stage, never for the rest of the chain.
+ * Chaining, best effort: when the loop stops with the next stage due within 10 s, `after()` sleeps
+ * until it is due and POSTs this route again — see `@/dossier/chain`. On Vercel an invocation kept
+ * alive only by after() did not survive a long stage, so nothing relies on the chain: the page's
+ * nudge and the sweep are real clients, and their requests always complete.
  */
 
 export const dynamic = "force-dynamic";
-// One stage's 240 s budget, its recording, and the after() hand-off, which waits for the next
-// invocation's answer until 15 s before this one's end (`handoffDeadline`).
+// The foreground loop's whole budget: stages run until 20 s before this, then the answer.
 export const maxDuration = 300;
 
 const advanceLimiter = createRateLimiter({ max: 60, windowMs: 60_000 });
@@ -92,9 +93,17 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
     (origin, dossierId, delayMs) => chainAdvance(origin, dossierId, delayMs, deadline, { trace }),
   );
   let delayMs: number | null = null;
-  let result: Awaited<ReturnType<typeof advance>>;
+  let driven: DriveResult;
+  let result: AdvanceResult;
   try {
-    result = await advance(id, HANDLERS, { onTrace: (event, fields) => note(event, fields) });
+    driven = await driveDossier(id, {
+      driver: chained ? "chain" : "visitor",
+      deadlineMs: startedAt + maxDuration * 1000,
+      invocation,
+      emit: chainTracer,
+    });
+    if (driven.last === null) throw new Error("the foreground loop ran no round");
+    result = driven.last;
     delayMs = chainDelayMs(result, new Date());
     await note("chain.decision", {
       delayMs,
@@ -114,8 +123,9 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
   }
 
   return answered(
-    Response.json(result, {
-      headers: { "cache-control": "no-store", "x-request-id": requestId },
-    }),
+    Response.json(
+      { ...result, stages: driven.stages, stopped: driven.stopped },
+      { headers: { "cache-control": "no-store", "x-request-id": requestId } },
+    ),
   );
 }

@@ -26,7 +26,11 @@ export type ChainEventName =
   | "chain.response"
   | "chain.letgo"
   | "chain.error"
-  | "chain.settled";
+  | "chain.settled"
+  | "drive.stage"
+  | "drive.stop"
+  | "sweep.entry"
+  | "sweep.done";
 
 export type ChainTraceEvent = {
   event: ChainEventName;

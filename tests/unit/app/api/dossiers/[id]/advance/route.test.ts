@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * `POST /api/dossiers/[id]/advance` (spec 21 §6.2): runs one stage of a dossier and, when a stage
- * finished and more remain, schedules the next advance with `after()`. Rate-limited 60/min per
- * visitor; the runner's own chained calls carry the internal HMAC header and are not limited.
+ * `POST /api/dossiers/[id]/advance` (spec 21 §6.2): drives the dossier in the foreground — stage
+ * after stage while its budget lasts (`driveDossier`, the loop itself tested in drive.test.ts) —
+ * answers the last result with the stages it ran, and, when more remain soon, schedules the next
+ * advance with `after()` as a best-effort accelerator. Rate-limited 60/min per visitor; the
+ * runner's own chained calls carry the internal HMAC header and are not limited.
  */
 
 const {
@@ -26,6 +28,8 @@ const {
     chainDelayMs: vi.fn(),
   };
 });
+const { driveDossier } = vi.hoisted(() => ({ driveDossier: vi.fn() }));
+vi.mock("@/dossier/drive-dossier", () => ({ driveDossier }));
 const { chainTracer } = vi.hoisted(() => ({ chainTracer: vi.fn(async () => {}) }));
 vi.mock("@/dossier/chain-trace", async (orig) => ({
   ...(await orig<typeof import("@/dossier/chain-trace")>()),
@@ -55,7 +59,6 @@ vi.mock("next/server", async (orig) => ({
 import { NextRequest } from "next/server";
 import * as route from "@/app/api/dossiers/[id]/advance/route";
 import { ADVANCE_HEADER, advanceToken } from "@/dossier/chain";
-import { HANDLERS } from "@/dossier/handlers";
 import { type AdvanceResult, UnknownDossierError } from "@/dossier/runner";
 import { LEASE_MS, TIMEOUT_GRACE_MS } from "@/dossier/stages";
 
@@ -93,6 +96,15 @@ beforeEach(async () => {
   vi.stubEnv("IRON_SESSION_PASSWORD", "x".repeat(32));
   check.mockReset().mockResolvedValue({ success: true, limit: 60, remaining: 59 });
   advance.mockReset().mockResolvedValue(result());
+  // The loop is tested on its own: here one round, whose result comes from the `advance` stub.
+  driveDossier.mockReset().mockImplementation(async (id: string) => {
+    const last = (await advance(id)) as AdvanceResult;
+    return {
+      last,
+      stages: last.ran !== null && last.status !== null ? [{ stage: last.ran, status: last.status }] : [],
+      stopped: "later",
+    };
+  });
   chainAdvance.mockReset().mockResolvedValue(undefined);
   afterCallbacks.length = 0;
   afterKinds.length = 0;
@@ -149,9 +161,12 @@ describe("POST /api/dossiers/[id]/advance", () => {
     expect(chainAdvance).not.toHaveBeenCalled();
   });
 
-  it("runs one stage with the default handlers and answers the result, uncached", async () => {
+  it("drives the dossier in the foreground as a visitor, with the request's whole 300 s", async () => {
     const res = await post();
-    expect(advance).toHaveBeenCalledWith(ID, HANDLERS, { onTrace: expect.any(Function) });
+    expect(driveDossier).toHaveBeenCalledExactlyOnceWith(
+      ID,
+      expect.objectContaining({ driver: "visitor", deadlineMs: NOW.getTime() + 300_000 }),
+    );
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(await res.json()).toEqual({
@@ -159,7 +174,32 @@ describe("POST /api/dossiers/[id]/advance", () => {
       status: "ok",
       dossier: "running",
       nextAt: at(-1000).toISOString(),
+      stages: [{ stage: "wake", status: "ok" }],
+      stopped: "later",
     });
+  });
+
+  it("answers the last round's result with every stage it ran and why it stopped", async () => {
+    driveDossier.mockResolvedValue({
+      last: result({ ran: "record", dossier: "succeeded", nextAt: null }),
+      stages: [
+        { stage: "seal", status: "ok" },
+        { stage: "debate", status: "waiting" },
+        { stage: "debate", status: "ok" },
+        { stage: "record", status: "ok" },
+      ],
+      stopped: "done",
+    });
+    const body = await (await post()).json();
+    expect(body).toMatchObject({ ran: "record", dossier: "succeeded", stopped: "done" });
+    expect(body.stages).toHaveLength(4);
+    await runAfter();
+    expect(chainAdvance).not.toHaveBeenCalled();
+  });
+
+  it("drives as the chain when the runner's own HMAC header is present", async () => {
+    await post({ [ADVANCE_HEADER]: advanceToken(ID) });
+    expect(driveDossier).toHaveBeenCalledWith(ID, expect.objectContaining({ driver: "chain" }));
   });
 
   it("schedules the next advance with after() when a stage finished and more remain", async () => {
@@ -276,8 +316,11 @@ describe("POST /api/dossiers/[id]/advance", () => {
       expect(events.map((e) => e.event)).toEqual(["advance.entry", "chain.decision", "advance.answer"]);
       expect(events[1]).toMatchObject({ delayMs: 0, ran: "wake", stepStatus: "ok", dossierStatus: "running" });
       expect(events[2]).toMatchObject({ status: 200 });
-      // The runner's own events reach the same tracer through onTrace.
-      expect(advance.mock.calls[0]?.[2]).toMatchObject({ onTrace: expect.any(Function) });
+      // The runner's and the loop's events reach the same tracer, under this invocation.
+      expect(driveDossier.mock.calls[0]?.[1]).toMatchObject({
+        invocation: events[0]?.invocation,
+        emit: chainTracer,
+      });
     });
 
     it("traces a chained entry with its caller's invocation id, kept only if it is an id", async () => {
