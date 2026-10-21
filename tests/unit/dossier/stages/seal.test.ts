@@ -127,6 +127,31 @@ describe("seal stage", () => {
     expect(out).toEqual({ kind: "ok", output: { certified: 2, total: 2 } });
   });
 
+  it("seals certificates whose embedding failed (embedding_id null): it reads only id, hash and signature", async () => {
+    const unembedded = inkprint.certifyBatch.output.parse(
+      fixture("inkprint", "certificates-batch-unembedded.json"),
+    );
+    const first = unembedded.certificates[0];
+    if (!first) throw new Error("fixture");
+    expect(first.fingerprints.embedding_id).toBeNull();
+    const certify = vi.fn(async () => ({
+      ok: true as const,
+      data: { certificates: [first] },
+      status: 200,
+      requestId: "r",
+      ms: 1,
+    }));
+    const { stage, saved } = setup({ certify });
+    expect(await stage(ctxWith([cand(1)]))).toEqual({
+      kind: "ok",
+      output: { certified: 1, total: 1 },
+    });
+    expect(saved[0]?.[0]).toMatchObject({
+      certificateId: first.certificate_id,
+      inkprintHash: first.fingerprints.sha256,
+    });
+  });
+
   it("does not re-certify what a previous attempt already stored", async () => {
     const all = many(4);
     const existing = all.slice(0, 3).map((c) => ({ stableId: c.key, certificateId: "cert" }));

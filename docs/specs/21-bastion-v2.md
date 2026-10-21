@@ -370,7 +370,7 @@ Invariants and cases:
 | wake | `GET /health` on every service the dossier needs, in parallel, up to 90 s | Which services are live |
 | gather | magpie `POST /api/scrape/batch` (skipped with no sources) | Web evidence candidates |
 | read | inkthread: uploads were started at compose time; poll `GET /jobs/{id}` until done; fetch graph + reading (skipped with no documents) | Passages and tables, with locators |
-| seal | inkprint `POST /certificates/batch` over the selected evidence (≤ 12 items) | A certificate per evidence item |
+| seal | inkprint `POST /certificates/batch` over the selected evidence (≤ 12 items) | A certificate per evidence item (an item inkprint could not embed is certified all the same, `embedding_id` null; nothing reads it) |
 | debate | paper-trail `POST /debates` with `evidence_pool` = the sealed items, which its planner prefers (a web search only for a sub-question the pool cannot answer); poll until done; fetch `transcript.json` | Verdict, confidence, transcript hash + signature |
 | measure | `GET /_slowquery/queries?request_id=` on every service the dossier called | Perf receipt (canonical JSON) and its SHA-256 |
 | envelope | inkprint `POST /dossiers/envelope` with the cert ids, transcript hash, perf hash and metadata (graph hashes, audit digest) | Envelope id + signature |
