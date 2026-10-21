@@ -12,6 +12,11 @@ import { z } from "zod";
  * same files.
  */
 
+/** Where an app's output is written during a run (`.e2e/<tenant>.log`), so a spec can read it back. */
+export function serverLogFile(root: string, tenant: string): string {
+  return join(root, ".e2e", `${tenant}.log`);
+}
+
 export type RunFiles = {
   certPath: string;
   keyPath: string;

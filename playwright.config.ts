@@ -30,7 +30,7 @@ import {
   serviceUrls,
   type Tenant,
 } from "./tests/e2e/fixtures/env";
-import { prepareRun } from "./tests/e2e/fixtures/run-files";
+import { prepareRun, serverLogFile } from "./tests/e2e/fixtures/run-files";
 
 const DEPLOYMENT = process.env.PLAYWRIGHT_BASE_URL;
 const LIVE_SMOKE = process.env.BASTION_LIVE_SMOKE === "1";
@@ -50,7 +50,8 @@ function stubRunServers(): WebServer[] {
 
   const app = (tenant: Tenant, port: number, budgets: Readonly<Record<string, string>>) => ({
     name: tenant,
-    command: `pnpm exec next start --port ${port}`,
+    // The app's output goes to .e2e/<tenant>.log (case 5 reads the runner's hand-off warnings back).
+    command: `pnpm exec next start --port ${port} 2>&1 | tee "${serverLogFile(__dirname, tenant)}"`,
     url: `http://localhost:${port}/api/health`,
     reuseExistingServer: false,
     timeout: 120_000,

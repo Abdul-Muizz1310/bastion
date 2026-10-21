@@ -27,7 +27,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer } from "node:https";
 import { crc32, deflateSync } from "node:zlib";
 // Node resolves only explicit extensions when it runs TypeScript directly.
-import { SERVICE_IDS, SLOW_SCRAPE_MS, SLOW_SOURCE, TENANTS } from "./env.ts";
+import { SERVICE_IDS, SLOW_SOURCE, SLOW_STAGE_MS, TENANTS } from "./env.ts";
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type JsonObject = { [key: string]: Json };
@@ -176,6 +176,8 @@ const debates = new Map<string, { claim: string; reads: number }>();
 const jobs = new Map<string, number>();
 const scans = new Map<string, { certificateId: string; reads: number }>();
 const certificates = new Map<string, string>();
+/** Dossiers citing the slow source whose first seal already ran long and failed. */
+const slowSeals = new Set<string>();
 const users = new Map<string, JsonObject>(
   USERS.map((u) => {
     const user = object(u, "user");
@@ -246,7 +248,7 @@ async function magpie({ req, res, path, url, method }: Ctx): Promise<void> {
   if (method === "POST" && path === "/api/scrape/batch") {
     const body = await jsonBody(req);
     const sources = array(body.sources ?? null, "sources").map((s) => text(s, "source"));
-    if (sources.includes(SLOW_SOURCE)) await sleep(SLOW_SCRAPE_MS);
+    if (sources.includes(SLOW_SOURCE)) await sleep(SLOW_STAGE_MS);
     const known = sources.filter((s) => SOURCE_NAMES.has(s));
     return send(res, 200, {
       runs: known.map((source) => ({
@@ -314,6 +316,22 @@ async function inkprint({ req, res, path, method }: Ctx): Promise<void> {
   if (method === "POST" && path === "/certificates/batch") {
     const body = await jsonBody(req);
     const items = array(body.items ?? null, "items").map((i) => object(i, "item"));
+    // The first live smoke's failure: a seal that runs past the old 10 s hand-off and then answers a
+    // retryable 503 (inkprint behind a rate-limited embedding provider). Once per dossier.
+    const meta = items.map((i) => object(i.metadata ?? null, "metadata"));
+    const slow = meta.find((m) => text(m.url ?? null, "url").includes(`/${SLOW_SOURCE}/`));
+    // The retry then succeeds the way inkprint now answers a failed embedding call (its PR #16):
+    // every item certified, embedding_id null.
+    let unembedded = false;
+    if (slow !== undefined) {
+      const dossierId = text(slow.dossier_id ?? null, "dossier_id");
+      if (!slowSeals.has(dossierId)) {
+        slowSeals.add(dossierId);
+        await sleep(SLOW_STAGE_MS);
+        return send(res, 503, { detail: "embedding provider rate limited (stub)" });
+      }
+      unembedded = true;
+    }
     return send(res, 201, {
       certificates: items.map((item) => {
         const id = randomUUID();
@@ -327,7 +345,7 @@ async function inkprint({ req, res, path, method }: Ctx): Promise<void> {
           fingerprints: {
             ...object(BATCH_RECORD.fingerprints ?? null, "fingerprints"),
             sha256: sha256(canonical(certified)),
-            embedding_id: randomUUID(),
+            embedding_id: unembedded ? null : randomUUID(),
           },
         });
       }),

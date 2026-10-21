@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { z } from "zod";
-import { HANDOFF_MS } from "../fixtures/env";
+import { OLD_HANDOFF_MS } from "../fixtures/env";
 import { finishedDossier, type StreamStep, stageMs } from "../fixtures/helpers";
 
 /**
@@ -78,8 +78,8 @@ test("live: a rapid dossier runs on its own chain past the 10 s handoff and veri
   );
   expect(
     longest,
-    `no single-invocation stage outlasted the ${HANDOFF_MS} ms handoff, so this run did not prove the chain survives its caller letting go; run it again (more sources make gather longer)`,
-  ).toBeGreaterThan(HANDOFF_MS);
+    `no single-invocation stage outlasted the ${OLD_HANDOFF_MS} ms window the hand-off used to have, so this run did not prove the chain survives its caller letting go; run it again (more sources make gather longer)`,
+  ).toBeGreaterThan(OLD_HANDOFF_MS);
 
   await page.goto(`/d/${id}`);
   await page.getByRole("button", { name: "verify everything" }).click();

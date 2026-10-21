@@ -773,9 +773,12 @@ production host or database.
    words. Against the stub the signature checks fail (the stub cannot sign as inkprint) while bastion's
    own receipts pass — verification never passes what it could not prove.
 4. The golden dossier: "verify everything" answers 7 of 7 pass; the receipts bundle downloads.
-5. The handoff: a dossier composed through the API, with no page open to nudge it, crosses a stage
-   that takes 12 s — longer than the runner's 10 s handoff — and still reaches `succeeded` by its own
-   `after()` chain.
+5. The hand-off: a dossier composed through the API, with no page open to nudge it, crosses two
+   stages longer than the old 10 s hand-off — a 12 s scrape, then a 12 s seal that ends in a
+   retryable 503 due again in 5 s (the first live smoke's failure) — and still reaches `succeeded` by
+   its own `after()` chain, seal on its second attempt. The app's log is read back: no hand-off of
+   that dossier let go before its successor answered (a caller that leaves early is the one thing
+   `next start` survives and Vercel does not).
 6. Budget spent (limits): the compose page says no debates are left and holds the submit; the API
    answers 429 `budget_exhausted`, and the stub never sees a debate from that app.
 7. Asleep (limits): the map shows feathers asleep; its workbench gate reads asleep after the 90 s wake
@@ -786,7 +789,8 @@ production host or database.
 **Live smoke** (`tests/e2e/live/`, skipped unless `BASTION_LIVE_SMOKE=1` and `PLAYWRIGHT_BASE_URL` are
 set; never in CI): one rapid dossier against the deployment named by `PLAYWRIGHT_BASE_URL`, followed
 over SSE without opening its page (nothing nudges it), which must succeed through a single-invocation
-stage longer than 10 s and then pass every verification check in the browser. It spends one debate.
+stage longer than the old 10 s hand-off window (the first live run stopped right there, §6.2) and
+then pass every verification check in the browser. It spends one debate.
 
 ## 11. Sub-projects and order
 
