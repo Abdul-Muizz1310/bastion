@@ -73,8 +73,9 @@ reading a finished dossier needs no service at all, so start there.
 
 - A claim, a magpie source or an inkthread sample (or a PDF up to 4 MB), a mode. **run the dossier**
   spends one of today's debates and opens its public page, which follows the eight stages live.
-  The run does not need the page open: close it and come back to the same URL (only a stage that
-  overruns its 240 s budget waits for an open page to nudge it on).
+  While the page is open its nudge drives the run, stage after stage, starting as soon as it loads.
+  The run does not need the page: close it and the sweep (every 30 minutes) picks it up; come back
+  to the same URL, or reopen the page to drive it again at once.
 
 ## Talking points
 

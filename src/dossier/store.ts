@@ -10,6 +10,7 @@ import {
   dossierStatus,
   nextRunnable,
   retryStep,
+  STAGES,
   type Stage,
   type StepRow,
   stepRowSchema,
@@ -299,4 +300,44 @@ export async function insertDossier(
 
 function columnsWithKey(row: StepRow) {
   return { dossierId: row.dossierId, stage: row.stage, ...columns(row) };
+}
+
+/** The stages in run order, as a Postgres array literal (constants, never input). */
+const STAGE_ORDER = sql.raw(`ARRAY[${STAGES.map((s) => `'${s}'`).join(", ")}]::text[]`);
+const dueRow = z.object({ id: z.string().regex(UUID) });
+export const MAX_DUE = 500;
+
+/**
+ * The sweep's selection (spec 21 §6.2 "The sweep"): pending or running v2 dossiers whose frontier
+ * stage — the first in run order that is not ok or skipped — is due at `now` (`not_before <= now`
+ * and its lease expired), oldest first, at most `limit`. A dossier with no step rows (v1), a
+ * finished one, or one whose frontier is an error, still leased or not yet due is not selected.
+ * The time is passed as text: a Date in a raw drizzle template breaks under postgres-js.
+ */
+export async function dueDossiers(now: Date, limit: number): Promise<string[]> {
+  if (Number.isNaN(now.getTime())) throw new RangeError("dueDossiers: now must be a valid date");
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_DUE) {
+    throw new RangeError(`dueDossiers: limit must be a whole number from 1 to ${MAX_DUE}`);
+  }
+  const at = now.toISOString();
+  const rows = await getDb().execute(sql`
+    select d.id
+    from dossiers d
+    join lateral (
+      select s.status, s.not_before, s.lease_until
+      from dossier_steps s
+      where s.dossier_id = d.id and s.status not in ('ok', 'skipped')
+      order by array_position(${STAGE_ORDER}, s.stage)
+      limit 1
+    ) f on true
+    where d.status in ('pending', 'running')
+      and f.status in ('pending', 'waiting', 'running')
+      and f.not_before <= ${at}::timestamptz
+      and f.lease_until < ${at}::timestamptz
+    order by d.created_at asc, d.id asc
+    limit ${limit}`);
+  return z
+    .array(dueRow)
+    .parse([...rows])
+    .map((r) => r.id);
 }

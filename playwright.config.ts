@@ -21,6 +21,7 @@ import { defineConfig, devices, type PlaywrightTestConfig } from "@playwright/te
 import {
   APP_PORT,
   APP_URL,
+  E2E_SWEEP_TOKEN,
   isLocalDatabase,
   LIMITS_BUDGETS,
   LIMITS_PORT,
@@ -50,7 +51,7 @@ function stubRunServers(): WebServer[] {
 
   const app = (tenant: Tenant, port: number, budgets: Readonly<Record<string, string>>) => ({
     name: tenant,
-    // The app's output goes to .e2e/<tenant>.log (case 5 reads the runner's hand-off warnings back).
+    // The app's output goes to .e2e/<tenant>.log (cases 3 and 5 read its drive.stage lines back).
     command: `pnpm exec next start --port ${port} 2>&1 | tee "${serverLogFile(__dirname, tenant)}"`,
     url: `http://localhost:${port}/api/health`,
     reuseExistingServer: false,
@@ -88,7 +89,7 @@ function stubRunServers(): WebServer[] {
         E2E_STUB_KEY: files.keyPath,
       },
     },
-    app("main", APP_PORT, MAIN_BUDGETS),
+    app("main", APP_PORT, { ...MAIN_BUDGETS, BASTION_SWEEP_TOKEN: E2E_SWEEP_TOKEN }),
     app("limits", LIMITS_PORT, LIMITS_BUDGETS),
   ];
 }

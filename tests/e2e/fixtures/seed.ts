@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import postgres from "postgres";
 import { z } from "zod";
-import { isLocalDatabase } from "./env";
+import { isLocalDatabase, STALLED_DOSSIER_ID } from "./env";
 
 /**
  * Playwright's global setup for the stub run (spec 21 §10.1): writes the golden dossier — every
@@ -322,6 +322,28 @@ export default async function seedGoldenDossier(): Promise<void> {
         );
       }
       await tx`select setval('events_id_seq', greatest((select max(id) from events), 100))`;
+
+      // A dossier nobody drives: every stage pending and due, created long ago so the sweep takes
+      // it first (spec 21 §10.1 case 9). Written again on every run.
+      const S = STALLED_DOSSIER_ID;
+      const long = new Date("2000-01-01T00:00:00.000Z");
+      await tx`delete from dossiers where id = ${S}`;
+      await tx`insert into dossiers (id, visitor, claim, sources, mode, status, request_id, created_at, updated_at)
+        values (${S}, 'v_e2estalled', 'Hacker News lists the basic filing fee as 350 dollars.',
+                ${["hackernews"]}, 'rapid', 'pending', ${`req-stalled-${S}`}, ${long}, ${long})`;
+      for (const stage of [
+        "wake",
+        "gather",
+        "read",
+        "seal",
+        "debate",
+        "measure",
+        "envelope",
+        "record",
+      ]) {
+        await tx`insert into dossier_steps (dossier_id, stage, status, attempt, not_before)
+          values (${S}, ${stage}, 'pending', 0, ${long})`;
+      }
     });
   } finally {
     await sql.end({ timeout: 5 });

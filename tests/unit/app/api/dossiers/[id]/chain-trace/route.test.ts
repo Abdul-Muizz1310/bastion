@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * `GET /api/dossiers/[id]/chain-trace` (spec 21 §6.2 "The chain's trace"): a dossier's chain events,
+ * `GET /api/dossiers/[id]/chain-trace` (spec 21 §6.2 "The trace"): a dossier's chain events,
  * oldest first, from the per-dossier list. Public like the dossier itself (ids and timings only),
  * 30 a minute per visitor; 503 when no list is kept (no Upstash).
  */

@@ -446,7 +446,7 @@ describe("retryStage — retry from this stage (spec §6.4)", () => {
   });
 });
 
-/** Spec 21 §6.2 "The chain's trace": what the runner tells the route about its claim and outcome. */
+/** Spec 21 §6.2 "The trace": what the runner tells the route about its claim and outcome. */
 describe("advance — its trace", () => {
   type Traced = { event: string } & Record<string, unknown>;
   const recorder = () => {

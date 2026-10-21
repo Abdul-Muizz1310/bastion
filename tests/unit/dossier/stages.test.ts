@@ -638,8 +638,8 @@ describe("stepRowSchema (rows read back from Postgres)", () => {
 });
 
 /**
- * Spec 21 §6.2 "The chain's trace": when an advance claims nothing, why — so a chained call that
- * arrives early (clock skew), finds a lease still held, or races another caller can be told apart.
+ * Spec 21 §6.2 "The trace": when an advance claims nothing, why — so a call that arrives
+ * early (clock skew), finds a lease still held, or races another caller can be told apart.
  */
 describe("idleReason", () => {
   const T = new Date("2026-10-21T07:16:46.000Z");

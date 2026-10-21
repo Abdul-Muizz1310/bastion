@@ -6,12 +6,12 @@ import type { StepView } from "../step-view";
  *
  * The frontier stage — the first that is not ok or skipped — is **due** when it is running and its
  * lease has expired (the invocation that claimed it is gone), or it is pending or waiting and its
- * `nextAt` has passed with no lease held. That is exactly when `advance` can claim it. The page
- * nudges `NUDGE_GRACE_MS` after that, because the runner's own chain arrives on time and normally
- * wins; the page is the fallback that keeps a run from stalling for good.
+ * `nextAt` has passed with no lease held. That is exactly when `advance` can claim it, and the page
+ * nudges then — on load for a new dossier — with no grace: the page is one of the run's two drivers
+ * and no chain competes for the claim any more (Ruling AM). Each nudge drives in the foreground.
  */
 
-export const NUDGE_GRACE_MS = 5_000;
+export const NUDGE_GRACE_MS = 0;
 
 const SETTLED = new Set(["ok", "skipped"]);
 

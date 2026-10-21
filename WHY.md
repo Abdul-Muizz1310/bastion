@@ -31,9 +31,10 @@ each visitor's calls to a service, spends and reads of the log are rate-limited.
 "budget spent" or "asleep" for what they are, never as a product failing.
 
 **A dossier is rows, not a promise.** Each of the eight stages is a Postgres row with a lease, an
-attempt count and a time it may run again. One stage runs per invocation and hands the dossier to
-the next with `after()`, so a run survives a crash, a timeout and a closed tab, and two browsers
-nudging the same dossier cannot run a stage twice.
+attempt count and a time it may run again. A request drives it stage after stage in the
+foreground — the visitor's page, or a token-gated sweep for runs nobody watches — so a run survives
+a crash, a timeout and a closed tab, and two browsers nudging the same dossier cannot run a stage
+twice.
 
 **Verification without trusting bastion.** The issuers sign their receipts with their own keys.
 "Verify everything" fetches those keys and re-checks each signature and hash live; bastion's own
@@ -48,12 +49,13 @@ audit event. A new capability is a row in that table, not a new code path.
 
 ## What I'd change if I did it again
 
-- **A queue under the runner.** The dossier chain rides on `after()`, and it broke twice on
-  platform details: the end-to-end suite found that Next runs a function given to `after()` only
-  when the response closes, and the first live smoke found that on Vercel an invocation whose caller
-  has left loses its `after()` work. Registering the hand-off first and holding each caller until
-  its successor answers fixed both, but a durable queue (QStash, or Vercel's own) would make each
-  hand-off a message that cannot be lost.
+- **A queue under the runner.** The runner first chained itself with `after()`, and that broke on
+  platform details three times: Next runs a function given to `after()` only when the response
+  closes, an invocation whose caller has left loses its `after()` work, and on Vercel an invocation
+  kept alive only by `after()` did not survive a long stage. Now no work outlives a request: the
+  visitor's page drives the run, and a sweep every 30 minutes drives what nobody watches — so an
+  abandoned run can wait half an hour. A durable queue (QStash, or Vercel's own) would pick it up
+  in seconds.
 - **Per-visitor quotas under the shared budgets.** Today one visitor can spend the day's debates
   for everyone. A small per-visitor share of each budget would keep the platform usable for the next
   person without raising the totals.

@@ -16,7 +16,7 @@ flowchart TD
     Pages --> Routes
 
     Routes --> GW[Gateway · callCapability<br/>one pipeline for 37 capabilities]
-    Routes --> Runner[Runner · advance<br/>one stage per invocation]
+    Routes --> Runner[Runner · the foreground loop<br/>stage after stage per request]
     Runner --> GW
     Routes --> Verify[Verification<br/>7 checks, live]
     Verify --> GW
@@ -85,10 +85,34 @@ service.
 ## The runner
 
 A dossier is one `dossiers` row and eight `dossier_steps` rows, created with its documents in one
-transaction. `POST /api/dossiers/[id]/advance` claims the next runnable stage atomically
+transaction. A round of the runner claims the next runnable stage atomically
 (`UPDATE … WHERE lease_until < now() AND not_before <= now() … RETURNING`), runs that one stage
-within a 240 s budget under a 270 s lease, records the outcome and the dossier's status in one
-transaction, and answers. A second caller finds nothing to claim.
+within its budget under a 270 s lease, and records the outcome and the dossier's status in one
+transaction. A second caller finds nothing to claim.
+
+**The foreground loop.** `POST /api/dossiers/[id]/advance` drives the dossier in the request
+itself: round after round, each stage given `min(240 s, remaining − 20 s)` of the request's 300 s.
+A round starts only when `remaining − 20 s ≥ 100 s`: one started with less would time out, burn an
+attempt, hold the stage off for 300 s and could spend twice. After a stage the loop continues at
+once when the next is due, sleeps in-process when it is due within 10 s (a waiting poll, a retry's
+backoff), and answers with the stages it ran and why it stopped: the dossier ended (`done`), the
+next stage is further out (`later`), no full round fits (`budget`), its slice ended (`slice`), or
+another caller holds the stage (`contended`).
+
+**Two drivers, both real clients.** Nothing is handed to `after()` — not by advance, compose or
+retry. On Vercel an invocation kept alive only by `after()` and called by another such invocation
+did not survive a 13.7 s stage: it recorded the stage and vanished, leaving a 270 s lease behind,
+while a request with a real client always completes. So a run is carried by:
+
+1. **the visitor's page** — its nudge calls advance as soon as the page loads and again whenever
+   the frontier stage is due, and each call drives in the foreground;
+2. **the sweep** — `POST /api/dossiers/sweep`, gated by `Authorization: Bearer
+   <BASTION_SWEEP_TOKEN>` (constant-time; at least 32 characters, else 503), for runs nobody
+   watches. It drives every pending or running dossier whose frontier stage is due, oldest first,
+   with the same loop and the same 100 s floor, giving each a 90 s slice to start rounds in so one
+   long debate cannot starve the rest. A GitHub Actions schedule calls it every 30 minutes as a
+   safety net (each call wakes the database, so the schedule is sparse), and the live smoke calls
+   it itself.
 
 ```mermaid
 stateDiagram-v2
@@ -105,34 +129,21 @@ stateDiagram-v2
     skipped --> [*]
 ```
 
-**Chaining.** Before the stage runs, the route registers the hand-off to the next invocation with
-`after()`, as a promise that settles once the stage is recorded: the next delay (now, or the 3 s
-of a waiting poll), or nothing to chain. The hand-off POSTs the same route with an internal HMAC
-header (so the runner never meets the visitor rate limit) and **holds the connection until the next
-invocation has answered**: on Vercel an invocation whose caller leaves before it answers loses its
-`after()` work, so the first live dossier stopped after a 12 s seal when the old 10 s window let go.
-The wait is bounded by the caller's own deadline (its start + `maxDuration` − 15 s), and the next
-invocation answers as soon as its stage is recorded — its own hand-off runs after that answer — so
-each invocation waits for one stage, never for the rest of the chain, and at most two invocations
-of a dossier are alive at once. A *function* given to `after()` runs only when the response closes;
-a promise is kept alive with `waitUntil` and a `finally` settles it on every path. Compose and
-retry start a run the same way (both `maxDuration` 300). The e2e suite crosses a 12 s scrape and a
-12 s seal that fails once with a retryable 503, with no page open, and reads the app's log back to
-prove no hand-off let go early.
+**The trace** (diagnostic). The advance route and the sweep write one JSON line per event, tagged
+`dossier-chain`, with ids, stages, statuses and milliseconds only: advance's entry (this instance's
+id and request count, its region), a refusal, the claim or why nothing was claimed (a lease held,
+not yet due by this clock, lost to another caller), the outcome and its ms, and the answer; the
+loop's `drive.stage` after each round (the driver, `visitor` or `sweep`) and `drive.stop`; the
+sweep's entry and end, written only when it selected something. With `BASTION_CHAIN_TRACE=1` and
+Upstash configured, the lines also go to a per-dossier list, read back at
+`GET /api/dossiers/[id]/chain-trace`, because a platform may not keep what a function logs; without
+the flag nothing is written to Upstash. The e2e suite reads the app's log back to prove a dossier
+with no page open is driven by the sweep alone and a dossier in the browser by its page alone.
 
-**The chain's trace** (diagnostic). Every hop writes one JSON line per event, tagged
-`dossier-chain`, with ids, stages, statuses and milliseconds only: the entry (chained or not, the
-caller's invocation id, this instance's id and request count, its region), the claim or why nothing
-was claimed (a lease held, not yet due by this clock, lost to another caller), the outcome and its
-ms, the decision, the answer, and then — inside the `after()` work — whether it ran, how late its
-timer fired, the fetch, and the successor's answer (status, elapsed, the successor's invocation id,
-the platform's request id). With Upstash the lines also go to a per-dossier list, read back at
-`GET /api/dossiers/[id]/chain-trace`, because a platform may not keep what a function logs after
-its answer.
-
-**Recovery.** The dossier page nudges `advance` when its frontier stage has been due for 5 s
-(a lease that expired, a `not_before` that passed), backing off on failure; a crashed invocation's
-stage becomes claimable again when its lease ends. A wait capped at 15 minutes becomes an error.
+**Recovery.** The dossier page nudges `advance` on load and whenever its frontier stage is due (a
+lease that expired, a `not_before` that passed), backing off on failure; with no page open the
+sweep picks the run up within 30 minutes. A crashed invocation's stage becomes claimable again
+when its lease ends, for the next nudge or sweep. A wait capped at 15 minutes becomes an error.
 
 **Progress.** `GET /api/dossiers/[id]/stream` polls the rows every 2 s and sends `step`, `status`,
 `done`, `heartbeat` and `timeout` events, reading only scalar columns and a few small projections
@@ -246,9 +257,9 @@ every action disabled until every service is live.
 
 1. No sign-in and no cookies. A visitor is a daily, irreversible pseudonym; it is the token `sub`,
    the rate-limit key and the audit actor.
-2. bastion holds two secrets of its own — the root secret and the Ed25519 signing key — beside the
-   database URL and the Upstash token. Every other key is HKDF-derived from the root secret with a
-   purpose label (the visitor ids, the runner's advance tokens).
+2. bastion holds three secrets of its own — the root secret, the Ed25519 signing key and the sweep's
+   token — beside the database URL and the Upstash token. Every other key is HKDF-derived from the
+   root secret with a purpose label (the visitor ids).
 3. Every downstream call goes through the gateway. Each token is Ed25519, bound to `iss: bastion` and
    one `aud`, lives 60 s and names its capability; backends fail closed without a key (spec 22).
 4. Every downstream answer is parsed with the capability's schema; a body that does not parse is

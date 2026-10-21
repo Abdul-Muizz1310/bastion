@@ -3,42 +3,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 /**
  * `POST /api/dossiers/[id]/retry {stage}` (spec 21 §6.4, "retry from this stage"): resets only an
  * `error` stage — and only while nothing after it is ok — to pending with attempt 0; 409 otherwise.
- * Rate-limited 5 an hour per visitor; the reset is audited (by `retryStage`) and the run restarts.
+ * Rate-limited 5 an hour per visitor; the reset is audited (by `retryStage`); the page's nudge (or
+ * the sweep) drives the retried stage — nothing is started with after().
  */
 
-const { check, createRateLimiter, retryStage, afterCallbacks, afterKinds, chainAdvance } =
-  vi.hoisted(() => {
-    const check = vi.fn();
-    return {
-      check,
-      createRateLimiter: vi.fn(() => ({ check })),
-      retryStage: vi.fn(),
-      afterCallbacks: [] as Array<() => unknown>,
-      afterKinds: [] as Array<"function" | "promise">,
-      chainAdvance: vi.fn(),
-    };
-  });
+const { check, createRateLimiter, retryStage, afterCallbacks } = vi.hoisted(() => {
+  const check = vi.fn();
+  return {
+    check,
+    createRateLimiter: vi.fn(() => ({ check })),
+    retryStage: vi.fn(),
+    afterCallbacks: [] as Array<() => unknown>,
+  };
+});
 
 vi.mock("@/platform/ratelimit", () => ({ createRateLimiter }));
 vi.mock("@/dossier/runner", async (orig) => ({
   ...(await orig<typeof import("@/dossier/runner")>()),
   retryStage,
 }));
-vi.mock("@/dossier/chain", async (orig) => ({
-  ...(await orig<typeof import("@/dossier/chain")>()),
-  chainAdvance,
-}));
-const { chainTracer } = vi.hoisted(() => ({ chainTracer: vi.fn(async () => {}) }));
-vi.mock("@/dossier/chain-trace", async (orig) => ({
-  ...(await orig<typeof import("@/dossier/chain-trace")>()),
-  chainTracer,
-}));
 vi.mock("next/server", async (orig) => ({
   ...(await orig<typeof import("next/server")>()),
-  // after() takes a function (run once the response closes) or a promise (kept alive at once).
-  after: (task: (() => unknown) | Promise<unknown>) => {
-    afterCallbacks.push(typeof task === "function" ? task : () => task);
-    afterKinds.push(typeof task === "function" ? "function" : "promise");
+  after: (task: () => unknown) => {
+    afterCallbacks.push(task);
   },
 }));
 
@@ -48,8 +35,6 @@ import { isVisitorId } from "@/platform/visitor";
 
 const ID = "550e8400-e29b-41d4-a716-446655440000";
 const NOW = new Date("2026-10-21T12:00:00.000Z");
-/** The hand-off's deadline: this invocation's start + maxDuration (300 s) − the 15 s margin. */
-const DEADLINE = NOW.getTime() + 285_000;
 
 function post(body: string, contentType = "application/json"): Promise<Response> {
   const req = new NextRequest(`https://bastion.test/api/dossiers/${ID}/retry`, {
@@ -66,9 +51,7 @@ beforeEach(() => {
   vi.stubEnv("IRON_SESSION_PASSWORD", "x".repeat(32));
   check.mockReset().mockResolvedValue({ success: true, limit: 5, remaining: 4 });
   retryStage.mockReset().mockResolvedValue({ ok: true, dossier: "running" });
-  chainAdvance.mockReset().mockResolvedValue(undefined);
   afterCallbacks.length = 0;
-  afterKinds.length = 0;
 });
 
 afterEach(() => {
@@ -110,36 +93,15 @@ describe("POST /api/dossiers/[id]/retry", () => {
     expect(retryStage).not.toHaveBeenCalled();
   });
 
-  it("may stay until the restarted stage has answered (maxDuration 300)", () => {
-    expect(route.maxDuration).toBe(300);
-  });
-
-  it("resets the stage as the visitor and restarts the run with after()", async () => {
+  it("resets the stage as the visitor and starts nothing in the background (Ruling AM)", async () => {
     const res = await post(JSON.stringify({ stage: "debate" }));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ stage: "debate", dossier: "running" });
     const [id, stage, actor] = retryStage.mock.calls[0] ?? [];
     expect([id, stage]).toEqual([ID, "debate"]);
     expect(isVisitorId(actor)).toBe(true);
-    expect(afterCallbacks).toHaveLength(1);
-    for (const cb of afterCallbacks) await cb();
-    expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 0, DEADLINE, expect.anything());
-  });
-
-  it("traces the start of the chain and hands its invocation id to the hand-off (spec 21 §6.2)", async () => {
-    chainTracer.mockClear();
-    await post(JSON.stringify({ stage: "debate" }));
-    const first = (chainTracer.mock.calls[0] as unknown[] | undefined)?.[0];
-    expect(first).toMatchObject({ event: "start.chain", route: "retry", dossierId: ID });
-    const invocation = (first as { invocation: string }).invocation;
-    expect(invocation).toMatch(/^[0-9a-f]{8}$/);
-    expect(chainAdvance.mock.calls[0]?.[4]).toMatchObject({ trace: { invocation } });
-  });
-
-  it("hands after() the restart as a promise, which a client gone before the answer cannot drop", async () => {
-    await post(JSON.stringify({ stage: "debate" }));
-    expect(afterKinds).toEqual(["promise"]);
-    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0, DEADLINE, expect.anything());
+    // The page that asked re-renders and its nudge drives the retried stage.
+    expect(afterCallbacks).toEqual([]);
   });
 
   it("answers 404 for an unknown dossier", async () => {

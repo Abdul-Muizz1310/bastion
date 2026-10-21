@@ -316,7 +316,7 @@ async function inkprint({ req, res, path, method }: Ctx): Promise<void> {
   if (method === "POST" && path === "/certificates/batch") {
     const body = await jsonBody(req);
     const items = array(body.items ?? null, "items").map((i) => object(i, "item"));
-    // The first live smoke's failure: a seal that runs past the old 10 s hand-off and then answers a
+    // The first live smoke's failure: a seal that runs SLOW_STAGE_MS and then answers a
     // retryable 503 (inkprint behind a rate-limited embedding provider). Once per dossier.
     const meta = items.map((i) => object(i.metadata ?? null, "metadata"));
     const slow = meta.find((m) => text(m.url ?? null, "url").includes(`/${SLOW_SOURCE}/`));

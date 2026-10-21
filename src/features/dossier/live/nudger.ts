@@ -2,6 +2,9 @@ import type { StepView } from "../step-view";
 import type { DossierStatus } from "./events";
 import { frontier, isDue, NUDGE_GRACE_MS, nudgeAt } from "./nudge";
 
+/** After an answered advance, the least the nudger waits: the stream polls every 2 s. */
+export const ANSWER_HOLD_MS = 3_000;
+
 /**
  * The page's fallback driver of a run (spec 21 §6.6, "The nudge"): given the latest steps, it
  * calls `advance` once the frontier stage has been due for the grace period.
@@ -74,7 +77,9 @@ export function createNudger(deps: NudgerDeps): Nudger {
       case "ok": {
         failures = 0;
         const named = outcome.nextAt === null ? 0 : Date.parse(outcome.nextAt);
-        holdUntil = Math.max(now, Number.isNaN(named) ? 0 : named) + NUDGE_GRACE_MS;
+        // The time the answer named, and at least ANSWER_HOLD_MS for the stream to catch up.
+        holdUntil =
+          Math.max(now + ANSWER_HOLD_MS, Number.isNaN(named) ? 0 : named) + NUDGE_GRACE_MS;
         return;
       }
       case "rate_limited":
