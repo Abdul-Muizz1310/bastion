@@ -1,0 +1,146 @@
+{
+  "items": [
+    {
+      "text": "  Small entities pay 40 percent of the large‑entity fee.\n\n",
+      "certificate": {
+        "certificate_id": "f58b5942-c7d4-48bc-b485-e4bc67aef74f",
+        "manifest": {
+          "@context": "https://c2pa.org/statements/v1",
+          "version": "2.2",
+          "title": "Content Credential for f58b5942-c7d4-48bc-b485-e4bc67aef74f",
+          "instance_id": "urn:uuid:f58b5942-c7d4-48bc-b485-e4bc67aef74f",
+          "format": "text/plain",
+          "claim_generator": "inkprint/0.1.0",
+          "claim_generator_info": [
+            {
+              "name": "inkprint",
+              "version": "0.1.0"
+            }
+          ],
+          "legal_notice": "This certificate is issued by inkprint for informational purposes only. It does not constitute legal proof of authorship or copyright ownership. Consult qualified legal counsel for copyright matters.",
+          "assertions": [
+            {
+              "label": "c2pa.actions.v2",
+              "data": {
+                "actions": [
+                  {
+                    "action": "c2pa.created",
+                    "when": "2026-10-20T08:59:45.451571+00:00",
+                    "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/humanEdits"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "c2pa.hash.data",
+              "data": {
+                "alg": "sha256",
+                "hash": "91b1a5258ddd307657f1eb2f71020d9e69c33f7481dd983741e1898ab2b38b28",
+                "pad": ""
+              }
+            },
+            {
+              "label": "stds.schema-org.CreativeWork",
+              "data": {
+                "@context": "https://schema.org",
+                "@type": "CreativeWork",
+                "author": {
+                  "@type": "Person",
+                  "identifier": "bastion"
+                },
+                "dateCreated": "2026-10-20T08:59:45.451571+00:00",
+                "inLanguage": "en",
+                "contentSize": 56
+              }
+            }
+          ],
+          "signature": {
+            "alg": "Ed25519",
+            "key_id": "inkprint-ed25519-fixture",
+            "value": "jNOaTluqjXVvpH8E6RLeBxktzXBJt255L9Tz22l6g7t51pOo4lKGV833gI1ujZIkbapIAKlVEO4EilpNZgvuBg==",
+            "signed_assertions": [
+              "c2pa.hash.data",
+              "stds.schema-org.CreativeWork"
+            ]
+          }
+        },
+        "fingerprints": {
+          "sha256": "91b1a5258ddd307657f1eb2f71020d9e69c33f7481dd983741e1898ab2b38b28",
+          "simhash": 16231690332245291724,
+          "embedding_id": "8381214c-349f-453a-833c-8cc528f3f369"
+        }
+      }
+    },
+    {
+      "text": "The basic filing fee\tfor a utility patent is $350 — Café rules.",
+      "certificate": {
+        "certificate_id": "c7c5ddac-4c0a-4e95-aaeb-d1b072f43dfb",
+        "manifest": {
+          "@context": "https://c2pa.org/statements/v1",
+          "version": "2.2",
+          "title": "Content Credential for c7c5ddac-4c0a-4e95-aaeb-d1b072f43dfb",
+          "instance_id": "urn:uuid:c7c5ddac-4c0a-4e95-aaeb-d1b072f43dfb",
+          "format": "text/plain",
+          "claim_generator": "inkprint/0.1.0",
+          "claim_generator_info": [
+            {
+              "name": "inkprint",
+              "version": "0.1.0"
+            }
+          ],
+          "legal_notice": "This certificate is issued by inkprint for informational purposes only. It does not constitute legal proof of authorship or copyright ownership. Consult qualified legal counsel for copyright matters.",
+          "assertions": [
+            {
+              "label": "c2pa.actions.v2",
+              "data": {
+                "actions": [
+                  {
+                    "action": "c2pa.created",
+                    "when": "2026-10-20T08:59:45.451571+00:00",
+                    "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/humanEdits"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "c2pa.hash.data",
+              "data": {
+                "alg": "sha256",
+                "hash": "24caed2fe792c2478e0e0bf3f804ae958f84e1e9cd979eaba13c84eb4036c007",
+                "pad": ""
+              }
+            },
+            {
+              "label": "stds.schema-org.CreativeWork",
+              "data": {
+                "@context": "https://schema.org",
+                "@type": "CreativeWork",
+                "author": {
+                  "@type": "Person",
+                  "identifier": "bastion"
+                },
+                "dateCreated": "2026-10-20T08:59:45.451571+00:00",
+                "inLanguage": "en",
+                "contentSize": 66
+              }
+            }
+          ],
+          "signature": {
+            "alg": "Ed25519",
+            "key_id": "inkprint-ed25519-fixture",
+            "value": "8Z4tMwk/aXoYUfUMG+Mt5ajyGj2c+TNJ3Qzr2fYrHyeBkmfiN7oy3XkvIQ7ZqZBmxfYdQ71ZoymkXI1ha2vCCg==",
+            "signed_assertions": [
+              "c2pa.hash.data",
+              "stds.schema-org.CreativeWork"
+            ]
+          }
+        },
+        "fingerprints": {
+          "sha256": "24caed2fe792c2478e0e0bf3f804ae958f84e1e9cd979eaba13c84eb4036c007",
+          "simhash": 5470802765796035152,
+          "embedding_id": "d01fbe1a-c7e5-4db3-ab22-11dbecd5ff65"
+        }
+      }
+    }
+  ]
+}

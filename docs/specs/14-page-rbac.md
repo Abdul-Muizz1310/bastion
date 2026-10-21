@@ -1,5 +1,7 @@
 # Spec 14 — Page-level RBAC
 
+> Superseded by 21-bastion-v2 (2026-10-20): bastion has no sign-in.
+
 ## Purpose
 
 Lift RBAC from *declared but unenforced comments in middleware* (`_ADMIN_ONLY`, `_ADMIN_EDITOR`) to *actually enforced per-page with Next 16 error helpers*. `proxy.ts` already handles auth-level rejection (session missing → redirect `/login`). This spec handles **role-level** enforcement (session present but wrong role → render styled 403).

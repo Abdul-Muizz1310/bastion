@@ -7,6 +7,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": resolve(__dirname, "./src"),
+      // Next resolves `server-only` itself; under Vitest it is a no-op marker.
+      "server-only": resolve(__dirname, "./tests/unit/helpers/server-only.ts"),
     },
   },
   test: {
@@ -17,7 +19,16 @@ export default defineConfig({
       provider: "v8",
       include: ["src/**/*.ts", "src/**/*.tsx"],
       exclude: ["src/**/*.d.ts"],
-      thresholds: { lines: 80, statements: 80, functions: 75, branches: 75 },
+      thresholds: {
+        lines: 80,
+        statements: 80,
+        functions: 75,
+        branches: 75,
+        // Per-module floor (plan "Coverage"): the security core is held higher than the rest.
+        "src/platform/**": { lines: 90 },
+        "src/capabilities/**": { lines: 90 },
+        "src/dossier/**": { lines: 90 },
+      },
     },
   },
 });

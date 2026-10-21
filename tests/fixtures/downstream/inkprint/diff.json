@@ -1,0 +1,7 @@
+{
+  "hamming": 3,
+  "cosine": 0.9712,
+  "verdict": "near-duplicate",
+  "overlap_pct": 94,
+  "changed_spans": []
+}

@@ -1,144 +1,180 @@
-import { cookies } from "next/headers";
-import { type NextRequest, NextResponse } from "next/server";
-import { getDossier, getDossierStatus, listDossierEvents } from "@/features/dossier/server/query";
-import { COOKIE_NAME, getSession } from "@/lib/auth/session";
-import type { Dossier, DossierEvent as DossierEventRow } from "@/lib/db/schema";
-
-// The SSE loop can run up to maxIterations * pollIntervalMs; keep this route's
-// function budget above that so the platform never severs the stream before it
-// emits its clean `done`/`timeout` event. Vercel Hobby defaults to a low cap.
-export const maxDuration = 60;
-
-/** Narrow projection the poll loop needs — avoids re-selecting the whole row. */
-export type DossierStatusRow = Pick<Dossier, "status" | "verdict" | "confidence">;
+import { randomUUID } from "node:crypto";
+import type { NextRequest } from "next/server";
+import type { StepSummaryRow } from "@/dossier/step-summary";
+import { findDossier, loadStepSummaries } from "@/dossier/store";
+import { sortByStage, stepFingerprint, stepView } from "@/features/dossier/step-view";
+import type { Dossier } from "@/lib/db/schema";
+import { errorResponse } from "@/platform/gateway/http";
+import { createRateLimiter } from "@/platform/ratelimit";
+import { visitorFromRequest } from "@/platform/visitor";
 
 /**
- * Format a single SSE event. Pure — no I/O.
+ * `GET /api/dossiers/[id]/stream` (spec 21 §6.6, "The live run"): a dossier's progress as
+ * server-sent events, polled from the database every 2 s. Public: anyone holding the id may follow
+ * it. Each tick reads the dossier first, then a summary of its `dossier_steps` rows — the scalar
+ * columns and the few small output fields a note needs (`loadStepSummaries`), never a stage's
+ * output — (the runner updates the dossier's status in the same transaction as the step that ends
+ * it, so a terminal status is never seen before that step), and sends:
+ *
+ * - `step` for every row on the first tick and each row that changed since (`stepView`);
+ * - `status` on the first tick and whenever the status, verdict or confidence change;
+ * - `done` once the status is succeeded or failed — then the stream ends. A dossier with no step
+ *   rows (v1) ends at once with `reason: "no_steps"`: nothing will ever move it;
+ * - `heartbeat` every 15 s, and `timeout` once `STREAM_DEADLINE_MS` of wall-clock time have passed
+ *   since the stream opened, however slow the reads were, so it always ends cleanly inside
+ *   `maxDuration`; the page reconnects. A client that disconnects stops the polling.
+ *
+ * A database error mid-stream ends it with `stream_error` naming nothing of the cause (an
+ * EventSource's own `error` event cannot carry data, hence not that name).
+ *
+ * Each open stream holds a function for up to 300 s and reads Postgres every 2 s, so opening one
+ * is limited to 10 a minute per visitor, before the dossier is read (final review): over it, 429
+ * `rate_limited` with `retry-after`. The island's capped, backed-off reconnects absorb it.
  */
-export function formatSseEvent(type: string, data: unknown): string {
-  return `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
-}
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 300;
+/** The stream's own end: 30 s inside `maxDuration` leaves room for one slow last read. */
+export const STREAM_DEADLINE_MS = 270_000;
+
+const streamLimiter = createRateLimiter({ max: 10, windowMs: 60_000 });
+
+type StatusRow = Pick<Dossier, "status" | "verdict" | "confidence">;
+
+export type StreamDeps = {
+  dossierFn: (id: string) => Promise<StatusRow | null>;
+  stepsFn: (id: string) => Promise<StepSummaryRow[]>;
+};
 
 export type StreamConfig = {
   pollIntervalMs?: number;
   heartbeatIntervalMs?: number;
-  maxIterations?: number;
+  /** Wall-clock time after which the stream ends with `timeout` (default STREAM_DEADLINE_MS). */
+  deadlineMs?: number;
+  now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  /** Aborted when the client goes away: the loop stops before its next read. */
+  signal?: AbortSignal;
 };
 
-export type StreamDeps = {
-  getDossierFn: (id: string) => Promise<DossierStatusRow | null>;
-  listEventsFn: (id: string, sinceAt?: Date) => Promise<DossierEventRow[]>;
-};
+export function formatSseEvent(type: string, data: unknown): string {
+  return `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
+}
 
-/**
- * Core streaming loop as an async generator. Yields SSE-formatted strings.
- * Pure-ish: all I/O is injected via deps, making this fully testable.
- */
-export async function* streamDossierEvents(
+function statusOf(row: StatusRow) {
+  const confidence = row.confidence === null ? null : Number(row.confidence);
+  return {
+    status: row.status,
+    verdict: row.verdict,
+    confidence: confidence !== null && Number.isFinite(confidence) ? confidence : null,
+  };
+}
+
+const TERMINAL: ReadonlySet<string> = new Set(["succeeded", "failed"]);
+
+export async function* streamDossier(
   dossierId: string,
-  initialDossier: DossierStatusRow,
   deps: StreamDeps,
   config: StreamConfig = {},
 ): AsyncGenerator<string, void, unknown> {
-  // 2s poll (was 1s) roughly halves steady-state DB load per open client; 30
-  // iterations keeps the worst-case stream (~60s) within `maxDuration`.
-  const pollIntervalMs = config.pollIntervalMs ?? 2000;
+  const pollIntervalMs = config.pollIntervalMs ?? 2_000;
   const heartbeatIntervalMs = config.heartbeatIntervalMs ?? 15_000;
-  const maxIterations = config.maxIterations ?? 30;
+  const deadlineMs = config.deadlineMs ?? STREAM_DEADLINE_MS;
+  const now = config.now ?? Date.now;
   const sleep = config.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  const signal = config.signal;
 
-  let lastSeenAt = new Date(0);
-  let lastStatus = initialDossier.status;
-  let lastHeartbeat = Date.now();
+  const opened = now();
+  const left = () => deadlineMs - (now() - opened);
+  const sent = new Map<string, string>();
+  let lastStatus: string | null = null;
+  let lastHeartbeat = opened;
 
-  for (let i = 0; i < maxIterations; i++) {
-    // 1. Emit new events
-    const events = await deps.listEventsFn(dossierId, lastSeenAt);
-    for (const ev of events) {
-      yield formatSseEvent("state", ev);
-      const atDate = ev.at instanceof Date ? ev.at : new Date(ev.at);
-      if (atDate > lastSeenAt) lastSeenAt = atDate;
-    }
-
-    // 2. Check current dossier state
-    const current = await deps.getDossierFn(dossierId);
-    if (!current) {
-      // Dossier deleted mid-stream — emit done and close
+  while (left() > 0) {
+    if (signal?.aborted) return;
+    const dossier = await deps.dossierFn(dossierId);
+    if (dossier === null) {
       yield formatSseEvent("done", { status: "failed", reason: "dossier_deleted" });
       return;
     }
+    const steps = await deps.stepsFn(dossierId);
+    if (signal?.aborted) return;
 
-    if (current.status !== lastStatus) {
-      yield formatSseEvent("status", {
-        status: current.status,
-        verdict: current.verdict,
-        confidence: current.confidence,
-      });
-      lastStatus = current.status;
+    for (const view of sortByStage(steps.map(stepView))) {
+      const fingerprint = stepFingerprint(view);
+      if (sent.get(view.stage) === fingerprint) continue;
+      sent.set(view.stage, fingerprint);
+      yield formatSseEvent("step", view);
     }
 
-    // 3. Terminal state — emit done and stop
-    if (current.status === "succeeded" || current.status === "failed") {
-      yield formatSseEvent("done", {
-        status: current.status,
-        verdict: current.verdict,
-        confidence: current.confidence,
-      });
+    const status = statusOf(dossier);
+    const key = JSON.stringify(status);
+    if (key !== lastStatus) {
+      lastStatus = key;
+      yield formatSseEvent("status", status);
+    }
+
+    if (TERMINAL.has(dossier.status)) {
+      yield formatSseEvent("done", status);
+      return;
+    }
+    if (steps.length === 0) {
+      yield formatSseEvent("done", { ...status, reason: "no_steps" });
       return;
     }
 
-    // 4. Heartbeat
-    if (Date.now() - lastHeartbeat >= heartbeatIntervalMs) {
-      yield formatSseEvent("heartbeat", { t: new Date().toISOString() });
-      lastHeartbeat = Date.now();
+    if (now() - lastHeartbeat >= heartbeatIntervalMs) {
+      yield formatSseEvent("heartbeat", { t: new Date(now()).toISOString() });
+      lastHeartbeat = now();
     }
-
-    await sleep(pollIntervalMs);
+    const wait = Math.min(pollIntervalMs, left());
+    if (wait > 0) await sleep(wait);
   }
-
-  // Hard cap reached
   yield formatSseEvent("timeout", {});
 }
 
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+type Context = { params: Promise<{ id: string }> };
 
-  // 1. Auth
-  const cookieStore = await cookies();
-  const session = await getSession(cookieStore.get(COOKIE_NAME)?.value);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export async function GET(request: NextRequest, ctx: Context): Promise<Response> {
+  const requestId = randomUUID();
+  const { id } = await ctx.params;
+  const limit = await streamLimiter.check(`stream:${visitorFromRequest(request)}`);
+  if (!limit.success) {
+    return errorResponse(429, {
+      error: "rate_limited",
+      retryAfterS: limit.retryAfter ?? 60,
+      requestId,
+    });
   }
+  const dossier = await findDossier(id);
+  if (dossier === null) return errorResponse(404, { error: "unknown_dossier", requestId });
 
-  // 2. Dossier must exist
-  const dossier = await getDossier(id);
-  if (!dossier) {
-    return NextResponse.json({ error: "Dossier not found" }, { status: 404 });
-  }
-
-  // 3. Build the streaming response
   const encoder = new TextEncoder();
+  const gone = new AbortController();
+  request.signal?.addEventListener("abort", () => gone.abort(), { once: true });
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      // Once the client has gone the controller is closed: writing to it would throw.
+      const send = (chunk: string) => {
+        if (!gone.signal.aborted) controller.enqueue(encoder.encode(chunk));
+      };
       try {
-        for await (const chunk of streamDossierEvents(id, dossier, {
-          getDossierFn: getDossierStatus,
-          listEventsFn: listDossierEvents,
-        })) {
-          controller.enqueue(encoder.encode(chunk));
+        for await (const chunk of streamDossier(
+          dossier.id,
+          { dossierFn: findDossier, stepsFn: loadStepSummaries },
+          { signal: gone.signal },
+        )) {
+          send(chunk);
         }
       } catch (err) {
-        controller.enqueue(
-          encoder.encode(
-            formatSseEvent("error", {
-              message: err instanceof Error ? err.message : "stream_error",
-            }),
-          ),
-        );
+        console.error("dossier stream failed", { dossierId: dossier.id, err });
+        send(formatSseEvent("stream_error", { error: "stream_error" }));
       } finally {
-        controller.close();
+        if (!gone.signal.aborted) controller.close();
       }
+    },
+    cancel() {
+      gone.abort();
     },
   });
 

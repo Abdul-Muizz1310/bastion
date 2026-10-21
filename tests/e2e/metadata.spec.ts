@@ -2,19 +2,19 @@ import { expect, type Page, test } from "@playwright/test";
 import { SITE } from "../../src/lib/site/config";
 
 /**
- * E2E — spec 20, site metadata (case 12). Anonymous visitors (crawlers, link-preview bots)
- * are redirected from every gated page to /login, so /login is the page whose head they read.
+ * E2E — spec 20, site metadata (case 12). There is no sign-in (spec 21 §2), so crawlers and
+ * link-preview bots read the home page's head like any visitor.
  */
 
 const content = (page: Page, selector: string) =>
   page.locator(`head ${selector}`).first().getAttribute("content");
 
 test.describe("20-e2e: site metadata", () => {
-  test("case 12: /login carries the site's head tags", async ({ page }) => {
-    await page.goto("/login");
-    await expect(page).toHaveTitle("sign in — bastion");
+  test("case 12: / carries the site's head tags", async ({ page }) => {
+    await page.goto("/");
+    await expect(page).toHaveTitle(SITE.title);
     expect(await content(page, 'meta[name="description"]')).toBe(SITE.description);
-    expect(await content(page, 'meta[property="og:title"]')).toBe("sign in — bastion");
+    expect(await content(page, 'meta[property="og:title"]')).toBe(SITE.title);
     expect(await content(page, 'meta[property="og:image"]')).toMatch(
       new RegExp(`^${SITE.url}/opengraph-image`),
     );
@@ -28,8 +28,8 @@ test.describe("20-e2e: site metadata", () => {
     await expect(page.locator('head link[rel="manifest"]')).toHaveCount(1);
   });
 
-  test("case 12: /login can be indexed", async ({ page }) => {
-    await page.goto("/login");
+  test("case 12: / can be indexed", async ({ page }) => {
+    await page.goto("/");
     await expect(page.locator('head meta[name="robots"]')).toHaveCount(0);
   });
 

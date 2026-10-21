@@ -1,0 +1,32 @@
+{
+  "scan_id": "6a7b8c9d-0e1f-4a2b-8c3d-4e5f6a7b8c9d",
+  "certificate_id": "2b9f6a1e-4c3d-4e5f-9a7b-8c6d5e4f3a2b",
+  "corpora": [
+    "common_crawl",
+    "huggingface",
+    "the_stack_v2"
+  ],
+  "status": "complete",
+  "hit_count": 1,
+  "confidence": 0.42,
+  "results": [
+    {
+      "corpus": "common_crawl",
+      "hit_count": 1,
+      "status": "ok",
+      "snapshot": "CC-MAIN-2024-50"
+    },
+    {
+      "corpus": "huggingface",
+      "hit_count": 0,
+      "status": "ok",
+      "snapshot": "latest"
+    },
+    {
+      "corpus": "the_stack_v2",
+      "hit_count": 0,
+      "status": "timeout",
+      "snapshot": null
+    }
+  ]
+}

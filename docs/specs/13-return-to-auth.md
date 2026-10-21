@@ -1,5 +1,7 @@
 # Spec 13 — returnTo-aware auth
 
+> Superseded by 21-bastion-v2 (2026-10-20): bastion has no sign-in.
+
 ## Purpose
 
 When an unauthenticated user tries to open a protected page like `/dossiers/abc123`, they should get bounced to `/login`, then sent **back to the page they tried to open** after successful login. Today the redirect always goes to `/dashboard`, which is jarring and breaks deep-linked shares.

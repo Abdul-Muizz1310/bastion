@@ -1,9 +1,9 @@
-import { renderToString } from "react-dom/server";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("next/font/google", () => ({
-  Geist: () => ({ variable: "mock-geist-sans" }),
-  Geist_Mono: () => ({ variable: "mock-geist-mono" }),
+  JetBrains_Mono: () => ({ variable: "mock-jetbrains-mono" }),
+  Martian_Mono: () => ({ variable: "mock-martian-mono" }),
 }));
 
 import RootLayout, { metadata, viewport } from "@/app/layout";
@@ -11,11 +11,17 @@ import { SITE } from "@/lib/site/config";
 import { ROOT_VIEWPORT, rootMetadata } from "@/lib/site/metadata";
 
 describe("RootLayout", () => {
-  it("renders children within html body", () => {
-    const html = renderToString(<RootLayout>child-content-here</RootLayout>);
+  it("renders children within html body, in English, with both font variables", () => {
+    const html = renderToStaticMarkup(<RootLayout>child-content-here</RootLayout>);
     expect(html).toContain("child-content-here");
-    expect(html).toContain("mock-geist-sans");
-    expect(html).toContain("mock-geist-mono");
+    expect(html).toMatch(/<html[^>]*lang="en"/);
+    expect(html).toContain("mock-jetbrains-mono");
+    expect(html).toContain("mock-martian-mono");
+  });
+
+  it("paints the dark background on the body itself", () => {
+    const html = renderToStaticMarkup(<RootLayout>x</RootLayout>);
+    expect(html).toMatch(/<body[^>]*class="[^"]*\bbg-background\b/);
   });
 });
 

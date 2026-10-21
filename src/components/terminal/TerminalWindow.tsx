@@ -16,7 +16,7 @@ export function TerminalWindow({
         ? "bg-mac-yellow"
         : status === "red"
           ? "bg-mac-red"
-          : "bg-fg-faint";
+          : "bg-line-faint";
 
   return (
     <div className="terminal-glow overflow-hidden rounded-xl border border-border bg-surface">

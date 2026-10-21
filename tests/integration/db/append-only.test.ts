@@ -7,7 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  * The append-only guarantee sold by README/WHY/ARCHITECTURE is a *database*
  * guarantee, so it can only be proven against a real database. This tier runs
  * against whatever Postgres `DATABASE_URL` points at, after
- * `pnpm drizzle-kit migrate` has applied drizzle/0001_append_only_events.sql.
+ * `node scripts/migrate.mjs --force` has applied the migrations (0001 installs the guard; 0002
+ * re-asserts it for databases first built by `drizzle-kit push`).
  *
  * Two properties of this spec matter:
  *   - it SKIPS when DATABASE_URL is unset, so a checkout without a database

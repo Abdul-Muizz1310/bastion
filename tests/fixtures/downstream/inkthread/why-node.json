@@ -1,0 +1,33 @@
+{
+  "element": "p:c95bca1f83faa250",
+  "kind": "node",
+  "maker": {
+    "actor": "inkgrid",
+    "id": "inkgrid",
+    "model": null,
+    "request_key": null
+  },
+  "statement": "read from the PDF's text layer by inkgrid",
+  "evidence": null,
+  "reasons": [
+    {
+      "code": "verified_text",
+      "severity": "info",
+      "detail": null
+    }
+  ],
+  "verdict": null,
+  "ops": [
+    {
+      "seq": 41,
+      "stage": "structure",
+      "kind": "add_node",
+      "target": "p:c95bca1f83faa250",
+      "actor": "inkgrid",
+      "method": "inkgrid",
+      "model": null,
+      "request_key": null,
+      "detail": "paragraph"
+    }
+  ]
+}

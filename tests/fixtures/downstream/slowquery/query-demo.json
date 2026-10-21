@@ -1,0 +1,60 @@
+{
+  "fingerprint": {
+    "id": "abcdef1234567890",
+    "fingerprint": "select * from orders where user_id = ? order by created_at desc",
+    "first_seen": "2026-10-20T09:00:00.000000Z",
+    "last_seen": "2026-10-20T09:15:02.511000Z",
+    "call_count": 3,
+    "total_ms": 4120,
+    "p50_ms": 1.5,
+    "p95_ms": 2.5,
+    "p99_ms": 3.5,
+    "max_ms": 4.5,
+    "suggestions": [
+      {
+        "id": 7,
+        "fingerprint_id": "abcdef1234567890",
+        "rule": null,
+        "kind": "index",
+        "source": "rules",
+        "sql": "CREATE INDEX IF NOT EXISTS ix_orders_created_at ON orders(created_at);",
+        "rationale": "Sort node on ORDER BY created_at with significant cost.",
+        "applied_at": null
+      }
+    ]
+  },
+  "canonical_sql": "select * from orders where user_id = ? order by created_at desc",
+  "explain_plan": {
+    "fingerprint_id": "abcdef1234567890",
+    "plan_json": {
+      "Plan": {
+        "Node Type": "Seq Scan"
+      }
+    },
+    "plan_text": "Seq Scan on orders",
+    "cost": null,
+    "captured_at": "2026-10-20T09:15:02.600000Z"
+  },
+  "suggestions": [
+    {
+      "id": 7,
+      "fingerprint_id": "abcdef1234567890",
+      "rule": null,
+      "kind": "index",
+      "source": "rules",
+      "sql": "CREATE INDEX IF NOT EXISTS ix_orders_created_at ON orders(created_at);",
+      "rationale": "Sort node on ORDER BY created_at with significant cost.",
+      "applied_at": null
+    }
+  ],
+  "recent_samples": [
+    {
+      "id": 31,
+      "fingerprint_id": "abcdef1234567890",
+      "params": null,
+      "duration_ms": 4.5,
+      "rows": 12,
+      "sampled_at": "2026-10-20T09:15:02.511000Z"
+    }
+  ]
+}

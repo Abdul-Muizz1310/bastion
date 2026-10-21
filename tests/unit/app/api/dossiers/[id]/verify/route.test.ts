@@ -1,259 +1,189 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("next/server", () => {
-  class MockNextResponse {
-    status: number;
-    body: unknown;
-    headers: Headers;
-    constructor(body?: BodyInit | null, init?: { status?: number; headers?: HeadersInit }) {
-      this.body = body;
-      this.status = init?.status ?? 200;
-      this.headers = new Headers(init?.headers);
-    }
-    static json(data: unknown, init?: { status?: number }) {
-      const r = new MockNextResponse(JSON.stringify(data), { status: init?.status });
-      (r as unknown as { _jsonBody: unknown })._jsonBody = data;
-      return r;
-    }
-  }
-  return { NextResponse: MockNextResponse, NextRequest: class {} };
-});
+/**
+ * `POST /api/dossiers/[id]/verify` (spec 21 §6.5, "verify everything"): public, rate-limited to 5 a
+ * minute per visitor, no budget (every capability it calls is free). Ruling W: it re-checks every
+ * receipt live as the system actor (outside the per-visitor gateway limit) under a fresh request id
+ * of its own, answers the checks, stores none of them and appends one `dossier.verified` audit
+ * event — as the visitor — with each check's state.
+ */
 
-const mockCookieGet = vi.fn();
-vi.mock("next/headers", () => ({
-  cookies: vi.fn().mockResolvedValue({ get: (name: string) => mockCookieGet(name) }),
-}));
-
-const mockGetSession = vi.fn();
-vi.mock("@/lib/auth/session", () => ({
-  getSession: (...args: unknown[]) => mockGetSession(...args),
-  COOKIE_NAME: "bastion_session",
-}));
-
-const mockGetDossier = vi.fn();
-const mockListEvidence = vi.fn();
-vi.mock("@/features/dossier/server/query", () => ({
-  getDossier: (...args: unknown[]) => mockGetDossier(...args),
-  listEvidenceItems: (...args: unknown[]) => mockListEvidence(...args),
-}));
-
-const mockAppendEvent = vi.fn().mockResolvedValue(1);
-vi.mock("@/lib/audit/write", () => ({
-  appendEvent: (...args: unknown[]) => mockAppendEvent(...args),
-}));
-
-const mockCallService = vi.fn();
-vi.mock("@/lib/gateway/client", () => ({
-  callService: (...args: unknown[]) => mockCallService(...args),
-}));
-
-const DOSSIER_ID = "550e8400-e29b-41d4-a716-446655440000";
-
-function session(role: "admin" | "editor" | "viewer", id = "u1") {
-  return { sid: "s", user: { id, email: `${role}@x.com`, role, name: null } };
-}
-
-function dossier(overrides: Record<string, unknown> = {}) {
+const m = vi.hoisted(() => {
+  const check = vi.fn();
   return {
-    id: DOSSIER_ID,
-    userId: "u1",
-    claim: "x",
-    sources: ["hackernews"],
-    mode: "standard",
-    status: "succeeded",
-    verdict: "TRUE",
-    confidence: "0.90",
-    requestId: "req-1",
-    envelopeId: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    ...overrides,
+    check,
+    createRateLimiter: vi.fn(() => ({ check })),
+    findDossier: vi.fn(),
+    loadSteps: vi.fn(),
+    verifyDossier: vi.fn(),
+    appendEvent: vi.fn(),
   };
+});
+
+vi.mock("@/platform/ratelimit", () => ({ createRateLimiter: m.createRateLimiter }));
+vi.mock("@/dossier/store", () => ({ findDossier: m.findDossier, loadSteps: m.loadSteps }));
+vi.mock("@/dossier/verify-live", () => ({ verifyDossier: m.verifyDossier }));
+vi.mock("@/platform/audit/write", () => ({ appendEvent: m.appendEvent }));
+
+import { NextRequest } from "next/server";
+import * as route from "@/app/api/dossiers/[id]/verify/route";
+import type { Check } from "@/dossier/verify";
+import { isVisitorId } from "@/platform/visitor";
+
+const ID = "550e8400-e29b-41d4-a716-446655440000";
+const STEPS = [
+  { stage: "wake", status: "ok" },
+  { stage: "envelope", status: "ok" },
+];
+const ROW = {
+  id: ID,
+  requestId: "req-dossier-1",
+  visitor: "v_aaaaaaaaaa",
+  claim: "c",
+  verdict: "TRUE",
+  confidence: "0.82",
+  status: "succeeded",
+  envelopeId: ID,
+};
+const CHECKS: Check[] = [
+  { name: "certificates", state: "pass", detail: "2 of 2", items: [] },
+  { name: "transcript", state: "unavailable", detail: "paper-trail is asleep" },
+  { name: "documents", state: "expired", detail: "DR-0029" },
+];
+
+function post(id = ID): Promise<Response> {
+  const req = new NextRequest(`https://bastion.test/api/dossiers/${id}/verify`, {
+    method: "POST",
+    headers: { "x-forwarded-for": "203.0.113.9" },
+  });
+  return route.POST(req, { params: Promise.resolve({ id }) });
 }
 
-describe("19-verify-route: auth + RBAC", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("case 8: no session → 401", async () => {
-    mockCookieGet.mockReturnValue(undefined);
-    mockGetSession.mockResolvedValue(null);
-    const { GET } = await import("@/app/api/dossiers/[id]/verify/route");
-    const res = await GET({} as any, { params: Promise.resolve({ id: DOSSIER_ID }) });
-    expect(res.status).toBe(401);
-    expect(mockGetDossier).not.toHaveBeenCalled();
-  });
-
-  it("case 9: unknown dossier → 404", async () => {
-    mockCookieGet.mockReturnValue({ value: "c" });
-    mockGetSession.mockResolvedValue(session("admin"));
-    mockGetDossier.mockResolvedValue(null);
-    const { GET } = await import("@/app/api/dossiers/[id]/verify/route");
-    const res = await GET({} as any, { params: Promise.resolve({ id: DOSSIER_ID }) });
-    expect(res.status).toBe(404);
-  });
-
-  it("case 11: viewer + other user's dossier → 403", async () => {
-    mockCookieGet.mockReturnValue({ value: "c" });
-    mockGetSession.mockResolvedValue(session("viewer", "viewer-1"));
-    mockGetDossier.mockResolvedValue(dossier({ userId: "someone-else" }));
-    const { GET } = await import("@/app/api/dossiers/[id]/verify/route");
-    const res = await GET({} as any, { params: Promise.resolve({ id: DOSSIER_ID }) });
-    expect(res.status).toBe(403);
-    expect(mockCallService).not.toHaveBeenCalled();
-  });
+beforeEach(() => {
+  vi.stubEnv("IRON_SESSION_PASSWORD", "x".repeat(32));
+  m.check.mockReset().mockResolvedValue({ success: true, limit: 10, remaining: 9 });
+  m.findDossier.mockReset().mockResolvedValue(ROW);
+  m.loadSteps.mockReset().mockResolvedValue(STEPS);
+  m.verifyDossier.mockReset().mockResolvedValue({ legacy: false, checks: CHECKS });
+  m.appendEvent.mockReset().mockResolvedValue(1);
 });
 
-describe("19-verify-route: no-evidence fast path", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockCookieGet.mockReturnValue({ value: "c" });
-    mockGetSession.mockResolvedValue(session("admin"));
-    mockGetDossier.mockResolvedValue(dossier());
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+describe("POST /api/dossiers/[id]/verify", () => {
+  it("is dynamic, allowed 120 s, and rate-limited to 5 a minute per visitor", async () => {
+    expect(route.dynamic).toBe("force-dynamic");
+    expect(route.maxDuration).toBe(120);
+    expect(m.createRateLimiter).toHaveBeenCalledWith({ max: 5, windowMs: 60_000 });
+    await post();
+    expect(m.check).toHaveBeenCalledWith(expect.stringMatching(/^verify:v_[a-z2-7]{10}$/));
   });
 
-  it("case 10: no evidence items → overall_valid:null with message 'no_evidence_yet'", async () => {
-    mockListEvidence.mockResolvedValueOnce([]);
-    const { GET } = await import("@/app/api/dossiers/[id]/verify/route");
-    const res = await GET({} as any, { params: Promise.resolve({ id: DOSSIER_ID }) });
+  it("answers the checks, never cached, with its own request id", async () => {
+    const res = await post();
     expect(res.status).toBe(200);
-    const body = (res as any)._jsonBody;
-    expect(body.overall_valid).toBeNull();
-    expect(body.message).toBe("no_evidence_yet");
-    expect(body.results).toEqual([]);
-    expect(mockCallService).not.toHaveBeenCalled();
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    const requestId = res.headers.get("x-request-id");
+    expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(await res.json()).toEqual({ dossierId: ID, legacy: false, checks: CHECKS });
   });
 
-  it("no evidence: still audits dossier.verified.ok with total=0", async () => {
-    mockListEvidence.mockResolvedValueOnce([]);
-    const { GET } = await import("@/app/api/dossiers/[id]/verify/route");
-    await GET({} as any, { params: Promise.resolve({ id: DOSSIER_ID }) });
-    expect(mockAppendEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "dossier.verified.ok",
-        metadata: { total: 0, passed: 0, failed: 0 },
-      }),
-    );
+  it("verifies as the system actor (Ruling W), under a fresh request id (not the dossier's)", async () => {
+    const res = await post();
+    const [dossier, ctx, steps] = m.verifyDossier.mock.calls[0] ?? [];
+    // The step rows the route read (Ruling Z) go along: a failed dossier is judged by them (AB).
+    expect(steps).toEqual(STEPS);
+    // The whole row: the checks bind what the page shows (claim, verdict, confidence, envelope).
+    expect(dossier).toEqual(ROW);
+    expect(ctx.actor).toBe("bastion");
+    expect(isVisitorId(ctx.actor)).toBe(false);
+    expect(ctx.requestId).toBe(res.headers.get("x-request-id"));
+    expect(ctx.requestId).not.toBe("req-dossier-1");
+    expect(ctx.clientIp).toBe("203.0.113.9");
   });
 
-  it("evidence items with null certificate_id are skipped", async () => {
-    mockListEvidence.mockResolvedValueOnce([
-      { id: "e1", certificateId: null, dossierId: DOSSIER_ID } as any,
-    ]);
-    const { GET } = await import("@/app/api/dossiers/[id]/verify/route");
-    const res = await GET({} as any, { params: Promise.resolve({ id: DOSSIER_ID }) });
-    const body = (res as any)._jsonBody;
-    expect(body.results).toEqual([]);
-    expect(mockCallService).not.toHaveBeenCalled();
-  });
-});
-
-describe("19-verify-route: inkprint integration", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockCookieGet.mockReturnValue({ value: "c" });
-    mockGetSession.mockResolvedValue(session("admin"));
-    mockGetDossier.mockResolvedValue(dossier());
-  });
-
-  it("case 13: 3 valid items → overall_valid:true, audit ok", async () => {
-    mockListEvidence.mockResolvedValueOnce([
-      { id: "e1", certificateId: "cert-1" } as any,
-      { id: "e2", certificateId: "cert-2" } as any,
-      { id: "e3", certificateId: "cert-3" } as any,
-    ]);
-    mockCallService.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      data: {
-        results: [
-          { certificate_id: "cert-1", valid: true, checks: { signature: true, hash: true } },
-          { certificate_id: "cert-2", valid: true, checks: { signature: true, hash: true } },
-          { certificate_id: "cert-3", valid: true, checks: { signature: true, hash: true } },
-        ],
+  it("stores no result but appends one dossier.verified event with each check's state", async () => {
+    const res = await post();
+    expect(m.appendEvent).toHaveBeenCalledExactlyOnceWith({
+      actor: expect.stringMatching(/^v_/),
+      action: "dossier.verified",
+      entityType: "dossier",
+      entityId: ID,
+      service: "bastion",
+      requestId: res.headers.get("x-request-id"),
+      metadata: {
+        checks: { certificates: "pass", transcript: "unavailable", documents: "expired" },
       },
     });
-    const { GET } = await import("@/app/api/dossiers/[id]/verify/route");
-    const res = await GET({} as any, { params: Promise.resolve({ id: DOSSIER_ID }) });
-    const body = (res as any)._jsonBody;
-    expect(body.overall_valid).toBe(true);
-    expect(body.results).toHaveLength(3);
-    expect(mockAppendEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "dossier.verified.ok",
-        metadata: { total: 3, passed: 3, failed: 0 },
-      }),
-    );
   });
 
-  it("case 14: 1 tampered among 2 → overall_valid:false, audit error", async () => {
-    mockListEvidence.mockResolvedValueOnce([
-      { id: "e1", certificateId: "cert-1" } as any,
-      { id: "e2", certificateId: "cert-2" } as any,
-    ]);
-    mockCallService.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      data: {
-        results: [
-          { certificate_id: "cert-1", valid: true, checks: { signature: true, hash: true } },
-          {
-            certificate_id: "cert-2",
-            valid: false,
-            checks: { signature: true, hash: false },
-            reason: "hash_mismatch",
-          },
-        ],
-      },
-    });
-    const { GET } = await import("@/app/api/dossiers/[id]/verify/route");
-    const res = await GET({} as any, { params: Promise.resolve({ id: DOSSIER_ID }) });
-    const body = (res as any)._jsonBody;
-    expect(body.overall_valid).toBe(false);
-    expect(mockAppendEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "dossier.verified.error",
-        metadata: { total: 2, passed: 1, failed: 1 },
-      }),
-    );
+  it("answers 429 over the limit without reading the dossier or calling anyone", async () => {
+    m.check.mockResolvedValue({ success: false, limit: 5, remaining: 0, retryAfter: 42 });
+    const res = await post();
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("42");
+    expect(await res.json()).toMatchObject({ error: "rate_limited", retryAfterS: 42 });
+    expect(m.findDossier).not.toHaveBeenCalled();
+    expect(m.verifyDossier).not.toHaveBeenCalled();
   });
 
-  it("case 16: inkprint downstream error → 502, audit dossier.verified.error", async () => {
-    mockListEvidence.mockResolvedValueOnce([
-      { id: "e1", certificateId: "cert-1" } as any,
-    ]);
-    mockCallService.mockResolvedValueOnce({
-      ok: false,
-      status: 502,
-      error: "bad_gateway",
+  describe("a dossier from before verifiable receipts (amended Ruling Z)", () => {
+    // The verifier decides (no step rows, no receipts, no visitor); the route answers honestly.
+    it("answers legacy with no checks and an honest note", async () => {
+      m.loadSteps.mockResolvedValue([]);
+      m.verifyDossier.mockResolvedValue({ legacy: true });
+      const res = await post();
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        dossierId: ID,
+        legacy: true,
+        note: "this dossier predates verifiable receipts",
+        checks: [],
+      });
+      expect(m.loadSteps).toHaveBeenCalledWith(ID);
+      expect(m.verifyDossier.mock.calls[0]?.[2]).toEqual([]);
     });
-    const { GET } = await import("@/app/api/dossiers/[id]/verify/route");
-    const res = await GET({} as any, { params: Promise.resolve({ id: DOSSIER_ID }) });
-    expect(res.status).toBe(502);
-    expect(mockAppendEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "dossier.verified.error",
-        service: "inkprint",
-      }),
-    );
+
+    it("no step rows alone is not legacy: the verifier's checks are answered", async () => {
+      m.loadSteps.mockResolvedValue([]);
+      const res = await post();
+      expect(await res.json()).toEqual({ dossierId: ID, legacy: false, checks: CHECKS });
+    });
+
+    it("still records the verification, as legacy", async () => {
+      m.loadSteps.mockResolvedValue([]);
+      m.verifyDossier.mockResolvedValue({ legacy: true });
+      await post();
+      expect(m.appendEvent).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          action: "dossier.verified",
+          entityId: ID,
+          metadata: { legacy: true, checks: {} },
+        }),
+      );
+    });
   });
 
-  it("cert IDs are passed to callService in correct shape", async () => {
-    mockListEvidence.mockResolvedValueOnce([
-      { id: "e1", certificateId: "cert-A" } as any,
-      { id: "e2", certificateId: "cert-B" } as any,
-    ]);
-    mockCallService.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      data: { results: [] },
+  it("answers 404 for an unknown dossier, and audits nothing", async () => {
+    m.findDossier.mockResolvedValue(null);
+    const res = await post("not-a-dossier");
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({ error: "unknown_dossier" });
+    expect(m.verifyDossier).not.toHaveBeenCalled();
+    expect(m.appendEvent).not.toHaveBeenCalled();
+  });
+
+  it("answers 500 in the gateway's error shape when bastion itself fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    m.verifyDossier.mockRejectedValue(new Error("db down"));
+    const res = await post();
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({
+      error: "verify_failed",
+      requestId: expect.any(String),
     });
-    const { GET } = await import("@/app/api/dossiers/[id]/verify/route");
-    await GET({} as any, { params: Promise.resolve({ id: DOSSIER_ID }) });
-    const [, , opts] = mockCallService.mock.calls[0];
-    expect(opts.body).toEqual({
-      items: [{ certificate_id: "cert-A" }, { certificate_id: "cert-B" }],
-    });
+    expect(m.appendEvent).not.toHaveBeenCalled();
   });
 });

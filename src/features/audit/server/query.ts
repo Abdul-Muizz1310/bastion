@@ -1,56 +1,36 @@
-import { forbidden } from "next/navigation";
-import { queryEvents } from "@/lib/audit/write";
-import type { HydratedSession } from "@/lib/auth/session";
-import type { Event as EventRow } from "@/lib/db/schema";
-
-export type AuditFilters = {
-  service?: string;
-  actionPrefix?: string;
-  since?: Date;
-  limit?: number;
-};
-
-const MAX_LIMIT = 500;
-const DEFAULT_LIMIT = 100;
+import "server-only";
+import { readEvents } from "@/platform/audit/read";
+import { AUDIT_PAGE_SIZE, type AuditQuery, TRACE_LIMIT } from "../filters";
+import { type AuditEventView, type AuditPage, eventView, pageOf } from "../view";
 
 /**
- * Query audit events scoped to the session's role:
- * - admin / editor → see all events (filters narrow).
- * - viewer → sees only their own events (actorId forced to session user).
+ * The audit pages' reads (spec 21 §3.2). The log is public: every visitor reads the same rows, so
+ * nothing here is scoped by actor (invariant 1). Rows leave as views — known fields only.
  */
-export async function queryAuditFor(
-  session: HydratedSession,
-  filters: AuditFilters = {},
-): Promise<EventRow[]> {
-  const limit = Math.min(filters.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
-  const options = {
-    service: filters.service,
-    actionPrefix: filters.actionPrefix,
-    from: filters.since,
-    limit,
-    actorId: session.user.role === "viewer" ? session.user.id : undefined,
-  };
-  return queryEvents(options);
+
+export { TRACE_LIMIT };
+
+/** One page of the log, newest first by id, and the cursor for the next older page. */
+export async function listAudit(query: AuditQuery): Promise<AuditPage> {
+  const { service, action, request } = query.filters;
+  const rows = await readEvents({
+    ...(service === undefined ? {} : { service }),
+    ...(action === undefined ? {} : { actionPrefix: action }),
+    ...(request === undefined ? {} : { requestId: request }),
+    ...(query.before === null ? {} : { beforeId: query.before }),
+    limit: AUDIT_PAGE_SIZE + 1,
+    order: "newest",
+  });
+  return pageOf(rows.map(eventView), AUDIT_PAGE_SIZE);
 }
 
-/**
- * Fetch all events for a given requestId, ordered by createdAt ASC (trace order).
- * For viewer, rejects with `forbidden()` if any event in the trace belongs to
- * another user — prevents viewing cross-user traces.
- */
-export async function queryTraceFor(
-  session: HydratedSession,
+/** One request's events as they were logged — the first 500, and whether there were more. */
+export async function requestTrace(
   requestId: string,
-): Promise<EventRow[]> {
-  const events = await queryEvents({ requestId, limit: MAX_LIMIT });
-
-  if (session.user.role === "viewer") {
-    const hasOthers = events.some((e) => e.actorId !== null && e.actorId !== session.user.id);
-    if (hasOthers) {
-      forbidden();
-    }
-  }
-
-  // Reverse to ASC — queryEvents returns DESC.
-  return [...events].reverse();
+): Promise<{ events: AuditEventView[]; truncated: boolean }> {
+  const rows = await readEvents({ requestId, limit: TRACE_LIMIT + 1, order: "oldest" });
+  return {
+    events: rows.slice(0, TRACE_LIMIT).map(eventView),
+    truncated: rows.length > TRACE_LIMIT,
+  };
 }

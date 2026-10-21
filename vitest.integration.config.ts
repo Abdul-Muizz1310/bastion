@@ -10,6 +10,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": resolve(__dirname, "./src"),
+      // Next resolves `server-only` itself; under Vitest it is a no-op marker.
+      "server-only": resolve(__dirname, "./tests/unit/helpers/server-only.ts"),
     },
   },
   test: {

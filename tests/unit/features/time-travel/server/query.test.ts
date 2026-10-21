@@ -2,20 +2,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Spec 07 — the Server Action the slider calls. It is the ONLY path from the
- * client to `getTimeTravelState`, so the admin gate and the read-only contract
- * are asserted here (cases 11 and 12).
+ * client to `getTimeTravelState`, so its read-only contract is asserted here
+ * (case 12). Spec 21 §2: there is no sign-in, so it is open to every visitor.
  */
-
-const mockRequireRole = vi.fn();
-class MockAccessDeniedError extends Error {}
-vi.mock("@/lib/auth/rbac", () => ({
-  requireRole: (...args: unknown[]) => mockRequireRole(...args),
-  AccessDeniedError: MockAccessDeniedError,
-}));
 
 const mockGetTimeTravelState = vi.fn();
 vi.mock("@/lib/audit/replay", () => ({
   getTimeTravelState: (...args: unknown[]) => mockGetTimeTravelState(...args),
+}));
+
+const allowRead = vi.fn();
+vi.mock("@/features/audit/read-limit", () => ({
+  allowRead: (...args: unknown[]) => allowRead(...args),
 }));
 
 const MIN = new Date("2026-01-01T00:00:00.000Z");
@@ -25,15 +23,19 @@ function primeState(overrides: Record<string, unknown> = {}) {
   mockGetTimeTravelState.mockResolvedValue({
     entities: [
       {
-        entityType: "user",
-        entityId: "user-1",
-        service: "bastion",
-        state: { role: "editor" },
-        lastAction: "user.role_changed",
+        entityType: "capability",
+        entityId: "magpie.scrape",
+        service: "magpie",
+        lastAction: "gateway.call",
         lastEventAt: new Date("2026-01-05T00:00:00.000Z"),
+        requestId: "req-1",
+        actor: "v_kk6eooepno",
+        actorId: null,
+        metadata: { status: 200, ms: 40, body: "SECRET_DOWNSTREAM_BODY" },
       },
     ],
     bounds: { min: MIN, max: MAX },
+    truncated: false,
     ...overrides,
   });
 }
@@ -41,26 +43,15 @@ function primeState(overrides: Record<string, unknown> = {}) {
 describe("07-replay server action: loadTimeTravelState", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequireRole.mockResolvedValue({
-      sid: "sess-1",
-      user: { id: "admin-1", email: "a@x.com", role: "admin", name: null },
-    });
     primeState();
+    allowRead.mockResolvedValue({ ok: true });
   });
 
-  it("case 11: gates on the admin role before touching the database", async () => {
+  it("needs no session: an anonymous visitor's call reaches the replay query", async () => {
     const { loadTimeTravelState } = await import("@/features/time-travel/server/query");
-    await loadTimeTravelState("2026-01-06T00:00:00.000Z");
-    expect(mockRequireRole).toHaveBeenCalledWith(["admin"], "time-travel.query");
-  });
-
-  it("case 11b: a denied role stops the query — getTimeTravelState is never called", async () => {
-    mockRequireRole.mockRejectedValueOnce(new MockAccessDeniedError("denied"));
-    const { loadTimeTravelState } = await import("@/features/time-travel/server/query");
-    await expect(loadTimeTravelState("2026-01-06T00:00:00.000Z")).rejects.toBeInstanceOf(
-      MockAccessDeniedError,
-    );
-    expect(mockGetTimeTravelState).not.toHaveBeenCalled();
+    const res = await loadTimeTravelState("2026-01-06T00:00:00.000Z");
+    expect(res.ok).toBe(true);
+    expect(mockGetTimeTravelState).toHaveBeenCalledTimes(1);
   });
 
   it("case 1: forwards the requested timestamp to the DISTINCT ON query", async () => {
@@ -95,6 +86,20 @@ describe("07-replay server action: loadTimeTravelState", () => {
     expect(JSON.parse(JSON.stringify(res.view))).toEqual(res.view);
   });
 
+  it("sends only known fields across the boundary, never the metadata (spec 21 §3.2 invariant 6)", async () => {
+    const { loadTimeTravelState } = await import("@/features/time-travel/server/query");
+    const res = await loadTimeTravelState("2026-01-06T00:00:00.000Z");
+    if (!res.ok) throw new Error("expected ok");
+    expect(JSON.stringify(res.view)).not.toContain("SECRET_DOWNSTREAM_BODY");
+    expect(res.view.entities[0]?.facts).toEqual({
+      status: 200,
+      ms: 40,
+      stage: null,
+      attempt: null,
+      error: null,
+    });
+  });
+
   it("case 7: propagates the 'no events before this time' message", async () => {
     primeState({ entities: [], message: "No events before this time" });
     const { loadTimeTravelState } = await import("@/features/time-travel/server/query");
@@ -102,6 +107,26 @@ describe("07-replay server action: loadTimeTravelState", () => {
     if (!res.ok) throw new Error("expected ok");
     expect(res.view.entities).toHaveLength(0);
     expect(res.view.message).toBe("No events before this time");
+  });
+
+  it("spends one replay read per accepted call (Ruling AL)", async () => {
+    const { loadTimeTravelState } = await import("@/features/time-travel/server/query");
+    await loadTimeTravelState("2026-01-06T00:00:00.000Z");
+    expect(allowRead).toHaveBeenCalledWith("replay");
+  });
+
+  it("past 60 a minute: a typed refusal with the wait and the limit, and no query (Ruling AL)", async () => {
+    allowRead.mockResolvedValueOnce({ ok: false, retryAfterS: 9, limit: 60 });
+    const { loadTimeTravelState } = await import("@/features/time-travel/server/query");
+    const res = await loadTimeTravelState("2026-01-06T00:00:00.000Z");
+    expect(res).toEqual({ ok: false, error: "rate_limited", retryAfterS: 9, limit: 60 });
+    expect(mockGetTimeTravelState).not.toHaveBeenCalled();
+  });
+
+  it("a malformed call is refused without spending a read", async () => {
+    const { loadTimeTravelState } = await import("@/features/time-travel/server/query");
+    await loadTimeTravelState("last tuesday");
+    expect(allowRead).not.toHaveBeenCalled();
   });
 
   it("rejects a non-ISO timestamp without querying the database", async () => {

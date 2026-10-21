@@ -78,3 +78,50 @@ describe("next.config.ts security headers", () => {
     expect(headers["Permissions-Policy"]).toBe("camera=(), microphone=(), geolocation=()");
   });
 });
+
+describe("next.config.ts — no sign-in", () => {
+  it("drops experimental.authInterrupts: there are no forbidden/unauthorized pages any more", async () => {
+    vi.resetModules();
+    const config = (await import("../../next.config")).default;
+    expect(config.experimental?.authInterrupts).toBeUndefined();
+  });
+});
+
+describe("next.config.ts — v1 links keep working (spec 21 §3.2)", () => {
+  async function redirects() {
+    vi.resetModules();
+    const config = (await import("../../next.config")).default;
+    const rules = await config.redirects?.();
+    if (!rules) throw new Error("next.config.ts sets no redirects");
+    return rules;
+  }
+
+  it("sends /dashboard to /platform and /services/<product> to its workbench, permanently", async () => {
+    const { PRODUCTS } = await import("@/platform/registry/products");
+    expect(await redirects()).toEqual([
+      { source: "/dashboard", destination: "/platform", permanent: true },
+      {
+        source: `/services/:id(${PRODUCTS.map((p) => p.id).join("|")})`,
+        destination: "/tools/:id",
+        permanent: true,
+      },
+    ]);
+  });
+
+  it("matches every product id and nothing else, so an unknown /services/<x> stays a 404", async () => {
+    // Next's own matcher for `source` patterns; the compiled module ships without types.
+    // @ts-expect-error -- untyped JS module bundled inside next
+    const compiled: unknown = await import("next/dist/compiled/path-to-regexp");
+    const { pathToRegexp } = compiled as {
+      pathToRegexp: (source: string, keys: unknown[], options: object) => RegExp;
+    };
+    const { PRODUCTS } = await import("@/platform/registry/products");
+    const rule = (await redirects()).find((r) => r.source.startsWith("/services/"));
+    if (!rule) throw new Error("no /services rule");
+    const re = pathToRegexp(rule.source, [], {});
+    for (const p of PRODUCTS) expect(re.test(`/services/${p.id}`)).toBe(true);
+    for (const path of ["/services/unknown", "/services", "/services/magpie/x", "/services/magpie-x"]) {
+      expect(re.test(path)).toBe(false);
+    }
+  });
+});

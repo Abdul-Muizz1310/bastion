@@ -15,6 +15,13 @@
       "when": 1785639793316,
       "tag": "0001_append_only_events",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792443123304,
+      "tag": "0002_v2_dossiers",
+      "breakpoints": true
     }
   ]
 }

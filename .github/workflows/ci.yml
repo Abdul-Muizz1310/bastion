@@ -64,9 +64,10 @@ jobs:
       - uses: actions/setup-node@v7
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      # `migrate` (not `push`) — the append-only guard lives in a migration
-      # file, so only the migration path installs it.
-      - run: pnpm drizzle-kit migrate
+      # The same script `pnpm build` runs on Vercel. VERCEL_ENV is unset here, so
+      # --force makes it migrate this service container. `migrate` (not `push`):
+      # the append-only guard lives in a migration file.
+      - run: node scripts/migrate.mjs --force
       - run: pnpm test:integration
   e2e:
     needs: build
@@ -85,10 +86,11 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
+      # A local service container: the e2e config refuses any non-local DATABASE_URL.
       DATABASE_URL: "postgresql://bastion:bastion@localhost:5432/bastion"
+      # The HKDF root for visitor ids and the runner's advance tokens. No DEMO_MODE: v2 has no
+      # sign-in, and the stub stands in for every downstream, so no backend is ever called.
       IRON_SESSION_PASSWORD: "test-password-at-least-32-characters-long"
-      DEMO_MODE: "true"
-      NEXT_PUBLIC_SITE_URL: "http://localhost:3000"
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v5
@@ -99,6 +101,18 @@ jobs:
       # @playwright/test is a committed devDependency (installed by the frozen
       # lockfile above); only the browser binaries need provisioning here.
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm drizzle-kit push --force
+      - run: node scripts/migrate.mjs --force
       - run: pnpm build
+      # playwright.config.ts starts the stub first (tests/e2e/fixtures/upstream.ts, HTTPS with a
+      # certificate made by openssl for the run), then the main and limits apps with every
+      # <SERVICE>_BACKEND_URL pointed at it, then seeds the golden dossier. BASTION_LIVE_SMOKE and
+      # PLAYWRIGHT_BASE_URL are never set here: the live smoke does not run in CI.
       - run: pnpm test:e2e
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

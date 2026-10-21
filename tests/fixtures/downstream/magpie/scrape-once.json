@@ -1,0 +1,34 @@
+{
+  "source": "hackernews",
+  "scraped_at": "2026-10-20T09:15:00.120034Z",
+  "run_id": "5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b",
+  "items": [
+    {
+      "stable_id": "stable-0",
+      "url": "https://example.com/hackernews/0",
+      "title": "Item 0 from hackernews",
+      "content_text": "Item 0 from hackernews",
+      "content_hash": "f1a0d0c0ffbccc62d74672bd1d6f9ddbb1df5ad9715f915f37706399bbe49f8a",
+      "fetched_at": "2026-10-20T09:15:02.733412Z",
+      "html_snapshot_url": null
+    },
+    {
+      "stable_id": "stable-1",
+      "url": "https://example.com/hackernews/1",
+      "title": "Item 1 from hackernews",
+      "content_text": "Item 1 from hackernews",
+      "content_hash": "8838a24499880b5d6a122fa2a0512b57100ad660bb25cbf171bc18b348fa26cb",
+      "fetched_at": "2026-10-20T09:15:02.733412Z",
+      "html_snapshot_url": null
+    },
+    {
+      "stable_id": "stable-2",
+      "url": "https://example.com/hackernews/2",
+      "title": "Item 2 from hackernews",
+      "content_text": "Item 2 from hackernews",
+      "content_hash": "1c455d4864bf375e6d55a19bf92376d41910c31301e91580a9491cfa7ba19354",
+      "fetched_at": "2026-10-20T09:15:02.733412Z",
+      "html_snapshot_url": null
+    }
+  ]
+}

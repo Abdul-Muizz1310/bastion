@@ -1,92 +1,106 @@
-import { cookies } from "next/headers";
-import { type NextRequest, NextResponse } from "next/server";
-import { dossierCreateRequestSchema } from "@/features/dossier/schemas";
-import { createDossier } from "@/features/dossier/server/create";
-import { appendEvent } from "@/lib/audit/write";
-import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME, CsrfError, validateCsrf } from "@/lib/auth/csrf";
-import { AccessDeniedError } from "@/lib/auth/rbac";
-import { COOKIE_NAME, getSession } from "@/lib/auth/session";
-import { gatewayLimiter } from "@/lib/rate-limit";
+import { randomUUID } from "node:crypto";
+import { after, type NextRequest } from "next/server";
+import { z } from "zod";
+import { chainAdvance } from "@/dossier/chain";
+import { createBodySchema, createDossier } from "@/dossier/create";
+import { DOSSIER_STATUSES, listPublicDossiers } from "@/dossier/gallery";
+import { errorResponse } from "@/platform/gateway/http";
+import { createRateLimiter } from "@/platform/ratelimit";
+import { visitorFromRequest } from "@/platform/visitor";
 
 /**
- * Known magpie source slugs. In Block 4 this list can be driven by a live
- * registry lookup against magpie-backend; for now it's a small hardcoded set
- * that matches the YAML configs shipped in magpie.
+ * `/api/dossiers` (spec 21 §3). POST composes a dossier from a claim and evidence (web sources and
+ * PDFs), answers 202 and starts the runner after the response. GET is the gallery: the 12 most
+ * recent dossiers, public fields only, optionally `?status=` one status (Ruling AF). Composing is limited to 3 an hour per visitor on top of the
+ * daily `debate` budget it reserves.
  */
-const KNOWN_SOURCES = new Set(["hackernews", "arxiv-cs", "weather-live"]);
 
-export async function POST(request: NextRequest) {
-  // 1. Auth
-  const cookieStore = await cookies();
-  const session = await getSession(cookieStore.get(COOKIE_NAME)?.value);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export const dynamic = "force-dynamic";
 
-  // 1b. CSRF double-submit — plain route handlers do not get Next's Server
-  // Action origin check, so this is the only defense beyond SameSite=Lax.
-  try {
-    validateCsrf(
-      cookieStore.get(CSRF_COOKIE_NAME)?.value,
-      request.headers.get(CSRF_HEADER_NAME) ?? undefined,
-    );
-  } catch (err) {
-    if (err instanceof CsrfError) {
-      await appendEvent({
-        actorId: session.user.id,
-        action: "security.csrf_failed",
-        entityType: "session",
-        entityId: session.sid,
-        service: "bastion",
-        metadata: { reason: err.message },
-      });
-      return NextResponse.json({ error: "CSRF validation failed" }, { status: 403 });
-    }
-    throw err;
-  }
+const GALLERY_SIZE = 12;
+const composeLimiter = createRateLimiter({ max: 3, windowMs: 3_600_000 });
 
-  // 2. Parse body
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 422 });
-  }
-  const parsed = dossierCreateRequestSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Invalid request", issues: parsed.error.issues },
-      { status: 422 },
-    );
-  }
+export async function POST(req: NextRequest): Promise<Response> {
+  const requestId = randomUUID();
 
-  // 3. Rate limit
-  const rl = await gatewayLimiter.check(session.sid);
-  if (!rl.success) {
-    return NextResponse.json(
-      { error: "Rate limit exceeded", retryAfter: rl.retryAfter },
-      { status: 429, headers: { "Retry-After": String(rl.retryAfter ?? 60) } },
-    );
-  }
-
-  // 4. Validate sources against the known magpie registry
-  const unknownSource = parsed.data.sources.find((s) => !KNOWN_SOURCES.has(s));
-  if (unknownSource) {
-    return NextResponse.json({ error: `Unknown source: ${unknownSource}` }, { status: 422 });
-  }
-
-  // 5. Create + kick off pipeline
-  try {
-    const response = await createDossier(parsed.data, {
-      id: session.user.id,
-      role: session.user.role,
+  const mediaType = (req.headers.get("content-type") ?? "").split(";")[0]?.trim().toLowerCase();
+  if (mediaType !== "application/json") {
+    return errorResponse(415, {
+      error: "unsupported_media_type",
+      detail: "send application/json",
+      requestId,
     });
-    return NextResponse.json(response, { status: 202 });
-  } catch (err) {
-    if (err instanceof AccessDeniedError) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
-    // Unknown error — do not leak the message
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
+
+  const visitor = visitorFromRequest(req);
+  const limit = await composeLimiter.check(`compose:${visitor}`);
+  if (!limit.success) {
+    return errorResponse(429, {
+      error: "rate_limited",
+      retryAfterS: limit.retryAfter ?? 3600,
+      requestId,
+    });
+  }
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await req.text());
+  } catch {
+    return errorResponse(422, { error: "invalid_input", detail: "body is not JSON", requestId });
+  }
+  const body = createBodySchema.safeParse(raw);
+  if (!body.success) {
+    const issue = body.error.issues[0];
+    const where = issue?.path.join(".");
+    return errorResponse(422, {
+      error: "invalid_input",
+      detail: `${where ? `${where}: ` : ""}${issue?.message ?? "invalid"}`.slice(0, 200),
+      requestId,
+    });
+  }
+
+  let result: Awaited<ReturnType<typeof createDossier>>;
+  try {
+    result = await createDossier(body.data, { visitor, requestId });
+  } catch (err) {
+    console.error("dossier create failed", { requestId, error: err });
+    return errorResponse(500, { error: "create_failed", requestId });
+  }
+  if (!result.ok) {
+    return errorResponse(result.status, {
+      error: result.error,
+      ...(result.detail === undefined ? {} : { detail: result.detail }),
+      ...(result.retryAfterS === undefined ? {} : { retryAfterS: result.retryAfterS }),
+      requestId,
+    });
+  }
+
+  const origin = req.nextUrl.origin;
+  const id = result.dossierId;
+  // A promise, not a function: Next runs a function given to after() only when the response
+  // closes, and a client gone before it is written would leave the run unstarted (spec 21 §6.2).
+  after(chainAdvance(origin, id, 0));
+  return Response.json(
+    { dossier_id: id, request_id: requestId, url: `/d/${id}` },
+    { status: 202, headers: { "cache-control": "no-store", "x-request-id": requestId } },
+  );
+}
+
+const statusQuery = z.enum(DOSSIER_STATUSES).optional();
+
+export async function GET(req: NextRequest): Promise<Response> {
+  const values = req.nextUrl.searchParams.getAll("status");
+  const status = values.length > 1 ? { success: false as const } : statusQuery.safeParse(values[0]);
+  if (!status.success) {
+    return errorResponse(422, {
+      error: "invalid_input",
+      detail: `status must be one of ${DOSSIER_STATUSES.join(", ")}`,
+      requestId: randomUUID(),
+    });
+  }
+  const dossiers = await listPublicDossiers(
+    GALLERY_SIZE,
+    status.data === undefined ? {} : { status: status.data },
+  );
+  return Response.json({ dossiers }, { headers: { "cache-control": "no-store" } });
 }

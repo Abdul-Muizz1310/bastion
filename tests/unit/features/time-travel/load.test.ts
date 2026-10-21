@@ -7,6 +7,7 @@ const VIEW: TimeTravelView = {
   bounds: { min: "2026-01-01T00:00:00.000Z", max: "2026-01-11T00:00:00.000Z" },
   entities: [],
   message: null,
+  truncated: false,
 };
 
 function action(result: TimeTravelQueryResult) {
@@ -33,6 +34,13 @@ describe("07-replay loader: Server Action result -> scheduler contract", () => {
   it("turns an invalid_service rejection into a readable error", async () => {
     const load = createLoader(action({ ok: false, error: "invalid_service" }));
     await expect(load("2026-01-06T00:00:00.000Z")).rejects.toThrow(/service filter/i);
+  });
+
+  it("turns a rate_limited refusal into the wait and the limit, for the slider to show (Ruling AL)", async () => {
+    const load = createLoader(action({ ok: false, error: "rate_limited", retryAfterS: 9, limit: 60 }));
+    await expect(load("2026-01-06T00:00:00.000Z")).rejects.toThrow(
+      "Too many reads — try again in 9 s. Each visitor may replay the log 60 times a minute.",
+    );
   });
 
   it("falls back to a generic message for an error code it does not know", async () => {

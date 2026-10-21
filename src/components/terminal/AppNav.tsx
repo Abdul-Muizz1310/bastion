@@ -1,90 +1,86 @@
 import Link from "next/link";
 
-const links = [
-  { href: "/", label: "home" },
-  { href: "/dashboard", label: "registry" },
+/** The primary nav (spec 21 §3.1). No sign-in: no login, no whoami, no role pill. */
+
+export const NAV_LINKS = [
+  { href: "/", label: "map" },
+  { href: "/tools", label: "tools" },
+  { href: "/dossier", label: "dossier" },
   { href: "/audit", label: "audit" },
   { href: "/time-travel", label: "time-travel" },
-  { href: "/whoami", label: "whoami" },
-];
+  { href: "/platform", label: "platform" },
+] as const;
 
-export type NavRole = "admin" | "editor" | "viewer";
+export type NavKey = (typeof NAV_LINKS)[number]["label"];
 
-export function AppNav({
-  active,
-  role,
-  userEmail,
-}: {
-  active?: string;
-  role?: NavRole;
-  userEmail?: string;
-}) {
+const SOURCE_URL = "https://github.com/Abdul-Muizz1310/bastion";
+
+export function AppNav({ active }: { active?: NavKey }) {
   return (
-    <nav className="sticky top-0 z-20 flex items-center gap-1 border-b border-border bg-background/80 px-4 py-2 font-mono text-sm backdrop-blur-md">
-      <Link
-        href="/dashboard"
-        className="mr-3 flex items-center gap-2 rounded-md border border-border bg-surface px-2 py-1 text-accent-violet transition-colors hover:border-border-bright"
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <title>Bastion shield</title>
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
-        </svg>
-        <span className="font-semibold">bastion</span>
-      </Link>
-      {links.map((l) => (
+    <header className="sticky top-0 z-20 border-b border-border bg-background">
+      <div className="mx-auto grid max-w-6xl grid-cols-[auto_1fr_auto] items-center gap-x-4 px-4 md:px-6">
         <Link
-          key={l.href}
-          href={l.href}
-          className={`rounded-md px-3 py-1 transition-colors ${
-            active === l.label
-              ? "text-accent-violet shadow-[0_1px_0_0_var(--accent-violet)]"
-              : "text-fg-muted hover:text-foreground"
-          }`}
+          href="/"
+          data-brand="true"
+          aria-label="bastion, platform map"
+          className="flex items-center gap-2 py-3 text-foreground transition-colors hover:text-accent-violet"
         >
-          {l.label}
-        </Link>
-      ))}
-      <div className="ml-auto flex items-center gap-2">
-        {role ? <RolePill role={role} email={userEmail} /> : null}
-        {!role ? (
-          <Link
-            href="/login"
-            className="rounded-md px-3 py-1 text-fg-muted transition-colors hover:text-foreground"
+          <svg
+            aria-hidden="true"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="text-accent-violet"
           >
-            login
-          </Link>
-        ) : null}
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
+            <path d="M9 12h6M12 9v6" />
+          </svg>
+          <span translate="no" className="font-display text-sm font-bold tracking-tight">
+            bastion
+          </span>
+        </Link>
+
+        <nav
+          aria-label="primary"
+          className="order-last col-span-full -mx-4 overflow-x-auto border-t border-border px-2 md:order-none md:col-span-1 md:mx-0 md:border-t-0 md:px-0"
+        >
+          <ul className="flex items-center justify-between font-mono text-xs md:justify-start md:gap-1 md:text-[13px]">
+            {NAV_LINKS.map((link) => {
+              const current = link.label === active;
+              return (
+                <li key={link.href}>
+                  <Link
+                    href={link.href}
+                    aria-current={current ? "page" : undefined}
+                    className={`relative block whitespace-nowrap px-1.5 py-3 transition-colors md:px-2.5 ${
+                      current
+                        ? "text-accent-violet after:absolute after:inset-x-1.5 after:bottom-0 after:h-px after:bg-accent-violet md:after:inset-x-2.5"
+                        : "text-fg-muted hover:text-foreground"
+                    }`}
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+
+        <a
+          href={SOURCE_URL}
+          className="justify-self-end py-3 font-mono text-[13px] text-fg-muted transition-colors hover:text-foreground"
+        >
+          source
+          <span aria-hidden="true" className="ml-1">
+            ↗
+          </span>
+        </a>
       </div>
-    </nav>
-  );
-}
-
-const ROLE_CLASS: Record<NavRole, string> = {
-  admin: "border-accent-violet/40 bg-accent-violet-soft text-accent-violet",
-  editor: "border-success/40 bg-success/10 text-success",
-  viewer: "border-fg-faint/30 bg-surface text-fg-muted",
-};
-
-function RolePill({ role, email }: { role: NavRole; email?: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      {email ? (
-        <span className="hidden font-mono text-[11px] text-fg-muted md:inline">{email}</span>
-      ) : null}
-      <span
-        className={`rounded-md border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.15em] ${ROLE_CLASS[role]}`}
-      >
-        {role}
-      </span>
-    </div>
+    </header>
   );
 }

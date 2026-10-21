@@ -1,145 +1,99 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { StoredEvent } from "@/platform/audit/read";
 
-// Mock next/navigation's forbidden() so we can detect viewer denial
-vi.mock("next/navigation", () => ({
-  forbidden: vi.fn(() => {
-    throw new Error("FORBIDDEN_CALLED");
-  }),
+/**
+ * Spec 21 §3.2: the audit log is public — every visitor reads the same rows, so nothing here is
+ * scoped by actor (invariant 1) — read newest first by id, one row past the page.
+ */
+
+const readEvents = vi.fn();
+vi.mock("@/platform/audit/read", () => ({
+  readEvents: (...args: unknown[]) => readEvents(...args),
 }));
 
-// Mock the underlying queryEvents
-const mockQueryEvents = vi.fn();
-vi.mock("@/lib/audit/write", () => ({
-  queryEvents: (...args: unknown[]) => mockQueryEvents(...args),
-  appendEvent: vi.fn().mockResolvedValue(1),
-}));
+import { listAudit, requestTrace, TRACE_LIMIT } from "@/features/audit/server/query";
 
-import { queryAuditFor, queryTraceFor } from "@/features/audit/server/query";
-
-function session(role: "admin" | "editor" | "viewer", id = "u1") {
+function stored(id: number, more: Partial<StoredEvent> = {}): StoredEvent {
   return {
-    sid: "sess-1",
-    user: { id, email: `${role}@x.com`, role, name: null },
+    id,
+    actor: "bastion",
+    actorId: null,
+    action: "gateway.call",
+    entityType: "capability",
+    entityId: "magpie.scrape",
+    service: "magpie",
+    requestId: "req-1",
+    metadata: {},
+    createdAt: new Date(Date.UTC(2026, 9, 20, 9, 0, id)),
+    ...more,
   };
 }
 
-describe("18-audit-query: queryAuditFor role scoping", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockQueryEvents.mockResolvedValue([]);
+beforeEach(() => {
+  readEvents.mockReset();
+  readEvents.mockResolvedValue([]);
+});
+
+describe("listAudit", () => {
+  it("reads one row past the page, newest first, with no actor filter (invariant 1)", async () => {
+    await listAudit({ filters: {}, before: null });
+    expect(readEvents).toHaveBeenCalledWith({ limit: 51, order: "newest" });
+    expect(readEvents.mock.calls[0]?.[0]).not.toHaveProperty("actor");
   });
 
-  it("case 2: admin — no actorId filter applied", async () => {
-    await queryAuditFor(session("admin"));
-    const opts = mockQueryEvents.mock.calls[0][0];
-    expect(opts.actorId).toBeUndefined();
+  it("passes the filters and the cursor through", async () => {
+    await listAudit({
+      filters: { service: "inkprint", action: "dossier.", request: "req-9" },
+      before: 120,
+    });
+    expect(readEvents).toHaveBeenCalledWith({
+      service: "inkprint",
+      actionPrefix: "dossier.",
+      requestId: "req-9",
+      beforeId: 120,
+      limit: 51,
+      order: "newest",
+    });
   });
 
-  it("case 3: editor — no actorId filter applied", async () => {
-    await queryAuditFor(session("editor"));
-    const opts = mockQueryEvents.mock.calls[0][0];
-    expect(opts.actorId).toBeUndefined();
+  it("returns the page as views and the cursor for older", async () => {
+    readEvents.mockResolvedValueOnce(Array.from({ length: 51 }, (_, i) => stored(200 - i)));
+    const page = await listAudit({ filters: {}, before: null });
+    expect(page.events).toHaveLength(50);
+    expect(page.events[0]?.id).toBe(200);
+    expect(page.older).toBe(151);
+    expect(page.events[0]).not.toHaveProperty("metadata");
   });
 
-  it("case 4: viewer — actorId forced to session user id", async () => {
-    await queryAuditFor(session("viewer", "viewer-7"));
-    const opts = mockQueryEvents.mock.calls[0][0];
-    expect(opts.actorId).toBe("viewer-7");
-  });
-
-  it("case 5: service filter passes through", async () => {
-    await queryAuditFor(session("admin"), { service: "magpie" });
-    const opts = mockQueryEvents.mock.calls[0][0];
-    expect(opts.service).toBe("magpie");
-  });
-
-  it("case 6: actionPrefix filter passes through", async () => {
-    await queryAuditFor(session("admin"), { actionPrefix: "gateway." });
-    const opts = mockQueryEvents.mock.calls[0][0];
-    expect(opts.actionPrefix).toBe("gateway.");
-  });
-
-  it("since filter maps to 'from' option on queryEvents", async () => {
-    const since = new Date("2026-04-18T00:00:00Z");
-    await queryAuditFor(session("admin"), { since });
-    const opts = mockQueryEvents.mock.calls[0][0];
-    expect(opts.from).toBe(since);
-  });
-
-  it("default limit is 100", async () => {
-    await queryAuditFor(session("admin"));
-    expect(mockQueryEvents.mock.calls[0][0].limit).toBe(100);
-  });
-
-  it("explicit limit is capped at 500", async () => {
-    await queryAuditFor(session("admin"), { limit: 10_000 });
-    expect(mockQueryEvents.mock.calls[0][0].limit).toBe(500);
-  });
-
-  it("returns the events the query produced", async () => {
-    const rows = [{ id: 1 }, { id: 2 }];
-    mockQueryEvents.mockResolvedValueOnce(rows);
-    const result = await queryAuditFor(session("admin"));
-    expect(result).toEqual(rows);
+  it("lets a read failure reach the caller (the page says the log is unavailable)", async () => {
+    readEvents.mockRejectedValueOnce(new Error("connection refused"));
+    await expect(listAudit({ filters: {}, before: null })).rejects.toThrow("connection refused");
   });
 });
 
-describe("18-audit-query: queryTraceFor role scoping", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+describe("requestTrace", () => {
+  it("reads the request oldest first, one past the limit", async () => {
+    await requestTrace("req-1");
+    expect(readEvents).toHaveBeenCalledWith({
+      requestId: "req-1",
+      limit: TRACE_LIMIT + 1,
+      order: "oldest",
+    });
+    expect(TRACE_LIMIT).toBe(500);
   });
 
-  it("case 9: admin sees the trace in ASC order", async () => {
-    // queryEvents returns DESC; queryTraceFor reverses
-    mockQueryEvents.mockResolvedValueOnce([
-      { id: 3, actorId: "u1", createdAt: new Date("2026-04-18T10:00:02Z") },
-      { id: 2, actorId: "u1", createdAt: new Date("2026-04-18T10:00:01Z") },
-      { id: 1, actorId: "u1", createdAt: new Date("2026-04-18T10:00:00Z") },
-    ]);
-    const result = await queryTraceFor(session("admin"), "req-1");
-    expect(result.map((r: any) => r.id)).toEqual([1, 2, 3]);
+  it("returns every event of a short request, untruncated", async () => {
+    readEvents.mockResolvedValueOnce([stored(1), stored(2, { actor: "v_kk6eooepno" })]);
+    const trace = await requestTrace("req-1");
+    expect(trace.events.map((e) => e.id)).toEqual([1, 2]);
+    expect(trace.truncated).toBe(false);
   });
 
-  it("case 11: viewer + trace with foreign actor → forbidden() called", async () => {
-    mockQueryEvents.mockResolvedValueOnce([
-      { id: 1, actorId: "viewer-1", createdAt: new Date() },
-      { id: 2, actorId: "someone-else", createdAt: new Date() },
-    ]);
-    const { forbidden } = await import("next/navigation");
-    await expect(queryTraceFor(session("viewer", "viewer-1"), "req-1")).rejects.toThrow(
-      "FORBIDDEN_CALLED",
-    );
-    expect(forbidden).toHaveBeenCalled();
-  });
-
-  it("case 12: viewer + trace entirely own events → passes, returns rows", async () => {
-    mockQueryEvents.mockResolvedValueOnce([
-      { id: 1, actorId: "viewer-1", createdAt: new Date("2026-04-18T10:00:00Z") },
-      { id: 2, actorId: "viewer-1", createdAt: new Date("2026-04-18T10:00:01Z") },
-    ]);
-    const result = await queryTraceFor(session("viewer", "viewer-1"), "req-1");
-    expect(result).toHaveLength(2);
-  });
-
-  it("case 10: empty trace — returns empty array (404 decision happens in page)", async () => {
-    mockQueryEvents.mockResolvedValueOnce([]);
-    const result = await queryTraceFor(session("admin"), "req-nonexistent");
-    expect(result).toEqual([]);
-  });
-
-  it("passes requestId filter to underlying queryEvents", async () => {
-    mockQueryEvents.mockResolvedValueOnce([]);
-    await queryTraceFor(session("admin"), "my-req-id");
-    expect(mockQueryEvents.mock.calls[0][0].requestId).toBe("my-req-id");
-  });
-
-  it("viewer + trace with null actorId events (system events) passes", async () => {
-    // System events (null actor) don't belong to any other user — viewer should see them.
-    mockQueryEvents.mockResolvedValueOnce([
-      { id: 1, actorId: "viewer-1", createdAt: new Date() },
-      { id: 2, actorId: null, createdAt: new Date() },
-    ]);
-    const result = await queryTraceFor(session("viewer", "viewer-1"), "req-1");
-    expect(result).toHaveLength(2);
+  it("keeps the first 500 of a longer one and says it was cut", async () => {
+    readEvents.mockResolvedValueOnce(Array.from({ length: 501 }, (_, i) => stored(i + 1)));
+    const trace = await requestTrace("req-1");
+    expect(trace.events).toHaveLength(500);
+    expect(trace.events.at(-1)?.id).toBe(500);
+    expect(trace.truncated).toBe(true);
   });
 });

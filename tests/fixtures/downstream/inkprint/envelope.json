@@ -1,0 +1,63 @@
+{
+  "envelope_id": "e5f6a7b8-c9d0-4e1f-a2b3-c4d5e6f7a8b9",
+  "envelope_manifest": {
+    "@context": "https://c2pa.org/statements/v1",
+    "version": "2.2",
+    "title": "Dossier envelope c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f",
+    "instance_id": "urn:uuid:c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f",
+    "format": "application/json",
+    "claim_generator": "bastion/dossier-envelope",
+    "claim_generator_info": [
+      {
+        "name": "bastion",
+        "version": "0.1.0"
+      }
+    ],
+    "issued_at": "2026-10-20T09:30:11.204518+00:00",
+    "assertions": [
+      {
+        "label": "c2pa.ingredient.v2",
+        "data": {
+          "relationship": "inputTo",
+          "url": "/certificates/2b9f6a1e-4c3d-4e5f-9a7b-8c6d5e4f3a2b/manifest",
+          "instance_id": "urn:uuid:2b9f6a1e-4c3d-4e5f-9a7b-8c6d5e4f3a2b"
+        }
+      },
+      {
+        "label": "bastion.debate_transcript_hash",
+        "data": {
+          "alg": "sha256",
+          "hash": "54e6289e14c7b0e7ad9acc2dfc4c1e3d027d0eef7f5c4c3fe7c292761d0e06a6"
+        }
+      },
+      {
+        "label": "bastion.perf_receipt_hash",
+        "data": {
+          "alg": "sha256",
+          "hash": "342edb77c95f94da5f1c2e5a397d5467ba9e09b141e69dfa182cb243cb5b3b32"
+        }
+      },
+      {
+        "label": "c2pa.hash.data",
+        "data": {
+          "alg": "sha256",
+          "hash": "1e6ed65d77d6364eeaed5a745ba5c4985ae2b700dd85d7cf7f027bdf294a33fc",
+          "pad": ""
+        }
+      }
+    ],
+    "signature": {
+      "alg": "Ed25519",
+      "key_id": "inkprint-ed25519-2026-04",
+      "value": "q83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJAA==",
+      "signed_assertions": [
+        "c2pa.ingredient.v2",
+        "bastion.debate_transcript_hash",
+        "bastion.perf_receipt_hash",
+        "c2pa.hash.data"
+      ]
+    }
+  },
+  "envelope_signature": "q83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJq83vEjRWeJAA==",
+  "created_at": "2026-10-20T09:30:11.204518+00:00"
+}

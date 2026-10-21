@@ -1,20 +1,24 @@
-import type { TimeTravelResult } from "@/lib/audit/replay";
+import type { ActorDisplay } from "@/features/audit/actor";
+import type { KnownFields } from "@/features/audit/known-fields";
 
 /**
- * Serialisable projection of a replay query.
- *
- * `TimeTravelResult` carries `Date` objects; this view carries ISO strings so
- * it can cross the Server Action / Server Component boundary unchanged and be
- * compared structurally in tests. Nothing in here is nullable-by-accident:
- * `message` is `null` (never `undefined`) when there is nothing to say.
+ * Serialisable projection of a replay query (spec 07, spec 21 §3.2), as the slider receives it:
+ * ISO strings, the actor as its pseudonym and the known fields only, so it crosses the Server
+ * Action / Server Component boundary unchanged and never takes the metadata to the browser
+ * (invariant 6). `message` is `null` (never `undefined`) when there is nothing to say. Types and
+ * pure helpers only: the browser loads this module (`./to-view` builds the view on the server).
  */
 export type TimeTravelEntityView = {
   entityType: string;
   entityId: string;
+  /** A dossier's public page; null for every other entity. */
+  href: string | null;
   service: string | null;
-  state: unknown;
   lastAction: string;
   lastEventAt: string;
+  requestId: string | null;
+  actor: ActorDisplay;
+  facts: KnownFields;
 };
 
 export type TimeTravelBoundsView = {
@@ -29,32 +33,27 @@ export type TimeTravelView = {
   bounds: TimeTravelBoundsView;
   entities: TimeTravelEntityView[];
   message: string | null;
+  /** More entities existed at this moment than the replay keeps. */
+  truncated: boolean;
 };
 
 /**
- * What the Server Action returns. RBAC failures still throw (Next's
- * forbidden()/unauthorized() interrupts); everything a caller can reasonably
- * recover from is modelled as data.
+ * What the Server Action returns: everything a caller can reasonably recover from is modelled as
+ * data.
  */
 export type TimeTravelQueryResult =
   | { ok: true; view: TimeTravelView }
-  | { ok: false; error: "invalid_timestamp" | "invalid_service" };
+  | { ok: false; error: "invalid_timestamp" | "invalid_service" }
+  /** Ruling AL: the visitor's 60 replays a minute are spent; nothing was read. */
+  | { ok: false; error: "rate_limited"; retryAfterS: number; limit: number };
 
-export function toTimeTravelView(result: TimeTravelResult, asOf: Date): TimeTravelView {
-  return {
-    asOf: asOf.toISOString(),
-    bounds: {
-      min: result.bounds.min ? result.bounds.min.toISOString() : null,
-      max: result.bounds.max.toISOString(),
-    },
-    entities: result.entities.map((entity) => ({
-      entityType: entity.entityType,
-      entityId: entity.entityId,
-      service: entity.service,
-      state: entity.state,
-      lastAction: entity.lastAction,
-      lastEventAt: entity.lastEventAt.toISOString(),
-    })),
-    message: result.message ?? null,
-  };
+export type TypeCount = { type: string; count: number };
+
+/** Each entity type and how many entities it has, the most frequent first, then by name. */
+export function typeCounts(entities: readonly TimeTravelEntityView[]): TypeCount[] {
+  const counts = new Map<string, number>();
+  for (const e of entities) counts.set(e.entityType, (counts.get(e.entityType) ?? 0) + 1);
+  return [...counts]
+    .map(([type, count]) => ({ type, count }))
+    .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type));
 }

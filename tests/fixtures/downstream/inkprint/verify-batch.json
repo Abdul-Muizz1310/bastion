@@ -1,0 +1,21 @@
+{
+  "results": [
+    {
+      "certificate_id": "2b9f6a1e-4c3d-4e5f-9a7b-8c6d5e4f3a2b",
+      "valid": true,
+      "checks": {
+        "signature": true,
+        "hash": true,
+        "simhash": true,
+        "embedding": true
+      },
+      "reason": null
+    },
+    {
+      "certificate_id": "4d6e8f0a-2b4c-4d6e-8f0a-2b4c6d8e0f1a",
+      "valid": false,
+      "checks": {},
+      "reason": "unknown_certificate"
+    }
+  ]
+}

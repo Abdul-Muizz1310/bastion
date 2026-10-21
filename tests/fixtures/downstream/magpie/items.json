@@ -1,0 +1,32 @@
+[
+  {
+    "id": "6f1c2a8e-3b4d-4c5e-9f60-7a8b9c0d1e2f",
+    "stable_id": "41923077",
+    "url": "https://example.com/yaml-scraper",
+    "title": "Show HN: A YAML scraper that heals its own selectors",
+    "content_text": "Show HN: A YAML scraper that heals its own selectors",
+    "content_hash": "f599cbb27667620ed24b16af7a9fa362f64d01d14f4dce4eea3c34fed6969357",
+    "first_seen_at": "2026-10-19T12:00:03.101Z",
+    "last_seen_at": "2026-10-19T18:00:04.402Z",
+    "html_snapshot_url": null,
+    "data": {
+      "id": "41923077",
+      "title": "Show HN: A YAML scraper that heals its own selectors",
+      "url": "https://example.com/yaml-scraper"
+    }
+  },
+  {
+    "id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+    "stable_id": "41923101",
+    "url": "",
+    "title": "",
+    "content_text": "",
+    "content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "first_seen_at": "2026-10-19T18:00:04.402Z",
+    "last_seen_at": "2026-10-19T18:00:04.402Z",
+    "html_snapshot_url": null,
+    "data": {
+      "id": "41923101"
+    }
+  }
+]

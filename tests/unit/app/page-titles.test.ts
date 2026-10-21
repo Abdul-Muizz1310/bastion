@@ -12,41 +12,23 @@ vi.mock("@/lib/db/client", () => ({
   },
 }));
 
-import * as trace from "@/app/(app)/audit/[requestId]/page";
-import * as audit from "@/app/(app)/audit/page";
-import * as dashboard from "@/app/(app)/dashboard/page";
-import * as dossier from "@/app/(app)/dossiers/[id]/page";
-import * as run from "@/app/(app)/run/page";
-import * as service from "@/app/(app)/services/[id]/page";
-import * as timeTravel from "@/app/(app)/time-travel/page";
-import * as whoami from "@/app/(app)/whoami/page";
-import * as login from "@/app/(public)/login/page";
+import * as trace from "@/app/audit/[requestId]/page";
+import * as audit from "@/app/audit/page";
 import * as home from "@/app/page";
+import * as platform from "@/app/platform/page";
+import * as timeTravel from "@/app/time-travel/page";
 
 type StaticPage = { metadata?: Metadata };
 
 const ID = "0f8a1c2e-4b6d-4e8f-9a0b-1c2d3e4f5a6b";
 
 const STATIC_PAGES: [string, StaticPage, string][] = [
-  ["/login", login, "sign in"],
-  ["/dashboard", dashboard, "platform services"],
   ["/audit", audit, "audit log"],
-  ["/run", run, "end-to-end demo"],
   ["/time-travel", timeTravel, "time travel"],
-  ["/whoami", whoami, "whoami"],
+  ["/platform", platform, "platform"],
 ];
 
 const DYNAMIC_PAGES: [string, () => Promise<Metadata>, string][] = [
-  [
-    "/services/[id]",
-    () => service.generateMetadata({ params: Promise.resolve({ id: "paper-trail" }) }),
-    "service paper-trail",
-  ],
-  [
-    "/dossiers/[id]",
-    () => dossier.generateMetadata({ params: Promise.resolve({ id: ID }) }),
-    "dossier 0f8a1c2e",
-  ],
   [
     "/audit/[requestId]",
     () => trace.generateMetadata({ params: Promise.resolve({ requestId: ID }) }),

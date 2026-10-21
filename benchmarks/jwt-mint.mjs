@@ -2,7 +2,7 @@
 /**
  * Gateway JWT mint throughput.
  *
- * Every request through /api/proxy/[service]/[...path] mints one short-lived
+ * Every gateway call (src/platform/gateway/call.ts) mints one short-lived
  * Ed25519 platform JWT, so this signing cost sits on the hot path of every
  * cross-service call. This measures it in isolation — no network, no database.
  *
@@ -24,14 +24,21 @@ const key = await jose.importPKCS8(
   "EdDSA",
 );
 
-/** Byte-for-byte the same call shape as src/lib/gateway/jwt.ts:mintPlatformJwt. */
+/** The same call shape as src/platform/gateway/token.ts:mintToken (contract v2 claims). */
 async function mint() {
-  return new jose.SignJWT({ role: "admin", service: "paper-trail" })
+  const iat = Math.floor(Date.now() / 1000);
+  return new jose.SignJWT({
+    iss: "bastion",
+    aud: "paper-trail",
+    service: "paper-trail",
+    sub: "v_abcdefghij",
+    role: "editor",
+    cap: "paper-trail.debate",
+    iat,
+    exp: iat + 60,
+    jti: randomUUID(),
+  })
     .setProtectedHeader({ alg: "EdDSA", kid: KEY_ID })
-    .setSubject("00000000-0000-4000-8000-000000000000")
-    .setIssuedAt()
-    .setExpirationTime("60s")
-    .setJti(randomUUID())
     .sign(key);
 }
 

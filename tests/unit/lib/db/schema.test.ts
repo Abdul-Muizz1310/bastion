@@ -1,7 +1,20 @@
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
+import {
+  DOSSIER_STAGES,
+  dossierDocuments,
+  dossierSteps,
+  dossiers,
+  events,
+  evidenceItems,
+  magicLinks,
+  RECEIPT_KINDS,
+  receipts,
+  STEP_STATUSES,
+  sessions,
+  users,
+} from "@/lib/db/schema";
 import { insertUserSchema } from "@/lib/validation";
-import { events, magicLinks, sessions, users } from "@/lib/db/schema";
 
 describe("00-schema: Drizzle schema", () => {
   it("exports users, sessions, magicLinks, events tables", () => {
@@ -133,26 +146,88 @@ describe("00-schema: edge and failure cases", () => {
 
 describe("00-schema: security — append-only events", () => {
   it("UPDATE on events table is rejected by database (integration)", async () => {
-    // Structural: the audit module only exports appendEvent and queryEvents
-    // There is no updateEvent function, enforcing append-only at the application layer.
-    const auditMod = await import("@/lib/audit/write");
+    // Structural: the writer exports only appendEvent and the reader only readEvents. There is
+    // no updateEvent function, enforcing append-only at the application layer.
+    const auditMod = await import("@/platform/audit/write");
     const auditExports = Object.keys(auditMod);
     expect(auditExports).not.toContain("updateEvent");
     expect(auditExports).toContain("appendEvent");
-    expect(auditExports).toContain("queryEvents");
+    expect(Object.keys(await import("@/platform/audit/read"))).toEqual(["readEvents"]);
   });
 
   it("DELETE on events table is rejected by database (integration)", async () => {
     // Structural: no deleteEvent function is exported from audit module
-    const auditMod = await import("@/lib/audit/write");
+    const auditMod = await import("@/platform/audit/write");
     const auditExports = Object.keys(auditMod);
     expect(auditExports).not.toContain("deleteEvent");
   });
 
   it("TRUNCATE on events table is rejected by database (integration)", async () => {
     // Structural: no truncateEvents function is exported from audit module
-    const auditMod = await import("@/lib/audit/write");
+    const auditMod = await import("@/platform/audit/write");
     const auditExports = Object.keys(auditMod);
     expect(auditExports).not.toContain("truncateEvents");
+  });
+});
+
+describe("21-v2 schema: visitors and the durable dossier (spec 21 §6.3)", () => {
+  it("events gains a nullable text `actor`; v1's `actor_id` stays for history", () => {
+    const cols = getTableConfig(events).columns;
+    const actor = cols.find((c) => c.name === "actor");
+    expect(actor?.getSQLType()).toBe("text");
+    expect(actor?.notNull).toBe(false);
+    expect(cols.find((c) => c.name === "actor_id")).toBeDefined();
+  });
+
+  it("dossiers.user_id is nullable and dossiers gain `visitor` and `error`", () => {
+    const cols = getTableConfig(dossiers).columns;
+    expect(cols.find((c) => c.name === "user_id")?.notNull).toBe(false);
+    expect(cols.find((c) => c.name === "visitor")?.getSQLType()).toBe("text");
+    expect(cols.find((c) => c.name === "error")?.getSQLType()).toBe("text");
+  });
+
+  it("evidence_items gains kind, product, locator, excerpt, inkprint_hash; url/title default ''", () => {
+    const cols = getTableConfig(evidenceItems).columns;
+    const byName = new Map(cols.map((c) => [c.name, c]));
+    for (const name of ["kind", "product", "excerpt", "inkprint_hash"]) {
+      expect(byName.get(name)?.getSQLType(), name).toBe("text");
+    }
+    expect(byName.get("locator")?.getSQLType()).toBe("jsonb");
+    expect(byName.get("url")?.default).toBe("");
+    expect(byName.get("title")?.default).toBe("");
+  });
+
+  it("dossier_steps is keyed by (dossier_id, stage) and cascades from dossiers", () => {
+    const config = getTableConfig(dossierSteps);
+    expect(config.primaryKeys[0]?.columns.map((c) => c.name)).toEqual(["dossier_id", "stage"]);
+    expect(config.foreignKeys[0]?.onDelete).toBe("cascade");
+    const byName = new Map(config.columns.map((c) => [c.name, c]));
+    expect(byName.get("attempt")?.default).toBe(0);
+    expect(byName.get("output")?.default).toEqual({});
+    expect(byName.get("status")?.notNull).toBe(true);
+    expect(byName.get("stage")?.enumValues).toEqual([...DOSSIER_STAGES]);
+    expect(byName.get("status")?.enumValues).toEqual([...STEP_STATUSES]);
+  });
+
+  it("dossier_documents is keyed by (dossier_id, document_id) and cascades from dossiers", () => {
+    const config = getTableConfig(dossierDocuments);
+    expect(config.primaryKeys[0]?.columns.map((c) => c.name)).toEqual([
+      "dossier_id",
+      "document_id",
+    ]);
+    expect(config.foreignKeys[0]?.onDelete).toBe("cascade");
+    expect(config.columns.map((c) => c.name)).toEqual(
+      expect.arrayContaining(["sha256", "title", "kind", "graph_hash", "page_count", "job_id"]),
+    );
+  });
+
+  it("receipts have a uuid id, a kind, and cascade from dossiers", () => {
+    const config = getTableConfig(receipts);
+    expect(config.foreignKeys[0]?.onDelete).toBe("cascade");
+    const byName = new Map(config.columns.map((c) => [c.name, c]));
+    expect(byName.get("id")?.primary).toBe(true);
+    expect(byName.get("kind")?.notNull).toBe(true);
+    expect(byName.get("kind")?.enumValues).toEqual([...RECEIPT_KINDS]);
+    expect(byName.get("payload")?.getSQLType()).toBe("jsonb");
   });
 });

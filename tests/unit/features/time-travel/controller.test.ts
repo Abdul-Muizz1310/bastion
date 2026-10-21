@@ -26,6 +26,7 @@ function view(asOf: string): TimeTravelView {
     bounds: { min: MIN_ISO, max: MAX_ISO },
     entities: [],
     message: null,
+    truncated: false,
   };
 }
 

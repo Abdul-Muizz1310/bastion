@@ -1,0 +1,37 @@
+{
+  "element": "p:c95bca1f83faa250#obligation",
+  "kind": "role",
+  "maker": {
+    "actor": "rule",
+    "id": "R-ROLE-obligation",
+    "model": null,
+    "request_key": null
+  },
+  "statement": "a modal of obligation: shall, must, is required to",
+  "evidence": {
+    "start": 741,
+    "end": 745,
+    "quote": "must"
+  },
+  "reasons": [
+    {
+      "code": "explicit_rule",
+      "severity": "info",
+      "detail": null
+    }
+  ],
+  "verdict": null,
+  "ops": [
+    {
+      "seq": 92,
+      "stage": "classify_rules",
+      "kind": "add_role",
+      "target": "p:c95bca1f83faa250#obligation",
+      "actor": "rule",
+      "method": "R-ROLE-obligation",
+      "model": null,
+      "request_key": null,
+      "detail": "741-745"
+    }
+  ]
+}

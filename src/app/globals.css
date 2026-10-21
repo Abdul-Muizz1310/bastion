@@ -3,8 +3,9 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ─────────────────────────────────────────────────────────────
- * bastion — fortified control plane aesthetic
- * shared portfolio design system; accent: violet/indigo
+ * bastion — the dark terminal house style, drawn as a live schematic
+ * shared portfolio design system; accent: violet. No gradients, no
+ * glass: hairlines, mono type, a dot grid, and receipts.
  * ───────────────────────────────────────────────────────────── */
 
 :root {
@@ -12,8 +13,12 @@
   --foreground: #fafafa;
   --surface: #12121a;
   --surface-hover: #1a1a25;
-  --fg-muted: #8a8aa3;
-  --fg-faint: #4a4a63;
+  /* Text colours reach 4.5:1 on background, surface and surface-hover
+     (tests/unit/app/globals-contrast.test.ts). */
+  --fg-muted: #8a8aa3; /* 5.9 / 5.5 / 5.1 */
+  --fg-faint: #82829c; /* 5.3 / 5.0 / 4.6: secondary text, a step below muted */
+  /* Decoration only (empty cells, idle dots), never text: 2.3:1. */
+  --line-faint: #4a4a63;
   --border: #1e1e2e;
   --border-bright: #2a2a3d;
   --accent-violet: #a78bfa;
@@ -30,6 +35,8 @@
   --mac-yellow: #ffbd2e;
   --mac-green: #27c93f;
   --radius: 0.625rem;
+  /* The torn edge of a receipt: the width of one tooth. */
+  --tear: 14px;
 }
 
 @theme inline {
@@ -48,11 +55,14 @@
   --color-error: var(--error);
   --color-fg-muted: var(--fg-muted);
   --color-fg-faint: var(--fg-faint);
+  --color-line-faint: var(--line-faint);
   --color-mac-red: var(--mac-red);
   --color-mac-yellow: var(--mac-yellow);
   --color-mac-green: var(--mac-green);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* JetBrains Mono is the house face for UI and code; Martian Mono sets names and headlines. */
+  --font-sans: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-display: var(--font-martian-mono), var(--font-jetbrains-mono), ui-monospace, monospace;
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
@@ -62,11 +72,31 @@
   * {
     border-color: var(--border);
   }
+  html {
+    color-scheme: dark;
+    /* The sticky nav (two rows on a phone) must never cover a focused element or a heading. */
+    scroll-padding-top: 6.5rem;
+    -webkit-tap-highlight-color: transparent;
+  }
   body {
     background-color: var(--background);
     color: var(--foreground);
-    font-feature-settings: "ss01", "cv11";
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  @media (min-width: 48rem) {
+    html {
+      scroll-padding-top: 4.5rem;
+    }
+  }
+  a,
+  button {
+    touch-action: manipulation;
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent-violet);
+    outline-offset: 3px;
+    border-radius: 2px;
   }
   ::selection {
     background: var(--accent-violet-soft);
@@ -74,15 +104,14 @@
   }
 }
 
+/* The page: a blueprint dot grid. No glow, no gradient wash. */
 .bg-grid {
-  background-image:
-    radial-gradient(circle at 50% 0%, rgba(167, 139, 250, 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 50% 100%, rgba(244, 114, 182, 0.05) 0%, transparent 60%),
-    radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.06) 1px, transparent 0);
-  background-size:
-    100% 100%,
-    100% 100%,
-    24px 24px;
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    rgba(255, 255, 255, 0.055) 1px,
+    transparent 0
+  );
+  background-size: 24px 24px;
   background-attachment: fixed;
 }
 
@@ -95,8 +124,8 @@
     180deg,
     transparent 0,
     transparent 2px,
-    rgba(255, 255, 255, 0.015) 2px,
-    rgba(255, 255, 255, 0.015) 3px
+    rgba(255, 255, 255, 0.012) 2px,
+    rgba(255, 255, 255, 0.012) 3px
   );
   z-index: 1;
 }
@@ -104,9 +133,128 @@
 .terminal-glow {
   box-shadow:
     0 0 0 1px var(--border),
-    var(--shadow-lg),
-    var(--glow-sm);
+    var(--shadow-lg);
 }
+
+/* Martian Mono a little condensed. (`@theme inline` emits no --font-display variable, so the
+   family comes from the utility Tailwind generates; this rule only narrows it.) */
+.font-display {
+  font-stretch: 87.5%;
+}
+
+/* ── system map ─────────────────────────────────────────────── */
+
+.map-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--background);
+}
+
+.map-canvas {
+  height: auto;
+  overflow: visible;
+}
+
+.map-frame {
+  stroke: var(--border-bright);
+  stroke-width: 1;
+  transition: stroke 150ms ease;
+}
+
+.map-node:hover .map-frame {
+  stroke: var(--fg-muted);
+}
+
+/* Each node's border takes its state's colour; the state is also written inside the node. */
+.map-node:has([data-state="live"]) .map-frame {
+  stroke: color-mix(in oklab, var(--success) 45%, var(--border-bright));
+}
+.map-node:has([data-state="asleep"]) .map-frame {
+  stroke: color-mix(in oklab, var(--warning) 40%, var(--border-bright));
+}
+.map-node:has([data-state="down"]) .map-frame {
+  stroke: color-mix(in oklab, var(--error) 60%, var(--border-bright));
+}
+
+.map-hub .map-frame {
+  stroke: color-mix(in oklab, var(--accent-violet) 55%, var(--border-bright));
+}
+
+.map-hub-wall {
+  stroke: color-mix(in oklab, var(--accent-violet) 30%, transparent);
+  stroke-dasharray: 2 4;
+}
+
+.map-name {
+  font-family: var(--font-martian-mono), var(--font-jetbrains-mono), ui-monospace, monospace;
+  font-weight: 600;
+  font-stretch: 87.5%;
+}
+
+.map-hub-name {
+  font-weight: 700;
+}
+
+.map-edge {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.map-edge-evidence {
+  stroke: color-mix(in oklab, var(--accent-violet) 75%, transparent);
+}
+.map-edge-telemetry {
+  stroke: color-mix(in oklab, var(--accent-cyan) 65%, transparent);
+  stroke-width: 1.25;
+  stroke-dasharray: 5 5;
+}
+.map-edge-scaffold {
+  stroke: var(--fg-muted);
+  stroke-dasharray: 1 5;
+}
+
+.map-chip {
+  stroke: var(--fg-muted);
+  stroke-dasharray: 3 3;
+}
+
+/* Edge labels sit on a halo of the canvas colour so they read over the lines. */
+.map-label {
+  fill: var(--fg-muted);
+  paint-order: stroke;
+  stroke: var(--background);
+  stroke-width: 6px;
+  stroke-linejoin: round;
+}
+
+.map-packets {
+  display: none;
+  fill: none;
+}
+
+/* ── receipts ───────────────────────────────────────────────── */
+
+/* A receipt torn off the roll: the bottom edge is a row of teeth. */
+.receipt-torn {
+  -webkit-mask:
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / var(--tear)
+    100%;
+  mask:
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / var(--tear)
+    100%;
+}
+
+.receipt-rule {
+  border-top: 1px dashed var(--border-bright);
+}
+
+.receipt-stamp {
+  transform: rotate(-7deg);
+  transform-origin: center;
+}
+
+/* ── motion: only when it is welcome ────────────────────────── */
 
 @keyframes blink {
   0%,
@@ -117,9 +265,6 @@
   100% {
     opacity: 0;
   }
-}
-.cursor-blink {
-  animation: blink 1s step-end infinite;
 }
 
 @keyframes pulse-ring {
@@ -133,6 +278,112 @@
     box-shadow: 0 0 0 0 rgb(167 139 250 / 0);
   }
 }
-.pulse-ring {
-  animation: pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+
+@keyframes map-dash {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+/* Motion that starts by itself stops within 5 s (WCAG 2.2.2); the packets run again only while
+   the map is pointed at or holds focus. */
+@media (prefers-reduced-motion: no-preference) {
+  .cursor-blink {
+    animation: blink 1s step-end 4;
+  }
+  .pulse-ring {
+    animation: pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  /* Packets of evidence travelling along the flows. */
+  .map-packets {
+    display: inline;
+    stroke: var(--accent-violet);
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-dasharray: 1 23;
+    animation: map-dash 2.4s linear 2;
+  }
+  .map-panel:hover .map-packets,
+  .map-panel:focus-within .map-packets {
+    animation-iteration-count: infinite;
+  }
+}
+
+/* ── workbench graph ────────────────────────────────────────── */
+
+.graph-edge {
+  fill: none;
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+}
+.graph-edge-structure {
+  stroke: color-mix(in oklab, var(--fg-muted) 45%, transparent);
+}
+.graph-edge-references {
+  stroke: color-mix(in oklab, var(--accent-cyan) 70%, transparent);
+  stroke-dasharray: 2 3;
+}
+.graph-edge-logic {
+  stroke: var(--accent-rose);
+}
+.graph-edge-notes {
+  stroke: var(--warning);
+  stroke-dasharray: 6 3;
+}
+.graph-edge-terms {
+  stroke: var(--success);
+  stroke-dasharray: 6 3;
+}
+
+.graph-ring {
+  fill: transparent;
+  stroke: var(--accent-violet);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  opacity: 0;
+}
+.graph-node:hover .graph-ring {
+  opacity: 0.45;
+}
+/* The ring replaces the outline, which SVG groups draw unreliably. */
+.graph-node:focus-visible {
+  outline: none;
+}
+.graph-node:focus-visible .graph-ring {
+  opacity: 1;
+}
+.graph-dot {
+  stroke: var(--background);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.graph-selected {
+  fill: none;
+  stroke: var(--foreground);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.graph-label {
+  fill: var(--foreground);
+  paint-order: stroke;
+  stroke: var(--background);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+@keyframes graph-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The layout is settled before it is drawn: the drawing only fades in, once. */
+  .graph-canvas {
+    animation: graph-in 400ms ease-out 1 both;
+  }
 }

@@ -29,7 +29,7 @@ Exports: `GET`, `POST`, `PUT`, `PATCH`, `DELETE` (all five methods pointing at o
 
 ### Pass cases (happy path)
 
-1. **Forward GET to known service** — `GET /api/proxy/magpie/api/scrape/hackernews/top` → calls `https://magpie-backend.onrender.com/api/scrape/hackernews/top` with Bearer JWT. Downstream returns `200 {items: [...]}`; proxy returns status `200` with body verbatim.
+1. **Forward GET to known service** — `GET /api/proxy/magpie/api/scrape/hackernews/top` → calls `https://magpie-backend-t4bb.onrender.com/api/scrape/hackernews/top` with Bearer JWT. Downstream returns `200 {items: [...]}`; proxy returns status `200` with body verbatim.
 
 2. **Forward POST with JSON body** — `POST /api/proxy/inkprint/certificates` body `{text: "x"}` → calls inkprint backend with same body + Bearer JWT + Content-Type preserved. Downstream `201 {certificate_id: "..."}`; proxy returns `201` with body.
 
