@@ -74,7 +74,7 @@ bastion v1 was a signed-in control plane that proved four services answered. v2 
 
 - 🗺️ **A live system map** — the 8 products as an inline SVG drawn on the server, health in words beside each node (live, asleep, down, checking, unknown), one shared probe round every 30 s for every visitor
 - 🧰 **A workbench per product** — each behind a wake gate that holds a cold Render service for up to 90 s and says asleep, never down, when it does not wake
-- 🧾 **Durable dossiers** — eight stages as Postgres rows, each claimed under a lease and retried at most 3 times, driven in the foreground by whichever request arrives — the page's nudge, a 5-minute sweep, or the runner's own chain — and followed live over SSE
+- 🧾 **Durable dossiers** — eight stages as Postgres rows, each claimed under a lease and retried at most 3 times, driven in the foreground by one of two real clients — the visitor's page (its nudge starts on load) or a token-gated sweep for runs nobody watches — and followed live over SSE
 - ✅ **Verify everything** — 7 checks recomputed live: certificates, transcript, envelope, perf, audit, documents, steps; the receipts bundle downloads as canonical JSON
 - 🔐 **Platform token contract v2** — Ed25519 tokens bound to an issuer and one audience, 60 s life, enforced by all six backends (spec 22)
 - 💸 **Budgets and limits** — daily budgets per UTC day for everything that spends a paid or rationed call; per-visitor rate limits on each visitor's calls to a service, spends and reads of the log
@@ -92,7 +92,7 @@ flowchart LR
     V --> API[Route handlers<br/>/api/tools · /api/dossiers · /api/uploads · /api/platform]
     Pages --> API
     API --> GW[Gateway<br/>capability → rate limit → budget → token v2 → call → parse → audit]
-    API --> RUN[Runner<br/>the foreground loop<br/>nudge · sweep · chain]
+    API --> RUN[Runner<br/>the foreground loop<br/>page nudge · sweep]
     RUN --> GW
     GW --> MG[magpie]
     GW --> IT[inkthread · inkgrid]
@@ -119,7 +119,7 @@ sequenceDiagram
     V->>B: POST /api/dossiers (claim, sources, documents, mode)
     B->>DB: the dossier, its 8 step rows and its documents, in one transaction
     B-->>V: 202 → /d/<id>
-    V->>B: the page's nudge — or the 5-minute sweep, or the best-effort chain
+    V->>B: the page's nudge on load — or, with no page open, the sweep
     loop stage after stage, in that one request, while its 300 s last
         B->>DB: claim the next runnable stage (a lease, at most 3 attempts)
         B->>S: the stage's calls, through the gateway, under the dossier's request id
@@ -140,7 +140,7 @@ sequenceDiagram
 | envelope | inkprint `POST /dossiers/envelope` over the certificates, transcript, perf hash and audit digest | an envelope id and signature |
 | record | the digest of the dossier's audit events | succeeded |
 
-A request to `POST /api/dossiers/<id>/advance` drives the dossier **in the foreground**: it runs stage after stage within its 300 s, sleeping in-process through a waiting job's 3 s polls and a retry's backoff, and answers when the dossier ends, when the next stage is more than 10 s away, or when 20 s remain. The requests come from the dossier's page (its nudge), from a **sweep** a GitHub Actions schedule calls every 5 minutes (`POST /api/dossiers/sweep`, token-gated, drives every dossier with a due stage), and from the runner's own `after()` chain, which is only an accelerator: on Vercel an invocation kept alive only by `after()` did not survive a long stage, while requests with a real client always complete. A failed stage offers "retry from this stage". See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+A request to `POST /api/dossiers/<id>/advance` drives the dossier **in the foreground**: it runs stage after stage within its 300 s, sleeping in-process through a waiting job's 3 s polls and a retry's backoff, starts a stage only while a full 100 s round still fits, and answers when the dossier ends, when the next stage is more than 10 s away, or when no round fits. Nothing is handed to `after()`: on Vercel an invocation kept alive only by `after()` did not survive a long stage, while requests with a real client always complete. So two drivers carry a run — **the visitor's page**, whose nudge calls advance as soon as it loads and whenever a stage is due, and **the sweep** (`POST /api/dossiers/sweep`, token-gated), which drives every dossier with a due stage in 90 s slices; a GitHub Actions schedule calls it every 30 minutes as a safety net, and the live smoke calls it directly. A failed stage offers "retry from this stage". See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ### Receipts and verification
 
@@ -168,7 +168,7 @@ The issuers sign Python's `json.dumps(sort_keys=True)` bytes, which bastion rebu
 | **Secrets** | Two of bastion's own — a root secret and the Ed25519 signing key. Every purpose-specific key (the visitor ids, the runner's advance tokens) is derived from the root with HKDF-SHA256 |
 | **Tokens (contract v2)** | Ed25519 (`EdDSA`), `iss: bastion`, `aud` = the one service called, the capability's grant as `role`, `exp = iat + 60`, a fresh `jti`. Backends allow 10 s of leeway and fail closed without a key. The JWKS is public at `/.well-known/jwks.json` |
 | **Budgets** (per UTC day, shared) | debates 4 · uploads 3 · leak scans 10 · scrapes 30 · certificates 200 · feathers writes 50. A downstream 4xx that spent nothing gives the units back. Overridable with `BUDGET_*` |
-| **Rate limits** (per visitor) | gateway: free reads 120/min, every other call 30/min · wake 5/min · compose 3/hour · uploads 3/hour · retry 5/hour · verify 5/min · advance 60/min · receipts 30/min · audit and replay reads 60/min each · budgets and token preview 60/min · feathers proof 3/min · chain trace 30/min. The sweep has no visitor limit: it needs `Authorization: Bearer <BASTION_SWEEP_TOKEN>` (constant-time; 503 when unset) |
+| **Rate limits** (per visitor) | gateway: free reads 120/min, every other call 30/min · wake 5/min · compose 3/hour · uploads 3/hour · retry 5/hour · verify 5/min · advance 60/min · receipts 30/min · audit and replay reads 60/min each · budgets and token preview 60/min · feathers proof 3/min · chain trace 30/min. The sweep has no visitor limit: it needs `Authorization: Bearer <BASTION_SWEEP_TOKEN>` (constant-time; 503 when unset or under 32 characters), and the schedule calls it every 30 minutes |
 | **Every call audited** | each gateway call that reaches its budget lands in `events` with service, capability, status and latency — never a body; refusals with no side effect (bad input, a rate limit) are logged instead, so the append-only log cannot be grown without bound |
 | **Append-only audit** | `UPDATE`, `DELETE` and `TRUNCATE` on `events` are revoked and rejected by triggers, for the owner too (`drizzle/0001_append_only_events.sql`, proven by the integration tier). An owner could drop a trigger, which is why each envelope signs its dossier's slice |
 | **Downstream answers** | parsed with Zod, never cast; redirects never followed (they would carry the token); internal errors published as their bare code, never their message |
@@ -237,7 +237,7 @@ Without Upstash, the daily budgets are counted in-process (per instance, reset o
 
 | Concern | Choice |
 |---|---|
-| Framework | **Next.js 16** App Router — pages, route handlers, `after()`; no separate backend |
+| Framework | **Next.js 16** App Router — pages and route handlers; no separate backend |
 | UI | **React 19**, Tailwind 4, an inline-SVG system map, `d3-force` for the graph layout |
 | Language | **TypeScript** strict; **Zod 4** at every boundary |
 | Database | **Neon Postgres** via **Drizzle** and postgres.js; append-only triggers on `events` |
@@ -262,14 +262,14 @@ Measured on 2026-10-21 (Node 24.19, Linux):
 
 | Metric | Value |
 |---|---|
-| **Unit** | 3,028 tests in 199 files |
-| **Coverage** (unit) | 89.6 % lines · 87.7 % statements · 83.8 % branches · 80.7 % functions |
-| **Per-module floors** (90 % lines) | `src/capabilities` 100 % · `src/platform` 98.9 % · `src/dossier` 93.0 % |
+| **Unit** | 2,984 tests in 198 files |
+| **Coverage** (unit) | 89.5 % lines · 87.5 % statements · 83.7 % branches · 80.4 % functions |
+| **Per-module floors** (90 % lines) | `src/capabilities` 100 % · `src/platform` 99.2 % · `src/dossier` 93.3 % |
 | **Integration** | 88 tests in 13 files, against a real Postgres (append-only triggers, concurrent claims, the sweep's selection, a sweep and a nudge on one dossier, receipts, verification) |
-| **End to end** | 21 Playwright specs in 6 files against the built app and a stub of every service, 1.8 min (the asleep case waits out the 90 s wake); plus 1 live smoke, run only by hand |
+| **End to end** | 21 Playwright specs in 6 files against the built app and a stub of every service, 1.8 min (the asleep case waits out the 90 s wake); plus 1 live smoke, run only by hand, that drives its dossier through the sweep |
 | **Methodology** | Spec-TDD: the spec first (`docs/specs/21-bastion-v2.md` §10 lists the e2e cases), then failing tests, then code |
 
-CI (`.github/workflows/ci.yml`) runs lint and types, the unit tier with coverage, the build, the integration tier against a Postgres service, and the e2e suite. The live smoke (`BASTION_LIVE_SMOKE=1 PLAYWRIGHT_BASE_URL=…`) spends one real debate and never runs in CI.
+CI (`.github/workflows/ci.yml`) runs lint and types, the unit tier with coverage, the build, the integration tier against a Postgres service, and the e2e suite. The live smoke (`BASTION_LIVE_SMOKE=1 BASTION_SWEEP_TOKEN=… PLAYWRIGHT_BASE_URL=…`) spends one real debate, calls the sweep itself with no page open, and never runs in CI.
 
 ---
 
@@ -290,7 +290,7 @@ Measured 2026-10-21 on Node 24.19, linux-x64. A quarter of a millisecond is thre
 
 | Principle | How it shows up |
 |---|---|
-| 🔴 **Spec-TDD** | Spec 21 holds every behaviour and case; each task wrote its failing tests first. The e2e suite found a real bug — a hand-off dropped after a long stage — and the first live smoke found its Vercel twin; both fixes landed test-first |
+| 🔴 **Spec-TDD** | Spec 21 holds every behaviour and case; each task wrote its failing tests first. The e2e suite found a real bug — a hand-off dropped after a long stage — and the live smokes found that Vercel drops work kept alive only by `after()`; the runner now has no background work at all, and each fix landed test-first |
 | 🚫 **Negative-space programming** | Capabilities, stages, check states and statuses are closed unions; every downstream answer is parsed; a blank or malformed key id, budget or URL fails loudly; an unchecked receipt is never a pass |
 | 🏗️ **Separation of concerns** | Pages render; route handlers are thin shells; the gateway is the only door to a service; stages are pure handlers over injected calls |
 | 🔤 **Typed everything** | TypeScript strict, Zod at each HTTP and database boundary, one capability table typed end to end |
