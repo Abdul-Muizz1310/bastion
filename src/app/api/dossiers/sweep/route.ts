@@ -14,8 +14,9 @@ import { errorResponse } from "@/platform/gateway/http";
  * dossier, stopped}], ms}` — ids, stages and statuses only. Called every 30 minutes by
  * `.github/workflows/sweep.yml` and by the live smoke. Gated by `Authorization: Bearer
  * <BASTION_SWEEP_TOKEN>` (constant-time; 503 when the token is unset or under 32 characters, 401
- * otherwise), so it has no visitor limit. Its stage outcomes are audited by the runner as bastion, and the sweep
- * itself appends one `dossier.sweep` event.
+ * otherwise), so it has no visitor limit. Its stage outcomes are audited by the runner as bastion;
+ * a sweep that selected something also appends one `dossier.sweep` event, and an empty one writes
+ * nothing — no trace, no audit — so the 30-minute schedule adds nothing to the public log.
  */
 
 export const dynamic = "force-dynamic";
@@ -52,8 +53,8 @@ export async function POST(req: Request): Promise<Response> {
     now: Date.now,
     deadlineMs,
   });
-  const stages = swept.reduce((n, s) => n + s.stages.length, 0);
   if (selected > 0) {
+    const stages = swept.reduce((n, s) => n + s.stages.length, 0);
     await chainTracer({
       event: "sweep.done",
       dossierId: "sweep",
@@ -62,19 +63,19 @@ export async function POST(req: Request): Promise<Response> {
       stages,
       ms: Date.now() - startedAt,
     });
-  }
-  try {
-    await appendEvent({
-      actor: SYSTEM_ACTOR,
-      action: "dossier.sweep",
-      entityType: "sweep",
-      entityId: requestId,
-      service: "bastion",
-      requestId,
-      metadata: { selected, driven: swept.length, stages },
-    });
-  } catch (err) {
-    console.error("sweep: the audit event was not written", { requestId, err });
+    try {
+      await appendEvent({
+        actor: SYSTEM_ACTOR,
+        action: "dossier.sweep",
+        entityType: "sweep",
+        entityId: requestId,
+        service: "bastion",
+        requestId,
+        metadata: { selected, driven: swept.length, stages },
+      });
+    } catch (err) {
+      console.error("sweep: the audit event was not written", { requestId, err });
+    }
   }
   return Response.json(
     { swept, ms: Date.now() - startedAt },

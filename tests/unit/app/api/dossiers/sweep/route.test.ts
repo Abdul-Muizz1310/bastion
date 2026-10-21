@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 /**
  * `POST /api/dossiers/sweep` (spec 21 §6.2 "The sweep"): token-gated (503 without a token
  * configured, 401 without the right one), no visitor limit, 300 s; drives every due dossier with the
- * foreground loop and answers a summary with ids only; one `dossier.sweep` audit event as bastion.
+ * foreground loop and answers a summary with ids only; one `dossier.sweep` audit event as bastion,
+ * only when it selected something.
  */
 
 const { dueDossiers, driveDossier, appendEvent, createRateLimiter, chainTracer } = vi.hoisted(
@@ -131,6 +132,14 @@ describe("POST /api/dossiers/sweep", () => {
         metadata: { selected: 1, driven: 1, stages: 2 },
       }),
     );
+  });
+
+  it("appends no audit event when nothing was due: an empty sweep leaves the public log alone", async () => {
+    dueDossiers.mockResolvedValue([]);
+    const res = await post(`Bearer ${TOKEN}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ swept: [] });
+    expect(appendEvent).not.toHaveBeenCalled();
   });
 
   it("answers the summary even when the audit write fails", async () => {

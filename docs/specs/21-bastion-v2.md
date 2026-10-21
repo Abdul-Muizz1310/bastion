@@ -420,8 +420,9 @@ A dossier is rows, not a promise. `dossier_steps` holds one row per stage with `
   another with the same loop. Each dossier gets a slice: it starts no new round after
   `min(the sweep's end, its start + 90 s)`, so one long debate cannot starve the others; and a
   dossier is started only while the sweep could still run a full round (the same 100 s floor). It
-  answers `{swept: [{dossierId, stages, dossier, stopped}], ms}`, ids only, and appends one
-  `dossier.sweep` audit event as `bastion`. A GitHub Actions schedule (`.github/workflows/sweep.yml`,
+  answers `{swept: [{dossierId, stages, dossier, stopped}], ms}`, ids only, and — only when it
+  selected something — appends one `dossier.sweep` audit event as `bastion`, so an empty scheduled
+  sweep adds nothing to the public append-only log. A GitHub Actions schedule (`.github/workflows/sweep.yml`,
   every 30 minutes, and by hand) calls it with `curl` as a safety net for abandoned runs: each call
   wakes the database, so the schedule is sparse; the live smoke calls it itself.
 - Stages that wait on a long downstream job (read, debate) start the job once, store its id, and on each
