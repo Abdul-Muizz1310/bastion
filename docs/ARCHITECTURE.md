@@ -257,9 +257,9 @@ every action disabled until every service is live.
 
 1. No sign-in and no cookies. A visitor is a daily, irreversible pseudonym; it is the token `sub`,
    the rate-limit key and the audit actor.
-2. bastion holds two secrets of its own — the root secret and the Ed25519 signing key — beside the
-   database URL and the Upstash token. Every other key is HKDF-derived from the root secret with a
-   purpose label (the visitor ids, the runner's advance tokens).
+2. bastion holds three secrets of its own — the root secret, the Ed25519 signing key and the sweep's
+   token — beside the database URL and the Upstash token. Every other key is HKDF-derived from the
+   root secret with a purpose label (the visitor ids).
 3. Every downstream call goes through the gateway. Each token is Ed25519, bound to `iss: bastion` and
    one `aud`, lives 60 s and names its capability; backends fail closed without a key (spec 22).
 4. Every downstream answer is parsed with the capability's schema; a body that does not parse is

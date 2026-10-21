@@ -165,7 +165,7 @@ The issuers sign Python's `json.dumps(sort_keys=True)` bytes, which bastion rebu
 | Concern | What bastion does |
 |---|---|
 | **No sign-in** | No accounts, no cookies. A visitor is `v_` + 10 base32 characters of an HMAC of their address and the UTC date: it changes daily and cannot be reversed. It is the token `sub`, the rate-limit key and the audit actor |
-| **Secrets** | Two of bastion's own — a root secret and the Ed25519 signing key. Every purpose-specific key (the visitor ids, the runner's advance tokens) is derived from the root with HKDF-SHA256 |
+| **Secrets** | Three of bastion's own — a root secret, the Ed25519 signing key and the sweep's token (at least 32 characters). Every purpose-specific key (the visitor ids) is derived from the root with HKDF-SHA256 |
 | **Tokens (contract v2)** | Ed25519 (`EdDSA`), `iss: bastion`, `aud` = the one service called, the capability's grant as `role`, `exp = iat + 60`, a fresh `jti`. Backends allow 10 s of leeway and fail closed without a key. The JWKS is public at `/.well-known/jwks.json` |
 | **Budgets** (per UTC day, shared) | debates 4 · uploads 3 · leak scans 10 · scrapes 30 · certificates 200 · feathers writes 50. A downstream 4xx that spent nothing gives the units back. Overridable with `BUDGET_*` |
 | **Rate limits** (per visitor) | gateway: free reads 120/min, every other call 30/min · wake 5/min · compose 3/hour · uploads 3/hour · retry 5/hour · verify 5/min · advance 60/min · receipts 30/min · audit and replay reads 60/min each · budgets and token preview 60/min · feathers proof 3/min · chain trace 30/min. The sweep has no visitor limit: it needs `Authorization: Bearer <BASTION_SWEEP_TOKEN>` (constant-time; 503 when unset or under 32 characters), and the schedule calls it every 30 minutes |
@@ -262,7 +262,7 @@ Measured on 2026-10-21 (Node 24.19, Linux):
 
 | Metric | Value |
 |---|---|
-| **Unit** | 2,984 tests in 198 files |
+| **Unit** | 2,985 tests in 198 files |
 | **Coverage** (unit) | 89.5 % lines · 87.5 % statements · 83.7 % branches · 80.4 % functions |
 | **Per-module floors** (90 % lines) | `src/capabilities` 100 % · `src/platform` 99.2 % · `src/dossier` 93.3 % |
 | **Integration** | 88 tests in 13 files, against a real Postgres (append-only triggers, concurrent claims, the sweep's selection, a sweep and a nudge on one dossier, receipts, verification) |
