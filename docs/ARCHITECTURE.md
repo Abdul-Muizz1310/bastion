@@ -16,7 +16,7 @@ flowchart TD
     Pages --> Routes
 
     Routes --> GW[Gateway · callCapability<br/>one pipeline for 37 capabilities]
-    Routes --> Runner[Runner · advance<br/>one stage per invocation]
+    Routes --> Runner[Runner · the foreground loop<br/>stage after stage per request]
     Runner --> GW
     Routes --> Verify[Verification<br/>7 checks, live]
     Verify --> GW
@@ -85,10 +85,22 @@ service.
 ## The runner
 
 A dossier is one `dossiers` row and eight `dossier_steps` rows, created with its documents in one
-transaction. `POST /api/dossiers/[id]/advance` claims the next runnable stage atomically
+transaction. A round of the runner claims the next runnable stage atomically
 (`UPDATE … WHERE lease_until < now() AND not_before <= now() … RETURNING`), runs that one stage
-within a 240 s budget under a 270 s lease, records the outcome and the dossier's status in one
-transaction, and answers. A second caller finds nothing to claim.
+within its budget under a 270 s lease, and records the outcome and the dossier's status in one
+transaction. A second caller finds nothing to claim.
+
+**The drivers.** `POST /api/dossiers/[id]/advance` runs the **foreground loop**: round after round
+in the request itself, each stage given `min(240 s, remaining − 20 s)` of the request's 300 s; it
+continues at once when the next stage is due, sleeps in-process when it is due within 10 s (a
+waiting poll, a retry's backoff), and answers when the dossier ends, when the next stage is
+further out, or when less than 20 s remain. Who sends that request: the dossier page's nudge, the
+runner's own `after()` chain, and the **sweep** — `POST /api/dossiers/sweep`, token-gated, which a
+GitHub Actions schedule calls every 5 minutes and which drives every dossier whose frontier stage
+is due with the same loop until about 280 s are spent. Why the loop and the sweep: on Vercel an
+invocation kept alive only by `after()` and called by another such invocation did not survive a
+13.7 s stage — it recorded the stage and vanished — while a request with a real client always
+completes. So the chain is a best-effort accelerator; the requests real clients make carry the run.
 
 ```mermaid
 stateDiagram-v2
@@ -105,9 +117,9 @@ stateDiagram-v2
     skipped --> [*]
 ```
 
-**Chaining.** Before the stage runs, the route registers the hand-off to the next invocation with
-`after()`, as a promise that settles once the stage is recorded: the next delay (now, or the 3 s
-of a waiting poll), or nothing to chain. The hand-off POSTs the same route with an internal HMAC
+**Chaining** (best effort). Before the loop runs, the route registers the hand-off to the next
+invocation with `after()`, as a promise that settles once the loop has stopped: the next delay
+(when the next stage is due within 10 s), or nothing to chain. The hand-off POSTs the same route with an internal HMAC
 header (so the runner never meets the visitor rate limit) and **holds the connection until the next
 invocation has answered**: on Vercel an invocation whose caller leaves before it answers loses its
 `after()` work, so the first live dossier stopped after a 12 s seal when the old 10 s window let go.
@@ -131,8 +143,11 @@ the platform's request id). With Upstash the lines also go to a per-dossier list
 its answer.
 
 **Recovery.** The dossier page nudges `advance` when its frontier stage has been due for 5 s
-(a lease that expired, a `not_before` that passed), backing off on failure; a crashed invocation's
-stage becomes claimable again when its lease ends. A wait capped at 15 minutes becomes an error.
+(a lease that expired, a `not_before` that passed), backing off on failure, and that nudge drives
+the run in the foreground; with no page open the sweep picks the run up within 5 minutes. A crashed
+invocation's stage becomes claimable again when its lease ends. A wait capped at 15 minutes becomes
+an error. The trace's `drive.stage` lines say which driver (`chain`, `visitor` or `sweep`) ran each
+stage.
 
 **Progress.** `GET /api/dossiers/[id]/stream` polls the rows every 2 s and sends `step`, `status`,
 `done`, `heartbeat` and `timeout` events, reading only scalar columns and a few small projections

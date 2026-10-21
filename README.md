@@ -74,7 +74,7 @@ bastion v1 was a signed-in control plane that proved four services answered. v2 
 
 - 🗺️ **A live system map** — the 8 products as an inline SVG drawn on the server, health in words beside each node (live, asleep, down, checking, unknown), one shared probe round every 30 s for every visitor
 - 🧰 **A workbench per product** — each behind a wake gate that holds a cold Render service for up to 90 s and says asleep, never down, when it does not wake
-- 🧾 **Durable dossiers** — eight stages as Postgres rows advanced one per invocation, leased, retried at most 3 times, chained by the runner itself, followed live over SSE
+- 🧾 **Durable dossiers** — eight stages as Postgres rows, each claimed under a lease and retried at most 3 times, driven in the foreground by whichever request arrives — the page's nudge, a 5-minute sweep, or the runner's own chain — and followed live over SSE
 - ✅ **Verify everything** — 7 checks recomputed live: certificates, transcript, envelope, perf, audit, documents, steps; the receipts bundle downloads as canonical JSON
 - 🔐 **Platform token contract v2** — Ed25519 tokens bound to an issuer and one audience, 60 s life, enforced by all six backends (spec 22)
 - 💸 **Budgets and limits** — daily budgets per UTC day for everything that spends a paid or rationed call; per-visitor rate limits on each visitor's calls to a service, spends and reads of the log
@@ -92,7 +92,7 @@ flowchart LR
     V --> API[Route handlers<br/>/api/tools · /api/dossiers · /api/uploads · /api/platform]
     Pages --> API
     API --> GW[Gateway<br/>capability → rate limit → budget → token v2 → call → parse → audit]
-    API --> RUN[Runner<br/>one stage per invocation<br/>after() chain]
+    API --> RUN[Runner<br/>the foreground loop<br/>nudge · sweep · chain]
     RUN --> GW
     GW --> MG[magpie]
     GW --> IT[inkthread · inkgrid]
@@ -119,8 +119,8 @@ sequenceDiagram
     V->>B: POST /api/dossiers (claim, sources, documents, mode)
     B->>DB: the dossier, its 8 step rows and its documents, in one transaction
     B-->>V: 202 → /d/<id>
-    loop one stage per invocation
-        B->>B: register the next advance with after(), before the stage runs
+    V->>B: the page's nudge — or the 5-minute sweep, or the best-effort chain
+    loop stage after stage, in that one request, while its 300 s last
         B->>DB: claim the next runnable stage (a lease, at most 3 attempts)
         B->>S: the stage's calls, through the gateway, under the dossier's request id
         B->>DB: record the outcome and its audit event
@@ -140,7 +140,7 @@ sequenceDiagram
 | envelope | inkprint `POST /dossiers/envelope` over the certificates, transcript, perf hash and audit digest | an envelope id and signature |
 | record | the digest of the dossier's audit events | succeeded |
 
-A stage that waits on a long job (read, debate) polls once per invocation and returns `waiting` for 3 s. After each stage the runner hands the dossier to a fresh invocation with `after()`; that hand-off is registered **before** the stage runs and holds its connection until the next invocation has answered (bounded by the caller's own deadline), because on Vercel an invocation whose caller leaves early loses its `after()` work. The e2e suite crosses two 12 s stages with no page open and checks that no hand-off let go early. The dossier's page also nudges a stalled stage, and a failed stage offers "retry from this stage". See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+A request to `POST /api/dossiers/<id>/advance` drives the dossier **in the foreground**: it runs stage after stage within its 300 s, sleeping in-process through a waiting job's 3 s polls and a retry's backoff, and answers when the dossier ends, when the next stage is more than 10 s away, or when 20 s remain. The requests come from the dossier's page (its nudge), from a **sweep** a GitHub Actions schedule calls every 5 minutes (`POST /api/dossiers/sweep`, token-gated, drives every dossier with a due stage), and from the runner's own `after()` chain, which is only an accelerator: on Vercel an invocation kept alive only by `after()` did not survive a long stage, while requests with a real client always complete. A failed stage offers "retry from this stage". See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ### Receipts and verification
 
@@ -168,7 +168,7 @@ The issuers sign Python's `json.dumps(sort_keys=True)` bytes, which bastion rebu
 | **Secrets** | Two of bastion's own — a root secret and the Ed25519 signing key. Every purpose-specific key (the visitor ids, the runner's advance tokens) is derived from the root with HKDF-SHA256 |
 | **Tokens (contract v2)** | Ed25519 (`EdDSA`), `iss: bastion`, `aud` = the one service called, the capability's grant as `role`, `exp = iat + 60`, a fresh `jti`. Backends allow 10 s of leeway and fail closed without a key. The JWKS is public at `/.well-known/jwks.json` |
 | **Budgets** (per UTC day, shared) | debates 4 · uploads 3 · leak scans 10 · scrapes 30 · certificates 200 · feathers writes 50. A downstream 4xx that spent nothing gives the units back. Overridable with `BUDGET_*` |
-| **Rate limits** (per visitor) | gateway: free reads 120/min, every other call 30/min · wake 5/min · compose 3/hour · uploads 3/hour · retry 5/hour · verify 5/min · advance 60/min · receipts 30/min · audit and replay reads 60/min each · budgets and token preview 60/min · feathers proof 3/min |
+| **Rate limits** (per visitor) | gateway: free reads 120/min, every other call 30/min · wake 5/min · compose 3/hour · uploads 3/hour · retry 5/hour · verify 5/min · advance 60/min · receipts 30/min · audit and replay reads 60/min each · budgets and token preview 60/min · feathers proof 3/min · chain trace 30/min. The sweep has no visitor limit: it needs `Authorization: Bearer <BASTION_SWEEP_TOKEN>` (constant-time; 503 when unset) |
 | **Every call audited** | each gateway call that reaches its budget lands in `events` with service, capability, status and latency — never a body; refusals with no side effect (bad input, a rate limit) are logged instead, so the append-only log cannot be grown without bound |
 | **Append-only audit** | `UPDATE`, `DELETE` and `TRUNCATE` on `events` are revoked and rejected by triggers, for the owner too (`drizzle/0001_append_only_events.sql`, proven by the integration tier). An owner could drop a trigger, which is why each envelope signs its dossier's slice |
 | **Downstream answers** | parsed with Zod, never cast; redirects never followed (they would carry the token); internal errors published as their bare code, never their message |
