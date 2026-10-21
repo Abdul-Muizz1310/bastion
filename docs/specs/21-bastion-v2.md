@@ -387,20 +387,46 @@ because paper-trail requires both. Each document item's URL is its bastion perma
 A dossier is rows, not a promise. `dossier_steps` holds one row per stage with `status`
 (`pending · running · waiting · ok · error · skipped`), `attempt`, `lease_until`, `not_before`, `output`.
 
-- `POST /api/dossiers/[id]/advance` claims the next runnable stage atomically
+- `advance` claims the next runnable stage atomically
   (`UPDATE … WHERE lease_until < now() AND not_before <= now() … RETURNING`), runs **one** stage within a
-  240 s budget, records the result and returns. It is idempotent: a second caller finds nothing to claim.
+  240 s budget and records the result. It is idempotent: a second caller finds nothing to claim.
+- **The foreground loop** (fix after the third live smoke, 2026-10-21). `POST
+  /api/dossiers/[id]/advance` drives successive stages **in the request itself** and answers only when
+  it stops: each round claims one stage exactly as above (claims, leases and fencing unchanged) and
+  gives it `min(240 s, remaining − 20 s)`, where remaining is the time left of the request's 300 s;
+  after a stage it continues at once when the next is due, sleeps in-process when the next is due
+  within 10 s (a waiting poll, a retry's backoff) and continues, and stops when the dossier has
+  finished or failed, when the next stage is more than 10 s away (or nothing is due), or when less
+  than the 20 s margin remains. A round that claims nothing although its stage is due (another
+  caller won it) is retried at most twice. The answer is the last round's result plus the stages it
+  ran (`stages: [{stage, status}]`) and why it stopped (`stopped`). Why: on Vercel an invocation kept
+  alive only by `after()` and called by another such invocation did not survive a 13.7 s stage — it
+  recorded the stage and vanished (dossier a57bebe6, from the trace below) — while a request with a
+  real client (the page, `curl`) always completes. So the drivers are the requests real clients make:
+  the dossier page's nudge and the sweep.
+- **The sweep.** `POST /api/dossiers/sweep`, `Authorization: Bearer <BASTION_SWEEP_TOKEN>` (compared in
+  constant time; 503 `sweep_unconfigured` when the variable is unset or blank, 401 otherwise),
+  `maxDuration` 300, no visitor limit (the token gates it). It selects the pending or running v2
+  dossiers whose **frontier** stage — the first not ok or skipped — is due (`not_before ≤ now` and its
+  lease expired), oldest first, at most 25, and drives them one after another with the same loop
+  until about 280 s are spent; it answers `{swept: [{dossierId, stages, dossier, stopped}], ms}`, ids
+  only, and appends one `dossier.sweep` audit event as `bastion`. A GitHub Actions schedule
+  (`.github/workflows/sweep.yml`, every 5 minutes, and by hand) calls it with `curl`, so a run with no
+  page open finishes within a sweep or two of stalling.
 - Stages that wait on a long downstream job (read, debate) start the job once, store its id, and on each
   advance poll it once; if not done they return `waiting` with `not_before = now() + 3 s`.
-- Chaining: after a stage finishes, `after()` calls `advance` again with an internal HMAC header. The
-  dossier page also calls `advance` whenever the stage it shows has an expired lease, so a run never stalls
-  for good, and a crashed invocation is retried when its lease expires (max 3 attempts per stage).
+- Chaining, best effort: when the loop stops with the next stage due within 10 s, `after()` calls
+  `advance` again with an internal HMAC header; it accelerates a run but nothing relies on it. The
+  dossier page also calls `advance` whenever the stage it shows is due, and the sweep calls it for
+  every due dossier, so a run never stalls for good; a crashed invocation's stage is retried when its
+  lease expires (max 3 attempts per stage).
 - The chain is registered **before** the stage runs, as a promise handed to `after()` that settles once
   the stage is recorded (Task 15). Next runs a *function* given to `after()` only when the response
   closes, and a close that already happened never fires again; a promise is kept alive with `waitUntil`
   and needs no close. Every path settles it, in a `finally`: with the next delay, or with nothing to
   chain (finished, failed, unknown dossier, an error — deciding the delay included).
-- **The caller stays until the successor answers** (fix after the first live smoke, 2026-10-21). An
+- **The caller stays until the successor answers** (fix after the first live smoke, 2026-10-21;
+  necessary but, as the third smoke showed, not sufficient — hence the loop and the sweep). An
   invocation whose caller disconnects before it has answered loses its `after()` work on Vercel: the
   first live dossier's seal ran ~12 s, recorded a retryable error due in 5 s, and nothing ever asked
   again. So a hand-off never lets go on a short timer: it holds the connection until the next
@@ -431,7 +457,9 @@ A dossier is rows, not a promise. `dossier_steps` holds one row per stage with `
   actual — a late timer means the instance was frozen), `chain.fetch` (host, window),
   `chain.response` (status, elapsed, the successor's invocation id from `x-bastion-invocation`, the
   platform's request id and mitigation header), `chain.letgo`, `chain.error` and `chain.settled`.
-  Compose and retry write `start.chain` and the same `chain.*` events. `GET
+  Compose and retry write `start.chain` and the same `chain.*` events. The loop writes `drive.stage`
+  (driver — `chain`, `visitor` or `sweep` —, stage, status, ms) after each round and `drive.stop`
+  (driver, why, stages run); the sweep writes `sweep.entry` and `sweep.done`. `GET
   /api/dossiers/[id]/chain-trace` (30 a minute per visitor; 503 without Upstash) returns the list,
   oldest first. Writing a trace line never fails or delays a stage by more than 500 ms.
 - Progress reaches the page through the existing SSE route (polling `dossier_events`, `maxDuration` 300).
@@ -653,7 +681,10 @@ own chain arrives exactly on time, so it normally wins), at most one call at a t
 `retryAfterS` it was given, any other failure backs off 15 s, doubling to 2 min; an error stage,
 a finished dossier or a 404 stops it. A nudge holds its request until the stage it ran is recorded
 and answered (§6.2: an invocation whose caller leaves first can lose its hand-off); a page closed
-mid-call costs at most that hand-off, which the next nudge or the lease recovers.
+mid-call costs at most that hand-off, which the next nudge or the lease recovers. Since the
+foreground loop (§6.2), a nudge **drives** the run: its one request runs stage after stage for up to
+300 s while the stream shows each one, and answers when the loop stops; the nudger then plans from
+that answer as before. Nothing in the page times the request out.
 
 *The timeline.* The eight stages in stage order (Postgres returns the rows in no particular
 order), each status written in words beside a glyph (pending · running · waiting · ok · error ·
@@ -793,26 +824,26 @@ production host or database.
    words. Against the stub the signature checks fail (the stub cannot sign as inkprint) while bastion's
    own receipts pass — verification never passes what it could not prove.
 4. The golden dossier: "verify everything" answers 7 of 7 pass; the receipts bundle downloads.
-5. The hand-off: a dossier composed through the API, with no page open to nudge it, crosses two
-   stages longer than the old 10 s hand-off — a 12 s scrape, then a 12 s seal that ends in a
-   retryable 503 due again in 5 s (the first live smoke's failure) — and still reaches `succeeded` by
-   its own `after()` chain, seal on its second attempt. The app's log is read back: no hand-off of
-   that dossier let go before its successor answered (a caller that leaves early is the one thing
-   `next start` survives and Vercel does not).
+5. The hand-off and the loop: a dossier composed through the API, with no page open to nudge it,
+   crosses two stages longer than the old 10 s hand-off — a 12 s scrape, then a 12 s seal that ends
+   in a retryable 503 due again in 5 s (the first live smoke's failure) — and still reaches
+   `succeeded` on its own, seal on its second attempt. The app's log is read back: no hand-off of
+   that dossier let go before its successor answered, and `drive.stage` lines name all eight stages.
 6. Budget spent (limits): the compose page says no debates are left and holds the submit; the API
    answers 429 `budget_exhausted`, and the stub never sees a debate from that app.
 7. Asleep (limits): the map shows feathers asleep; its workbench gate reads asleep after the 90 s wake
    and offers "wake again", which, once the service answers, reaches live and loads the users.
 8. The open log: `/audit`, a request's trail, `/time-travel` and `/platform` render from the real
    database and the stub's health.
+9. The sweep: without the token it answers 401; with it, a seeded dossier stalled at its first stage
+   (nobody drives it) is driven to `succeeded`, and the answer names it with the stages it ran.
 
 **Live smoke** (`tests/e2e/live/`, skipped unless `BASTION_LIVE_SMOKE=1` and `PLAYWRIGHT_BASE_URL` are
 set; never in CI): one rapid dossier against the deployment named by `PLAYWRIGHT_BASE_URL`, followed
-over SSE without opening its page (nothing nudges it), which must succeed through a single-invocation
-stage longer than the old 10 s hand-off window (the first live run stopped right there, §6.2) and
-then pass every verification check in the browser. It spends one debate. It attaches the dossier's
-chain trace (§6.2) to its report whether it passes or fails, and fails early — with the trace — once
-no step has changed for 3 minutes.
+over SSE without opening its page (nothing nudges it), which must reach `succeeded` within 12 minutes —
+driven by the chain, the foreground loop or the sweep — and then pass every verification check in
+the browser. It spends one debate. It attaches the dossier's chain trace (§6.2) to its report whether
+it passes or fails, and reports which driver ran each stage.
 
 ## 11. Sub-projects and order
 
