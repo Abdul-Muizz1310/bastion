@@ -9,7 +9,7 @@
 ![react](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=black)
 ![ts](https://img.shields.io/badge/TypeScript-strict-3178c6?style=flat-square&logo=typescript&logoColor=white)
 ![neon](https://img.shields.io/badge/Neon-Postgres-00e599?style=flat-square&logo=postgresql&logoColor=white)
-![tests](https://img.shields.io/badge/tests-2919%20unit%20·%2085%20integration%20·%2020%20e2e-6e9f18?style=flat-square)
+![tests](https://img.shields.io/badge/tests-2945%20unit%20·%2085%20integration%20·%2020%20e2e-6e9f18?style=flat-square)
 ![coverage](https://img.shields.io/badge/coverage-89.5%25%20lines-brightgreen?style=flat-square)
 [![ci](https://img.shields.io/github/actions/workflow/status/Abdul-Muizz1310/bastion/ci.yml?style=flat-square&label=ci)](https://github.com/Abdul-Muizz1310/bastion/actions/workflows/ci.yml)
 ![license](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)
@@ -140,7 +140,7 @@ sequenceDiagram
 | envelope | inkprint `POST /dossiers/envelope` over the certificates, transcript, perf hash and audit digest | an envelope id and signature |
 | record | the digest of the dossier's audit events | succeeded |
 
-A stage that waits on a long job (read, debate) polls once per invocation and returns `waiting` for 3 s. After each stage the runner hands the dossier to a fresh invocation with `after()`; that hand-off is registered **before** the stage runs, so a stage longer than the 10 s hand-off window cannot drop it (the e2e suite crosses a 12 s stage to prove it). The dossier's page also nudges a stalled stage, and a failed stage offers "retry from this stage". See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+A stage that waits on a long job (read, debate) polls once per invocation and returns `waiting` for 3 s. After each stage the runner hands the dossier to a fresh invocation with `after()`; that hand-off is registered **before** the stage runs and holds its connection until the next invocation has answered (bounded by the caller's own deadline), because on Vercel an invocation whose caller leaves early loses its `after()` work. The e2e suite crosses two 12 s stages with no page open and checks that no hand-off let go early. The dossier's page also nudges a stalled stage, and a failed stage offers "retry from this stage". See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ### Receipts and verification
 
@@ -262,9 +262,9 @@ Measured on 2026-10-21 (Node 24.19, Linux):
 
 | Metric | Value |
 |---|---|
-| **Unit** | 2,919 tests in 192 files |
-| **Coverage** (unit) | 89.6 % lines · 87.6 % statements · 83.9 % branches · 80.6 % functions |
-| **Per-module floors** (90 % lines) | `src/capabilities` 100 % · `src/platform` 98.9 % · `src/dossier` 94.2 % |
+| **Unit** | 2,945 tests in 193 files |
+| **Coverage** (unit) | 89.6 % lines · 87.7 % statements · 83.9 % branches · 80.6 % functions |
+| **Per-module floors** (90 % lines) | `src/capabilities` 100 % · `src/platform` 98.9 % · `src/dossier` 94.3 % |
 | **Integration** | 85 tests in 12 files, against a real Postgres (append-only triggers, concurrent claims, receipts, verification) |
 | **End to end** | 20 Playwright specs in 6 files against the built app and a stub of every service, 1.8 min (the asleep case waits out the 90 s wake); plus 1 live smoke, run only by hand |
 | **Methodology** | Spec-TDD: the spec first (`docs/specs/21-bastion-v2.md` §10 lists the e2e cases), then failing tests, then code |
@@ -290,7 +290,7 @@ Measured 2026-10-21 on Node 24.19, linux-x64. A quarter of a millisecond is thre
 
 | Principle | How it shows up |
 |---|---|
-| 🔴 **Spec-TDD** | Spec 21 holds every behaviour and case; each task wrote its failing tests first. The e2e suite found a real bug — a hand-off dropped after a long stage — and the fix landed test-first |
+| 🔴 **Spec-TDD** | Spec 21 holds every behaviour and case; each task wrote its failing tests first. The e2e suite found a real bug — a hand-off dropped after a long stage — and the first live smoke found its Vercel twin; both fixes landed test-first |
 | 🚫 **Negative-space programming** | Capabilities, stages, check states and statuses are closed unions; every downstream answer is parsed; a blank or malformed key id, budget or URL fails loudly; an unchecked receipt is never a pass |
 | 🏗️ **Separation of concerns** | Pages render; route handlers are thin shells; the gateway is the only door to a service; stages are pure handlers over injected calls |
 | 🔤 **Typed everything** | TypeScript strict, Zod at each HTTP and database boundary, one capability table typed end to end |

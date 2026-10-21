@@ -48,11 +48,12 @@ audit event. A new capability is a row in that table, not a new code path.
 
 ## What I'd change if I did it again
 
-- **A queue under the runner.** The dossier chain rides on `after()`. The end-to-end suite found
-  that Next runs a function given to `after()` only when the response closes, so a hand-off
-  registered after a stage that outlived its caller was silently dropped. Registering the hand-off
-  before the stage fixed it, but the runner still depends on a platform detail; a durable queue
-  (QStash, or Vercel's own) would make each hand-off a message that cannot be lost.
+- **A queue under the runner.** The dossier chain rides on `after()`, and it broke twice on
+  platform details: the end-to-end suite found that Next runs a function given to `after()` only
+  when the response closes, and the first live smoke found that on Vercel an invocation whose caller
+  has left loses its `after()` work. Registering the hand-off first and holding each caller until
+  its successor answers fixed both, but a durable queue (QStash, or Vercel's own) would make each
+  hand-off a message that cannot be lost.
 - **Per-visitor quotas under the shared budgets.** Today one visitor can spend the day's debates
   for everyone. A small per-visitor share of each budget would keep the platform usable for the next
   person without raising the totals.
