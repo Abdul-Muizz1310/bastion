@@ -40,7 +40,9 @@ describe("isDue — lease expired OR nextAt passed", () => {
 
   it("a waiting stage is due once its nextAt has passed", () => {
     expect(isDue(stepView("debate", "waiting", { nextAt: before(1) }), NOW)).toBe(true);
-    expect(isDue(stepView("debate", "waiting", { nextAt: new Date(NOW).toISOString() }), NOW)).toBe(true);
+    expect(isDue(stepView("debate", "waiting", { nextAt: new Date(NOW).toISOString() }), NOW)).toBe(
+      true,
+    );
     expect(isDue(stepView("debate", "waiting", { nextAt: after(3_000) }), NOW)).toBe(false);
   });
 
@@ -74,18 +76,16 @@ describe("isDue — lease expired OR nextAt passed", () => {
 describe("dueAt and nudgeAt", () => {
   it("dueAt is the lease's end for a running stage, the later of nextAt and the lease otherwise", () => {
     expect(dueAt(stepView("seal", "running", { leaseUntil: after(9_000) }))).toBe(NOW + 9_000);
-    expect(dueAt(stepView("seal", "waiting", { nextAt: after(3_000), leaseUntil: after(5_000) }))).toBe(
-      NOW + 5_000,
-    );
+    expect(
+      dueAt(stepView("seal", "waiting", { nextAt: after(3_000), leaseUntil: after(5_000) })),
+    ).toBe(NOW + 5_000);
     expect(dueAt(stepView("seal", "pending"))).toBe(0);
     expect(dueAt(stepView("seal", "error"))).toBeNull();
   });
 
-  it("nudgeAt is the frontier's dueAt plus the grace, so the runner's own chain goes first", () => {
-    expect(NUDGE_GRACE_MS).toBe(5_000);
-    expect(nudgeAt(viewsAt("debate", "waiting", { nextAt: after(3_000) }))).toBe(
-      NOW + 3_000 + NUDGE_GRACE_MS,
-    );
+  it("nudgeAt is the frontier's dueAt itself: the page is a driver, and no chain competes (Ruling AM)", () => {
+    expect(NUDGE_GRACE_MS).toBe(0);
+    expect(nudgeAt(viewsAt("debate", "waiting", { nextAt: after(3_000) }))).toBe(NOW + 3_000);
   });
 
   it("nudgeAt is null when the frontier is an error (a retry is the visitor's) or none is left", () => {

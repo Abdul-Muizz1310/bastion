@@ -2,25 +2,37 @@ import type { AdvanceResult } from "./runner";
 import { STAGE_BUDGET_MS, type Stage, type StepStatus } from "./stages";
 
 /**
- * The foreground loop (spec 21 §6.2), pure: one request drives successive stages while its budget
- * lasts. Each round asks the runner to claim and run one stage (its claim, lease and fencing are
- * unchanged) with min(240 s, remaining − margin); the loop continues at once when the next stage is
- * due, sleeps in-process when it is due within INLINE_WAIT_MAX_MS, and stops when the dossier has
- * finished or failed (`done`), when the next stage is further out or nothing will become due
- * (`later`), when less than the margin remains (`budget`), or after MAX_IDLE_ROUNDS rounds in a row
- * that claimed nothing although a stage was due (`contended`: another caller is driving it).
+ * The foreground loop (spec 21 §6.2, Ruling AM), pure: one request drives successive stages while
+ * its budget lasts. Each round asks the runner to claim and run one stage (its claim, lease and
+ * fencing are unchanged) with min(240 s, remaining − margin). A round starts only when
+ * remaining − margin ≥ MIN_ROUND_MS — a round started with less would time out, burn an attempt,
+ * hold its stage off until claim + 300 s, and could spend twice — and only before the caller's
+ * slice ends (`startBeforeMs`, the sweep's per-dossier share). The loop continues at once when the
+ * next stage is due, sleeps in-process when it is due within INLINE_WAIT_MAX_MS, and stops when the
+ * dossier has finished or failed (`done`), when the next stage is further out or nothing will become
+ * due (`later`), when the floor is not met (`budget`), when the slice has ended (`slice`), or after
+ * MAX_IDLE_ROUNDS rounds in a row that claimed nothing although a stage was due (`contended`).
  *
- * Why: on Vercel an invocation kept alive only by after() and called by another such invocation did
- * not survive a 13.7 s stage, while a request with a real client always completes — so the request
- * a real client makes (the page's nudge, the sweep) does the work itself.
+ * Why: on Vercel an invocation kept alive only by after() did not survive a long stage, while a
+ * request with a real client always completes — so the requests real clients make (the page's
+ * nudge, the sweep) do the work themselves.
  */
 
 export const DRIVE_MARGIN_MS = 20_000;
 export const INLINE_WAIT_MAX_MS = 10_000;
 export const MAX_IDLE_ROUNDS = 3;
+/** The least a round may be given: the slowest single downstream call (a scrape) takes 90 s. */
+export const MIN_ROUND_MS = 100_000;
 
-export type Driver = "chain" | "visitor" | "sweep";
-export type StopReason = "done" | "later" | "budget" | "contended";
+export type Driver = "visitor" | "sweep";
+export type StopReason = "done" | "later" | "budget" | "slice" | "contended";
+
+export type DriveWindow = {
+  /** When the caller's request runs out (epoch ms): budgets are measured against it. */
+  deadlineMs: number;
+  /** No round starts at or after this (epoch ms); the deadline when absent. */
+  startBeforeMs?: number;
+};
 export type DrivenStage = { stage: Stage; status: StepStatus };
 
 export type DriveResult = {
@@ -37,15 +49,23 @@ export type DriveDeps = {
   sleep: (ms: number) => Promise<void>;
 };
 
-export async function driveLoop(deadlineMs: number, deps: DriveDeps): Promise<DriveResult> {
+/** Whether a round started at `at` gets at least MIN_ROUND_MS after the margin. */
+function roundFits(window: DriveWindow, at: number): boolean {
+  return window.deadlineMs - at - DRIVE_MARGIN_MS >= MIN_ROUND_MS;
+}
+
+export async function driveLoop(window: DriveWindow, deps: DriveDeps): Promise<DriveResult> {
+  const startBefore = window.startBeforeMs ?? window.deadlineMs;
   const stages: DrivenStage[] = [];
   let last: AdvanceResult | null = null;
   let idle = 0;
   const stop = (stopped: StopReason): DriveResult => ({ last, stages, stopped });
 
   for (;;) {
-    const remaining = deadlineMs - deps.now();
-    if (remaining < DRIVE_MARGIN_MS) return stop("budget");
+    const now = deps.now();
+    if (!roundFits(window, now)) return stop("budget");
+    if (now >= startBefore) return stop("slice");
+    const remaining = window.deadlineMs - now;
     const result = await deps.advanceOnce(Math.min(STAGE_BUDGET_MS, remaining - DRIVE_MARGIN_MS));
     last = result;
     const claimed = result.ran !== null && result.status !== null;
@@ -61,7 +81,9 @@ export async function driveLoop(deadlineMs: number, deps: DriveDeps): Promise<Dr
     const wait = result.nextAt.getTime() - deps.now();
     if (wait > INLINE_WAIT_MAX_MS) return stop("later");
     if (wait > 0) {
-      if (deps.now() + wait > deadlineMs - DRIVE_MARGIN_MS) return stop("budget");
+      const wake = deps.now() + wait;
+      if (!roundFits(window, wake)) return stop("budget");
+      if (wake >= startBefore) return stop("slice");
       await deps.sleep(wait);
     }
   }

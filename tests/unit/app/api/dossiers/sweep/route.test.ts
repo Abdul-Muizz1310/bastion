@@ -6,11 +6,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * foreground loop and answers a summary with ids only; one `dossier.sweep` audit event as bastion.
  */
 
-const { dueDossiers, driveDossier, appendEvent, createRateLimiter } = vi.hoisted(() => ({
-  dueDossiers: vi.fn(),
-  driveDossier: vi.fn(),
-  appendEvent: vi.fn(),
-  createRateLimiter: vi.fn(),
+const { dueDossiers, driveDossier, appendEvent, createRateLimiter, chainTracer } = vi.hoisted(
+  () => ({
+    dueDossiers: vi.fn(),
+    driveDossier: vi.fn(),
+    appendEvent: vi.fn(),
+    createRateLimiter: vi.fn(),
+    chainTracer: vi.fn(async () => {}),
+  }),
+);
+vi.mock("@/dossier/chain-trace", async (orig) => ({
+  ...(await orig<typeof import("@/dossier/chain-trace")>()),
+  chainTracer,
 }));
 vi.mock("@/dossier/store", async (orig) => ({
   ...(await orig<typeof import("@/dossier/store")>()),
@@ -48,6 +55,7 @@ beforeEach(() => {
     stopped: "done",
   });
   appendEvent.mockReset().mockResolvedValue(1);
+  chainTracer.mockClear();
 });
 
 afterEach(() => {
@@ -62,13 +70,16 @@ describe("POST /api/dossiers/sweep", () => {
     expect(createRateLimiter).not.toHaveBeenCalled();
   });
 
-  it.each([undefined, ""])("answers 503 when BASTION_SWEEP_TOKEN is %j, driving nothing", async (value) => {
-    vi.stubEnv("BASTION_SWEEP_TOKEN", value as string);
-    const res = await post(`Bearer ${TOKEN}`);
-    expect(res.status).toBe(503);
-    expect((await res.json()).error).toBe("sweep_unconfigured");
-    expect(dueDossiers).not.toHaveBeenCalled();
-  });
+  it.each([undefined, "", "x".repeat(31)])(
+    "answers 503 when BASTION_SWEEP_TOKEN is %j, driving nothing",
+    async (value) => {
+      vi.stubEnv("BASTION_SWEEP_TOKEN", value as string);
+      const res = await post(`Bearer ${TOKEN}`);
+      expect(res.status).toBe(503);
+      expect((await res.json()).error).toBe("sweep_unconfigured");
+      expect(dueDossiers).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([undefined, "Bearer wrong", `Basic ${TOKEN}`])(
     "answers 401 to %j, driving nothing",
@@ -87,7 +98,11 @@ describe("POST /api/dossiers/sweep", () => {
     expect(dueDossiers).toHaveBeenCalledWith(NOW, 25);
     expect(driveDossier).toHaveBeenCalledExactlyOnceWith(
       A,
-      expect.objectContaining({ driver: "sweep", deadlineMs: NOW.getTime() + 300_000 }),
+      expect.objectContaining({
+        driver: "sweep",
+        deadlineMs: NOW.getTime() + 300_000,
+        startBeforeMs: NOW.getTime() + 90_000,
+      }),
     );
     const body = await res.json();
     expect(body).toEqual({
@@ -123,5 +138,18 @@ describe("POST /api/dossiers/sweep", () => {
     appendEvent.mockRejectedValue(new Error("db down"));
     const res = await post(`Bearer ${TOKEN}`);
     expect(res.status).toBe(200);
+  });
+
+  it("traces a sweep that selected something, and stays silent when nothing was due", async () => {
+    await post(`Bearer ${TOKEN}`);
+    expect(chainTracer.mock.calls.map((c) => (c as unknown[])[0])).toEqual([
+      expect.objectContaining({ event: "sweep.entry", selected: 1 }),
+      expect.objectContaining({ event: "sweep.done", driven: 1, stages: 2 }),
+    ]);
+    chainTracer.mockClear();
+    dueDossiers.mockResolvedValue([]);
+    const res = await post(`Bearer ${TOKEN}`);
+    expect(await res.json()).toMatchObject({ swept: [] });
+    expect(chainTracer).not.toHaveBeenCalled();
   });
 });

@@ -41,7 +41,7 @@ export type AdvanceResult = {
   nextAt: Date | null;
 };
 
-/** What the runner tells its caller about a claim and an outcome (spec 21 §6.2 "The chain's trace"). */
+/** What the runner tells its caller about a claim and an outcome (spec 21 §6.2 "The trace"). */
 export type RunnerTrace = (
   event: "advance.claim" | "advance.idle" | "advance.outcome",
   fields: Record<string, string | number | boolean | null>,

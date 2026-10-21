@@ -176,7 +176,7 @@ export type IdleReason =
     };
 
 /**
- * Why an advance claimed nothing (pure; spec 21 §6.2 "The chain's trace"): no steps, finished, an
+ * Why an advance claimed nothing (pure; spec 21 §6.2 "The trace"): no steps, finished, an
  * error stage waiting for a retry, a lease still held, a stage not yet due by this clock — or a
  * stage claimable now, which means another caller won the claim.
  */

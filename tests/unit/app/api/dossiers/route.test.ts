@@ -1,30 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * `/api/dossiers` (spec 21 §3): POST composes a dossier (202, then the runner is started with
- * after()); GET lists the 12 most recent, public fields only.
+ * `/api/dossiers` (spec 21 §3, §6.2): POST composes a dossier (202; its page's nudge, or the sweep,
+ * then drives it — nothing is started with after()); GET lists the 12 most recent, public fields only.
  */
 
-const {
-  check,
-  createRateLimiter,
-  createDossier,
-  listPublicDossiers,
-  afterCallbacks,
-  afterKinds,
-  chainAdvance,
-} = vi.hoisted(() => {
-  const check = vi.fn();
-  return {
-    check,
-    createRateLimiter: vi.fn(() => ({ check })),
-    createDossier: vi.fn(),
-    listPublicDossiers: vi.fn(),
-    afterCallbacks: [] as Array<() => unknown>,
-    afterKinds: [] as Array<"function" | "promise">,
-    chainAdvance: vi.fn(),
-  };
-});
+const { check, createRateLimiter, createDossier, listPublicDossiers, afterCallbacks } = vi.hoisted(
+  () => {
+    const check = vi.fn();
+    return {
+      check,
+      createRateLimiter: vi.fn(() => ({ check })),
+      createDossier: vi.fn(),
+      listPublicDossiers: vi.fn(),
+      afterCallbacks: [] as Array<() => unknown>,
+    };
+  },
+);
 vi.mock("@/platform/ratelimit", () => ({ createRateLimiter }));
 vi.mock("@/dossier/create", async (orig) => ({
   ...(await orig<typeof import("@/dossier/create")>()),
@@ -34,21 +26,10 @@ vi.mock("@/dossier/gallery", async (orig) => ({
   ...(await orig<typeof import("@/dossier/gallery")>()),
   listPublicDossiers,
 }));
-vi.mock("@/dossier/chain", async (orig) => ({
-  ...(await orig<typeof import("@/dossier/chain")>()),
-  chainAdvance,
-}));
-const { chainTracer } = vi.hoisted(() => ({ chainTracer: vi.fn(async () => {}) }));
-vi.mock("@/dossier/chain-trace", async (orig) => ({
-  ...(await orig<typeof import("@/dossier/chain-trace")>()),
-  chainTracer,
-}));
 vi.mock("next/server", async (orig) => ({
   ...(await orig<typeof import("next/server")>()),
-  // after() takes a function (run once the response closes) or a promise (kept alive at once).
-  after: (task: (() => unknown) | Promise<unknown>) => {
-    afterCallbacks.push(typeof task === "function" ? task : () => task);
-    afterKinds.push(typeof task === "function" ? "function" : "promise");
+  after: (task: () => unknown) => {
+    afterCallbacks.push(task);
   },
 }));
 
@@ -57,8 +38,6 @@ import * as route from "@/app/api/dossiers/route";
 
 const ID = "550e8400-e29b-41d4-a716-446655440000";
 const NOW = new Date("2026-10-21T12:00:00.000Z");
-/** The hand-off's deadline: this invocation's start + maxDuration (300 s) − the 15 s margin. */
-const DEADLINE = NOW.getTime() + 285_000;
 
 function post(body: string, contentType = "application/json") {
   return route.POST(
@@ -81,10 +60,8 @@ beforeEach(() => {
     dossierId: ID,
     requestId: ctx.requestId,
   }));
-  chainAdvance.mockReset().mockResolvedValue(undefined);
   listPublicDossiers.mockReset().mockResolvedValue([]);
   afterCallbacks.length = 0;
-  afterKinds.length = 0;
 });
 
 afterEach(() => {
@@ -92,10 +69,6 @@ afterEach(() => {
 });
 
 describe("POST /api/dossiers", () => {
-  it("may stay until the first stage has answered (maxDuration 300)", () => {
-    expect(route.maxDuration).toBe(300);
-  });
-
   it("is dynamic and limited to 3 an hour per visitor", async () => {
     expect(route.dynamic).toBe("force-dynamic");
     expect(createRateLimiter).toHaveBeenCalledWith({ max: 3, windowMs: 3_600_000 });
@@ -103,32 +76,21 @@ describe("POST /api/dossiers", () => {
     expect(check).toHaveBeenCalledWith(expect.stringMatching(/^compose:v_[a-z2-7]{10}$/));
   });
 
-  it("answers 202 with the id, request id and url, and starts the runner with after()", async () => {
+  it("answers 202 with the id, request id and url", async () => {
     const res = await post(valid);
     expect(res.status).toBe(202);
     const body = await res.json();
-    expect(body).toEqual({ dossier_id: ID, request_id: res.headers.get("x-request-id"), url: `/d/${ID}` });
+    expect(body).toEqual({
+      dossier_id: ID,
+      request_id: res.headers.get("x-request-id"),
+      url: `/d/${ID}`,
+    });
     expect(res.headers.get("cache-control")).toBe("no-store");
-    await afterCallbacks[0]?.();
-    expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 0, DEADLINE, expect.anything());
   });
 
-  it("traces the start of the chain and hands its invocation id to the hand-off (spec 21 §6.2)", async () => {
-    chainTracer.mockClear();
+  it("starts nothing in the background: the page's nudge and the sweep drive the run (Ruling AM)", async () => {
     await post(valid);
-    const first = (chainTracer.mock.calls[0] as unknown[] | undefined)?.[0];
-    expect(first).toMatchObject({ event: "start.chain", route: "create", dossierId: ID });
-    const invocation = (first as { invocation: string }).invocation;
-    expect(invocation).toMatch(/^[0-9a-f]{8}$/);
-    expect(chainAdvance.mock.calls[0]?.[4]).toMatchObject({ trace: { invocation } });
-  });
-
-  it("hands after() the first advance as a promise, which a client gone before the 202 cannot drop", async () => {
-    // Task 15: Next runs a *function* given to after() only when the response closes; a promise is
-    // kept alive with waitUntil — the same form the advance route uses.
-    await post(valid);
-    expect(afterKinds).toEqual(["promise"]);
-    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0, DEADLINE, expect.anything());
+    expect(afterCallbacks).toEqual([]);
   });
 
   it("passes the parsed, defaulted input and the visitor to the service", async () => {
@@ -186,7 +148,8 @@ describe("POST /api/dossiers", () => {
 });
 
 describe("GET /api/dossiers", () => {
-  const get = (query = "") => route.GET(new NextRequest(`https://bastion.test/api/dossiers${query}`));
+  const get = (query = "") =>
+    route.GET(new NextRequest(`https://bastion.test/api/dossiers${query}`));
 
   it("lists the public gallery", async () => {
     listPublicDossiers.mockResolvedValue([{ id: ID }]);

@@ -3,17 +3,20 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * Spec 21 §6.2 "The sweep": `.github/workflows/sweep.yml` calls the sweep every 5 minutes (and by
- * hand) with `curl`, the token from the repository's secrets, a time limit under the route's 300 s,
- * and fails on any non-2xx answer. Checked as text: the workflow must say exactly this.
+ * Spec 21 §6.2 "The sweep": `.github/workflows/sweep.yml` calls the sweep every 30 minutes (and by
+ * hand) — a safety net for abandoned runs that keeps the database's compute low — with `curl`, the
+ * token from the repository's secrets, a time limit under the route's 300 s, and fails on any
+ * non-2xx answer. Checked as text: the workflow must say exactly this.
  */
 
 const yml = readFileSync(join(process.cwd(), ".github", "workflows", "sweep.yml"), "utf8");
 const lines = yml.split("\n");
 
 describe("the sweep workflow", () => {
-  it("runs every 5 minutes and by hand", () => {
-    expect(yml).toMatch(/^on:\n {2}schedule:\n {4}- cron: "\*\/5 \* \* \* \*"\n {2}workflow_dispatch:/m);
+  it("runs every 30 minutes and by hand (Ruling AM)", () => {
+    expect(yml).toMatch(
+      /^on:\n {2}schedule:\n {4}- cron: "\*\/30 \* \* \* \*"\n {2}workflow_dispatch:/m,
+    );
   });
 
   it("POSTs the production sweep route with the secret as a bearer token, failing on non-2xx", () => {
@@ -29,8 +32,7 @@ describe("the sweep workflow", () => {
 
   it("gives up before the route's 300 s, and the job soon after", () => {
     const maxTime = Number(/--max-time (\d+)/.exec(yml)?.[1]);
-    expect(maxTime).toBeGreaterThanOrEqual(285);
-    expect(maxTime).toBeLessThan(300);
+    expect(maxTime).toBe(295);
     expect(Number(/timeout-minutes: (\d+)/.exec(yml)?.[1])).toBeLessThanOrEqual(6);
   });
 

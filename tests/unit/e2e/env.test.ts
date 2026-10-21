@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { chainAdvance } from "@/dossier/chain";
 import {
-  HANDOFF_LET_GO,
   isLocalDatabase,
   SERVICE_IDS,
   serviceUrls,
@@ -53,22 +51,5 @@ describe("e2e env: the run writes only to a local database", () => {
     "not a url",
   ])("refuses %s", (url) => {
     expect(isLocalDatabase(url)).toBe(false);
-  });
-});
-
-describe("e2e env: the runner's warning case 5 reads back", () => {
-  it("is the line chainAdvance logs, with the dossier's id, when a hand-off lets go early", async () => {
-    vi.stubEnv("IRON_SESSION_PASSWORD", "x".repeat(32));
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const id = "550e8400-e29b-41d4-a716-446655440000";
-    await chainAdvance("https://bastion.test", id, 0, 0, {
-      fetch: async () => {
-        throw new DOMException("timed out", "TimeoutError");
-      },
-    });
-    const line = String(warn.mock.calls[0]?.[0]);
-    expect(line).toContain(HANDOFF_LET_GO);
-    expect(line).toContain(id);
-    warn.mockRestore();
   });
 });

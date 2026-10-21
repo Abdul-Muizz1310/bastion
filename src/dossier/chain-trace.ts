@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import { Redis } from "@upstash/redis";
 
 /**
- * The dossier chain's trace (spec 21 §6.2, diagnostic): one structured line per chain event — ids,
+ * The dossier trace (spec 21 §6.2, diagnostic): one structured line per runner event — ids,
  * stages, statuses and milliseconds only, never a token, a header's value or a body — to the log
- * and, when Upstash is configured, to a per-dossier list, because a platform may not keep what a
- * function logs after its answer. Writing a line never throws and holds its caller at most
- * `capMs`. The line format is pure (`traceLine`); the sinks are the shell.
+ * and, with `BASTION_CHAIN_TRACE=1` and Upstash configured, to a per-dossier list. Writing a line
+ * never throws and holds its caller at most `capMs`. The line format is pure (`traceLine`); the
+ * sinks are the shell.
  */
 
 export type TraceValue = string | number | boolean | null;
@@ -18,19 +18,13 @@ export type ChainEventName =
   | "advance.idle"
   | "advance.outcome"
   | "advance.answer"
-  | "chain.decision"
-  | "start.chain"
-  | "chain.after"
-  | "chain.sleep"
-  | "chain.fetch"
-  | "chain.response"
-  | "chain.letgo"
-  | "chain.error"
-  | "chain.settled"
   | "drive.stage"
   | "drive.stop"
   | "sweep.entry"
   | "sweep.done";
+
+/** The answering invocation's id, so a page or a tool can match an answer with its trace lines. */
+export const INVOCATION_HEADER = "x-bastion-invocation";
 
 export type ChainTraceEvent = {
   event: ChainEventName;
@@ -115,10 +109,14 @@ export function redisTraceSink(redis: RedisLike): TraceSink {
   };
 }
 
-/** Upstash when it is configured; otherwise none, and the trace is the log alone. */
+/**
+ * The per-dossier list, only when switched on (`BASTION_CHAIN_TRACE=1`, Ruling AM) and Upstash is
+ * configured; otherwise none, and the trace is the log alone.
+ */
 export function traceSinkFromEnv(
   env: NodeJS.ProcessEnv | Record<string, string | undefined>,
 ): TraceSink | null {
+  if (env.BASTION_CHAIN_TRACE !== "1") return null;
   const url = env.UPSTASH_REDIS_REST_URL;
   const token = env.UPSTASH_REDIS_REST_TOKEN;
   return url && token

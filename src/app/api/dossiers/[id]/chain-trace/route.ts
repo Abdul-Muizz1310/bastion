@@ -6,9 +6,9 @@ import { createRateLimiter } from "@/platform/ratelimit";
 import { visitorFromRequest } from "@/platform/visitor";
 
 /**
- * `GET /api/dossiers/[id]/chain-trace` (spec 21 §6.2 "The chain's trace", diagnostic): the dossier's
- * chain events, oldest first, read from the per-dossier list the runner writes when Upstash is
- * configured — because a platform may not keep what a function logs after its answer. Public like
+ * `GET /api/dossiers/[id]/chain-trace` (spec 21 §6.2 "The trace", diagnostic): the dossier's
+ * trace events, oldest first, read from the per-dossier list kept with `BASTION_CHAIN_TRACE=1` and
+ * Upstash configured — because a platform may not keep what a function logs after its answer. Public like
  * the dossier (ids, stages, statuses and milliseconds only), never cached, 30 a minute per visitor;
  * 503 `trace_unavailable` when no list is kept or it cannot be read.
  */

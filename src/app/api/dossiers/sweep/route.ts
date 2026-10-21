@@ -9,11 +9,12 @@ import { errorResponse } from "@/platform/gateway/http";
 
 /**
  * `POST /api/dossiers/sweep` (spec 21 §6.2 "The sweep"): drives every pending or running dossier
- * whose frontier stage is due, oldest first, with the foreground loop, until about 280 s are spent;
- * answers `{swept: [{dossierId, stages, dossier, stopped}], ms}` — ids, stages and statuses only.
- * Called every 5 minutes by `.github/workflows/sweep.yml`. Gated by `Authorization: Bearer
- * <BASTION_SWEEP_TOKEN>` (constant-time; 503 when the token is not configured, 401 otherwise), so
- * it has no visitor limit. Its stage outcomes are audited by the runner as bastion, and the sweep
+ * whose frontier stage is due, oldest first, with the foreground loop — each with a 90 s slice to
+ * start rounds in, and only while a full round still fits; answers `{swept: [{dossierId, stages,
+ * dossier, stopped}], ms}` — ids, stages and statuses only. Called every 30 minutes by
+ * `.github/workflows/sweep.yml` and by the live smoke. Gated by `Authorization: Bearer
+ * <BASTION_SWEEP_TOKEN>` (constant-time; 503 when the token is unset or under 32 characters, 401
+ * otherwise), so it has no visitor limit. Its stage outcomes are audited by the runner as bastion, and the sweep
  * itself appends one `dossier.sweep` event.
  */
 
@@ -40,28 +41,28 @@ export async function POST(req: Request): Promise<Response> {
     due: async (now, limit) => {
       const ids = await dueDossiers(now, limit);
       selected = ids.length;
-      await chainTracer({ event: "sweep.entry", dossierId: "sweep", invocation, selected });
+      // A sweep with nothing to do leaves no trace (Ruling AM): the schedule runs every 30 minutes.
+      if (selected > 0) {
+        await chainTracer({ event: "sweep.entry", dossierId: "sweep", invocation, selected });
+      }
       return ids;
     },
-    drive: (dossierId, deadline) =>
-      driveDossier(dossierId, {
-        driver: "sweep",
-        deadlineMs: deadline,
-        invocation,
-        emit: chainTracer,
-      }),
+    drive: (dossierId, window) =>
+      driveDossier(dossierId, { driver: "sweep", ...window, invocation, emit: chainTracer }),
     now: Date.now,
     deadlineMs,
   });
   const stages = swept.reduce((n, s) => n + s.stages.length, 0);
-  await chainTracer({
-    event: "sweep.done",
-    dossierId: "sweep",
-    invocation,
-    driven: swept.length,
-    stages,
-    ms: Date.now() - startedAt,
-  });
+  if (selected > 0) {
+    await chainTracer({
+      event: "sweep.done",
+      dossierId: "sweep",
+      invocation,
+      driven: swept.length,
+      stages,
+      ms: Date.now() - startedAt,
+    });
+  }
   try {
     await appendEvent({
       actor: SYSTEM_ACTOR,

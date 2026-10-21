@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NUDGE_GRACE_MS } from "@/features/dossier/live/nudge";
+import { ANSWER_HOLD_MS } from "@/features/dossier/live/nudger";
 import { type AdvanceOutcome, createNudger } from "@/features/dossier/live/nudger";
 import { stepView, viewsAt } from "../fixtures";
 
@@ -49,7 +50,14 @@ afterEach(() => {
 });
 
 describe("createNudger", () => {
-  it("waits until the frontier has been due for the grace, then calls advance once", async () => {
+  it("calls advance at once for a new dossier whose first stage is due — on page load", async () => {
+    const { advance, nudger } = harness();
+    nudger.update(viewsAt("wake", "pending", { nextAt: at(-100) }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(advance).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits until the frontier is due, then calls advance once", async () => {
     const { advance, nudger } = harness();
     nudger.update(viewsAt("debate", "waiting", { nextAt: at(3_000) }));
     await vi.advanceTimersByTimeAsync(3_000 + NUDGE_GRACE_MS - 1);
@@ -70,6 +78,19 @@ describe("createNudger", () => {
     );
     await vi.advanceTimersByTimeAsync(30_000 + NUDGE_GRACE_MS);
     expect(second.advance).toHaveBeenCalledTimes(1);
+  });
+
+  it("after an answer, holds at least 3 s for the stream to catch up — a stale row sets off no burst", async () => {
+    expect(ANSWER_HOLD_MS).toBe(3_000);
+    const { advance, calls, nudger } = harness();
+    const stale = viewsAt("seal", "running", { leaseUntil: at(-60_000) });
+    nudger.update(stale);
+    await vi.advanceTimersByTimeAsync(0);
+    await settle(calls[0], { kind: "ok", nextAt: null, dossier: "running" });
+    await vi.advanceTimersByTimeAsync(ANSWER_HOLD_MS - 1);
+    expect(advance).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(advance).toHaveBeenCalledTimes(2);
   });
 
   it("keeps at most one advance in flight, whatever the stream says meanwhile", async () => {
@@ -132,7 +153,7 @@ describe("createNudger", () => {
     await settle(calls[0], { kind: "failed", detail: "x" });
     await vi.advanceTimersByTimeAsync(15_000);
     await settle(calls[1], { kind: "ok", nextAt: null, dossier: "running" });
-    await vi.advanceTimersByTimeAsync(NUDGE_GRACE_MS);
+    await vi.advanceTimersByTimeAsync(ANSWER_HOLD_MS + NUDGE_GRACE_MS);
     expect(advance).toHaveBeenCalledTimes(3);
     await settle(calls[2], { kind: "failed", detail: "x" });
     await vi.advanceTimersByTimeAsync(14_999);
@@ -164,12 +185,16 @@ describe("createNudger", () => {
   it("re-plans when the stream moves on: a stage now under a live lease is not nudged", async () => {
     const { advance, nudger } = harness();
     nudger.update(viewsAt("debate", "waiting", { nextAt: at(3_000) }));
-    await vi.advanceTimersByTimeAsync(4_000);
+    // Before it is due, the stream says another caller claimed it under a live lease.
+    await vi.advanceTimersByTimeAsync(2_000);
     nudger.update(viewsAt("debate", "running", { leaseUntil: at(270_000) }));
     await vi.advanceTimersByTimeAsync(60_000);
     expect(advance).not.toHaveBeenCalled();
-    nudger.update([stepView("wake", "ok"), ...viewsAt("debate", "running", { leaseUntil: at(270_000) }).slice(1)]);
-    await vi.advanceTimersByTimeAsync(270_000 - 64_000 + NUDGE_GRACE_MS);
+    nudger.update([
+      stepView("wake", "ok"),
+      ...viewsAt("debate", "running", { leaseUntil: at(270_000) }).slice(1),
+    ]);
+    await vi.advanceTimersByTimeAsync(270_000 - 62_000 + NUDGE_GRACE_MS);
     expect(advance).toHaveBeenCalledTimes(1);
   });
 

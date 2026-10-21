@@ -4,6 +4,7 @@ import {
   driveLoop,
   INLINE_WAIT_MAX_MS,
   MAX_IDLE_ROUNDS,
+  MIN_ROUND_MS,
 } from "@/dossier/drive";
 import type { AdvanceResult } from "@/dossier/runner";
 import { STAGE_BUDGET_MS } from "@/dossier/stages";
@@ -42,17 +43,19 @@ function harness(rounds: Array<{ ms: number; result: (now: number) => AdvanceRes
   return { deps, budgets, slept, at: () => clock };
 }
 
-const ran = (
-  stage: AdvanceResult["ran"],
-  status: AdvanceResult["status"],
-  nextIn: number | null,
-  dossier: AdvanceResult["dossier"] = "running",
-) => (now: number): AdvanceResult => ({
-  ran: stage,
-  status,
-  dossier,
-  nextAt: nextIn === null ? null : new Date(now + nextIn),
-});
+const ran =
+  (
+    stage: AdvanceResult["ran"],
+    status: AdvanceResult["status"],
+    nextIn: number | null,
+    dossier: AdvanceResult["dossier"] = "running",
+  ) =>
+  (now: number): AdvanceResult => ({
+    ran: stage,
+    status,
+    dossier,
+    nextAt: nextIn === null ? null : new Date(now + nextIn),
+  });
 
 describe("driveLoop", () => {
   it("runs stage after stage while each next one is due, until the dossier finishes", async () => {
@@ -62,7 +65,7 @@ describe("driveLoop", () => {
       { ms: 1_000, result: ran("read", "ok", -1) },
       { ms: 500, result: ran("record", "ok", null, "succeeded") },
     ]);
-    const out = await driveLoop(DEADLINE, h.deps);
+    const out = await driveLoop({ deadlineMs: DEADLINE }, h.deps);
     expect(out.stopped).toBe("done");
     expect(out.stages).toEqual([
       { stage: "wake", status: "ok" },
@@ -82,7 +85,7 @@ describe("driveLoop", () => {
       { ms: 1_000, result: ran("gather", "ok", -1) },
       { ms: 1_000, result: ran("read", "ok", null, "failed") },
     ]);
-    await driveLoop(DEADLINE, h.deps);
+    await driveLoop({ deadlineMs: DEADLINE }, h.deps);
     // 300 s left → 240 s; 250 s left → 230 s; 249 s left → 229 s.
     expect(h.budgets).toEqual([240_000, 230_000, 229_000]);
   });
@@ -94,7 +97,7 @@ describe("driveLoop", () => {
       { ms: 1_000, result: ran("debate", "waiting", 3_000) },
       { ms: 1_000, result: ran("debate", "ok", null, "failed") },
     ]);
-    const out = await driveLoop(DEADLINE, h.deps);
+    const out = await driveLoop({ deadlineMs: DEADLINE }, h.deps);
     expect(h.slept).toEqual([3_000, 3_000]);
     expect(out.stages.map((s) => s.status)).toEqual(["waiting", "waiting", "ok"]);
   });
@@ -104,43 +107,77 @@ describe("driveLoop", () => {
       { ms: 13_700, result: ran("seal", "pending", 5_000) },
       { ms: 2_000, result: ran("seal", "ok", null, "succeeded") },
     ]);
-    const out = await driveLoop(DEADLINE, h.deps);
+    const out = await driveLoop({ deadlineMs: DEADLINE }, h.deps);
     expect(h.slept).toEqual([5_000]);
     expect(out.stopped).toBe("done");
   });
 
   it("stops when the next stage is more than 10 s away", async () => {
     const h = harness([{ ms: 1_000, result: ran("debate", "waiting", 10_001) }]);
-    const out = await driveLoop(DEADLINE, h.deps);
+    const out = await driveLoop({ deadlineMs: DEADLINE }, h.deps);
     expect(out.stopped).toBe("later");
     expect(h.slept).toEqual([]);
   });
 
   it("stops when nothing will become due (nextAt null) without the dossier ending", async () => {
     const h = harness([{ ms: 100, result: ran(null, null, null, "pending") }]);
-    expect((await driveLoop(DEADLINE, h.deps)).stopped).toBe("later");
+    expect((await driveLoop({ deadlineMs: DEADLINE }, h.deps)).stopped).toBe("later");
   });
 
-  it("does not start a round with less than the margin left", async () => {
-    const h = harness([]);
-    const out = await driveLoop(START + DRIVE_MARGIN_MS - 1, h.deps);
-    expect(out).toEqual({ last: null, stages: [], stopped: "budget" });
-    expect(h.deps.advanceOnce).not.toHaveBeenCalled();
+  it("starts a round only with at least 100 s for it after the margin (Ruling AM)", async () => {
+    expect(MIN_ROUND_MS).toBe(100_000);
+    const short = harness([]);
+    const none = await driveLoop(
+      { deadlineMs: START + DRIVE_MARGIN_MS + MIN_ROUND_MS - 1 },
+      short.deps,
+    );
+    expect(none).toEqual({ last: null, stages: [], stopped: "budget" });
+    expect(short.deps.advanceOnce).not.toHaveBeenCalled();
+
+    const exact = harness([{ ms: 1_000, result: ran("wake", "ok", null, "failed") }]);
+    await driveLoop({ deadlineMs: START + DRIVE_MARGIN_MS + MIN_ROUND_MS }, exact.deps);
+    expect(exact.budgets).toEqual([MIN_ROUND_MS]);
   });
 
-  it("stops at the margin after a long stage, rather than start another", async () => {
-    // 285 s spent: 15 s remain, under the 20 s margin.
-    const h = harness([{ ms: 285_000, result: ran("debate", "ok", -1) }]);
-    const out = await driveLoop(DEADLINE, h.deps);
+  it("starts no further round once less than the floor remains after a stage", async () => {
+    // 181 s spent of 300: 119 s remain, 99 s after the margin — under the 100 s floor.
+    const h = harness([{ ms: 181_000, result: ran("debate", "ok", -1) }]);
+    const out = await driveLoop({ deadlineMs: DEADLINE }, h.deps);
     expect(out.stopped).toBe("budget");
     expect(h.deps.advanceOnce).toHaveBeenCalledTimes(1);
+    // 180 s spent: exactly the floor remains, so one more round runs.
+    const edge = harness([
+      { ms: 180_000, result: ran("debate", "ok", -1) },
+      { ms: 1_000, result: ran("measure", "ok", null, "failed") },
+    ]);
+    await driveLoop({ deadlineMs: DEADLINE }, edge.deps);
+    expect(edge.budgets).toEqual([240_000, MIN_ROUND_MS]);
   });
 
-  it("does not sleep past the margin", async () => {
-    // 279 s spent: waking 3 s later would leave 18 s, under the margin.
-    const h = harness([{ ms: 279_000, result: ran("debate", "waiting", 3_000) }]);
-    const out = await driveLoop(DEADLINE, h.deps);
+  it("does not sleep into less than the floor", async () => {
+    // 178 s spent: waking 3 s later would leave 119 s — under the floor.
+    const h = harness([{ ms: 178_000, result: ran("debate", "waiting", 3_000) }]);
+    const out = await driveLoop({ deadlineMs: DEADLINE }, h.deps);
     expect(out.stopped).toBe("budget");
+    expect(h.slept).toEqual([]);
+    // 177 s spent: waking leaves exactly the floor, so it sleeps and runs the poll.
+    const edge = harness([
+      { ms: 177_000, result: ran("debate", "waiting", 3_000) },
+      { ms: 1_000, result: ran("debate", "ok", null, "failed") },
+    ]);
+    await driveLoop({ deadlineMs: DEADLINE }, edge.deps);
+    expect(edge.slept).toEqual([3_000]);
+  });
+
+  it("starts no round after its slice ends, still giving each round the whole deadline", async () => {
+    const h = harness([
+      { ms: 60_000, result: ran("seal", "ok", -1) },
+      { ms: 40_000, result: ran("debate", "waiting", 3_000) },
+    ]);
+    const out = await driveLoop({ deadlineMs: DEADLINE, startBeforeMs: START + 90_000 }, h.deps);
+    expect(out.stopped).toBe("slice");
+    // The second round started at 60 s (inside the slice) with the deadline's budget.
+    expect(h.budgets).toEqual([240_000, 220_000]);
     expect(h.slept).toEqual([]);
   });
 
@@ -148,7 +185,7 @@ describe("driveLoop", () => {
     expect(MAX_IDLE_ROUNDS).toBe(3);
     const lost = () => ({ ms: 50, result: ran(null, null, -1) });
     const h = harness([lost(), lost(), lost()]);
-    const out = await driveLoop(DEADLINE, h.deps);
+    const out = await driveLoop({ deadlineMs: DEADLINE }, h.deps);
     expect(out.stopped).toBe("contended");
     expect(h.deps.advanceOnce).toHaveBeenCalledTimes(3);
   });
@@ -158,7 +195,7 @@ describe("driveLoop", () => {
       { ms: 50, result: ran("seal", null, -1) },
       { ms: 50, result: ran("seal", "ok", null, "succeeded") },
     ]);
-    const out = await driveLoop(DEADLINE, h.deps);
+    const out = await driveLoop({ deadlineMs: DEADLINE }, h.deps);
     expect(out.stages).toEqual([{ stage: "seal", status: "ok" }]);
     expect(out.stopped).toBe("done");
   });
@@ -171,6 +208,6 @@ describe("driveLoop", () => {
       now: () => START,
       sleep: vi.fn(async () => {}),
     };
-    await expect(driveLoop(DEADLINE, deps)).rejects.toThrow("boom");
+    await expect(driveLoop({ deadlineMs: DEADLINE }, deps)).rejects.toThrow("boom");
   });
 });

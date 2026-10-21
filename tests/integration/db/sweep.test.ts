@@ -47,7 +47,10 @@ async function newDossier(opts: {
       requestId: `it-sweep-${id}`,
       createdAt: opts.createdAt ?? ago(60_000),
     });
-  if (opts.steps ?? true) await getDb().insert(dossierSteps).values(initialSteps(id, ago(60_000)));
+  if (opts.steps ?? true)
+    await getDb()
+      .insert(dossierSteps)
+      .values(initialSteps(id, ago(60_000)));
   return id;
 }
 
@@ -74,7 +77,11 @@ describe.skipIf(!LOCAL)("the sweep against Postgres (spec 21 §6.2)", () => {
     await setStep(abandoned, "wake", { status: "running", attempt: 1, leaseUntil: ago(1_000) });
 
     const leased = await newDossier({ status: "running" });
-    await setStep(leased, "wake", { status: "running", attempt: 1, leaseUntil: new Date(now.getTime() + 200_000) });
+    await setStep(leased, "wake", {
+      status: "running",
+      attempt: 1,
+      leaseUntil: new Date(now.getTime() + 200_000),
+    });
     const waiting = await newDossier({ status: "running" });
     await setStep(waiting, "wake", { status: "ok" });
     await setStep(waiting, "gather", {
@@ -110,11 +117,16 @@ describe.skipIf(!LOCAL)("the sweep against Postgres (spec 21 §6.2)", () => {
         calls.set(stage, (calls.get(stage) ?? 0) + 1);
         await new Promise((r) => setTimeout(r, 40));
         const outcome: StageOutcome =
-          stage === "gather" ? { kind: "skipped", reason: "no sources" } : { kind: "ok", output: { stage } };
+          stage === "gather"
+            ? { kind: "skipped", reason: "no sources" }
+            : { kind: "ok", output: { stage } };
         return outcome;
       };
-    const handlers = Object.fromEntries(STAGES.map((s) => [s, handler(s)])) as Record<Stage, StageHandler>;
-    const deadlineMs = Date.now() + 120_000;
+    const handlers = Object.fromEntries(STAGES.map((s) => [s, handler(s)])) as Record<
+      Stage,
+      StageHandler
+    >;
+    const deadlineMs = Date.now() + 300_000;
     const [sweep, nudge] = await Promise.all([
       driveDossier(id, { driver: "sweep", deadlineMs, invocation: "itsweep1", handlers }),
       driveDossier(id, { driver: "visitor", deadlineMs, invocation: "itnudge1", handlers }),

@@ -11,7 +11,7 @@ import {
 } from "@/dossier/chain-trace";
 
 /**
- * Spec 21 §6.2 "The chain's trace": one structured line per chain event — ids, stages, statuses and
+ * Spec 21 §6.2 "The trace": one structured line per chain event — ids, stages, statuses and
  * milliseconds only — to the log and, with Upstash, to a per-dossier list, because a platform may
  * not keep what a function logs after its answer. Writing a line never fails or holds a stage.
  */
@@ -27,24 +27,27 @@ afterEach(() => {
 describe("traceLine", () => {
   it("is one JSON object tagged dossier-chain, with the time and every field", () => {
     const line = traceLine(
-      { event: "chain.response", dossierId: ID, invocation: "a1b2c3d4", status: 200, elapsedMs: 15_812 },
+      { event: "drive.stage", dossierId: ID, invocation: "a1b2c3d4", driver: "sweep", ms: 15_812 },
       AT,
     );
     expect(JSON.parse(line)).toEqual({
       tag: "dossier-chain",
       at: "2026-10-21T07:16:46.000Z",
-      event: "chain.response",
+      event: "drive.stage",
       dossierId: ID,
       invocation: "a1b2c3d4",
-      status: 200,
-      elapsedMs: 15_812,
+      driver: "sweep",
+      ms: 15_812,
     });
     expect(line).not.toContain("\n");
   });
 
   it("keeps null fields and drops none", () => {
-    const line = traceLine({ event: "chain.decision", dossierId: ID, invocation: "x", delayMs: null }, AT);
-    expect(JSON.parse(line).delayMs).toBeNull();
+    const line = traceLine(
+      { event: "advance.claim", dossierId: ID, invocation: "x", stage: null },
+      AT,
+    );
+    expect(JSON.parse(line).stage).toBeNull();
   });
 });
 
@@ -65,7 +68,12 @@ describe("traceId", () => {
 });
 
 describe("createTracer", () => {
-  const event = { event: "advance.entry" as const, dossierId: ID, invocation: "a1b2c3d4", chained: true };
+  const event = {
+    event: "advance.entry" as const,
+    dossierId: ID,
+    invocation: "a1b2c3d4",
+    served: 3,
+  };
 
   it("logs the line and pushes it to the dossier's list", async () => {
     const log = vi.fn();
@@ -96,9 +104,12 @@ describe("createTracer", () => {
     vi.useFakeTimers();
     const push = vi.fn(() => new Promise<void>(() => {}));
     const done = vi.fn();
-    void createTracer({ sink: { push, read: async () => [] }, log: () => {}, now: () => AT, capMs: 500 })(
-      event,
-    ).then(done);
+    void createTracer({
+      sink: { push, read: async () => [] },
+      log: () => {},
+      now: () => AT,
+      capMs: 500,
+    })(event).then(done);
     await vi.advanceTimersByTimeAsync(499);
     expect(done).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
@@ -132,12 +143,21 @@ describe("redisTraceSink", () => {
     expect(redis.lrange).toHaveBeenCalledWith(`diag:chain:${ID}`, 0, 499);
   });
 
-  it("is built only when Upstash is configured", () => {
+  it("is built only with BASTION_CHAIN_TRACE=1 and Upstash configured (Ruling AM)", () => {
+    const upstash = {
+      UPSTASH_REDIS_REST_URL: "https://x.upstash.io",
+      UPSTASH_REDIS_REST_TOKEN: "t",
+    };
     expect(traceSinkFromEnv({})).toBeNull();
-    expect(traceSinkFromEnv({ UPSTASH_REDIS_REST_URL: "https://x.upstash.io" })).toBeNull();
+    expect(traceSinkFromEnv(upstash)).toBeNull();
+    expect(traceSinkFromEnv({ ...upstash, BASTION_CHAIN_TRACE: "true" })).toBeNull();
     expect(
-      traceSinkFromEnv({ UPSTASH_REDIS_REST_URL: "https://x.upstash.io", UPSTASH_REDIS_REST_TOKEN: "t" }),
-    ).not.toBeNull();
+      traceSinkFromEnv({
+        BASTION_CHAIN_TRACE: "1",
+        UPSTASH_REDIS_REST_URL: "https://x.upstash.io",
+      }),
+    ).toBeNull();
+    expect(traceSinkFromEnv({ ...upstash, BASTION_CHAIN_TRACE: "1" })).not.toBeNull();
   });
 });
 

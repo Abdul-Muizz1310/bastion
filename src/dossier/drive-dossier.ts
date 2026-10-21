@@ -7,14 +7,16 @@ import type { Stage, StageHandler } from "./stages";
 /**
  * The foreground loop's shell (spec 21 §6.2): `driveLoop` over the real runner and stage handlers,
  * each round traced as `drive.stage` (who drove it, the stage, its status, ms) and the stop as
- * `drive.stop`, under the caller's invocation id. Used by the advance route (the page's nudge, the
- * chain) and by the sweep. An unknown dossier throws `UnknownDossierError`, as `advance` does.
+ * `drive.stop`, under the caller's invocation id. Used by the advance route (the page's nudge) and
+ * by the sweep — the two drivers (Ruling AM). An unknown dossier throws `UnknownDossierError`, as `advance` does.
  */
 
 export type DriveOptions = {
   driver: Driver;
   /** When the caller's own request runs out (epoch ms): its start + its route's maxDuration. */
   deadlineMs: number;
+  /** No round starts at or after this (epoch ms): the sweep's per-dossier slice. */
+  startBeforeMs?: number;
   invocation: string;
   emit?: Tracer;
   /** The stage handlers (the real ones by default; integration tests pass their own). */
@@ -28,7 +30,11 @@ export async function driveDossier(dossierId: string, options: DriveOptions): Pr
   const { driver, invocation } = options;
   const note = (event: ChainEventName, fields: Record<string, TraceValue>) =>
     emit({ event, dossierId, invocation, ...fields });
-  const result = await driveLoop(options.deadlineMs, {
+  const window =
+    options.startBeforeMs === undefined
+      ? { deadlineMs: options.deadlineMs }
+      : { deadlineMs: options.deadlineMs, startBeforeMs: options.startBeforeMs };
+  const result = await driveLoop(window, {
     now: Date.now,
     sleep,
     advanceOnce: async (stageBudgetMs) => {
