@@ -42,6 +42,9 @@ import * as route from "@/app/api/dossiers/[id]/retry/route";
 import { isVisitorId } from "@/platform/visitor";
 
 const ID = "550e8400-e29b-41d4-a716-446655440000";
+const NOW = new Date("2026-10-21T12:00:00.000Z");
+/** The hand-off's deadline: this invocation's start + maxDuration (300 s) − the 15 s margin. */
+const DEADLINE = NOW.getTime() + 285_000;
 
 function post(body: string, contentType = "application/json"): Promise<Response> {
   const req = new NextRequest(`https://bastion.test/api/dossiers/${ID}/retry`, {
@@ -53,6 +56,8 @@ function post(body: string, contentType = "application/json"): Promise<Response>
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
   vi.stubEnv("IRON_SESSION_PASSWORD", "x".repeat(32));
   check.mockReset().mockResolvedValue({ success: true, limit: 5, remaining: 4 });
   retryStage.mockReset().mockResolvedValue({ ok: true, dossier: "running" });
@@ -62,6 +67,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
 });
 
@@ -99,6 +105,10 @@ describe("POST /api/dossiers/[id]/retry", () => {
     expect(retryStage).not.toHaveBeenCalled();
   });
 
+  it("may stay until the restarted stage has answered (maxDuration 300)", () => {
+    expect(route.maxDuration).toBe(300);
+  });
+
   it("resets the stage as the visitor and restarts the run with after()", async () => {
     const res = await post(JSON.stringify({ stage: "debate" }));
     expect(res.status).toBe(200);
@@ -108,13 +118,13 @@ describe("POST /api/dossiers/[id]/retry", () => {
     expect(isVisitorId(actor)).toBe(true);
     expect(afterCallbacks).toHaveLength(1);
     for (const cb of afterCallbacks) await cb();
-    expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 0);
+    expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 0, DEADLINE);
   });
 
   it("hands after() the restart as a promise, which a client gone before the answer cannot drop", async () => {
     await post(JSON.stringify({ stage: "debate" }));
     expect(afterKinds).toEqual(["promise"]);
-    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0);
+    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0, DEADLINE);
   });
 
   it("answers 404 for an unknown dossier", async () => {

@@ -396,14 +396,24 @@ A dossier is rows, not a promise. `dossier_steps` holds one row per stage with `
   dossier page also calls `advance` whenever the stage it shows has an expired lease, so a run never stalls
   for good, and a crashed invocation is retried when its lease expires (max 3 attempts per stage).
 - The chain is registered **before** the stage runs, as a promise handed to `after()` that settles once
-  the stage is recorded (Task 15). Each handoff lets go of the next invocation after 10 s, so a stage
-  longer than that runs with its caller already gone; Next runs a *function* given to `after()` only when
-  the response closes, and a close that already happened never fires again — a chain registered after
-  such a stage would be dropped and the dossier would wait for a page to nudge it. A promise is kept alive
-  with `waitUntil` and needs no close. Every path settles it, in a `finally`: with the next delay, or
-  with nothing to chain (finished, failed, unknown dossier, an error — deciding the delay included).
-  Compose and "retry from this stage" hand their first advance to `after()` as a promise too, so a
-  client that leaves before the answer is written cannot leave a run unstarted.
+  the stage is recorded (Task 15). Next runs a *function* given to `after()` only when the response
+  closes, and a close that already happened never fires again; a promise is kept alive with `waitUntil`
+  and needs no close. Every path settles it, in a `finally`: with the next delay, or with nothing to
+  chain (finished, failed, unknown dossier, an error — deciding the delay included).
+- **The caller stays until the successor answers** (fix after the first live smoke, 2026-10-21). An
+  invocation whose caller disconnects before it has answered loses its `after()` work on Vercel: the
+  first live dossier's seal ran ~12 s, recorded a retryable error due in 5 s, and nothing ever asked
+  again. So a hand-off never lets go on a short timer: it holds the connection until the next
+  invocation **responds**, or until its own invocation is about to run out — its deadline is its
+  start + its `maxDuration` − 15 s (`HANDOFF_MARGIN_MS`), at least 1 s. The next invocation answers as
+  soon as its stage is recorded; its own hand-off runs after that answer, so each invocation waits for
+  its successor's response only, never for the rest of the chain: at most two invocations of one
+  dossier are alive at once, and a caller's wait is bounded by one stage (≤ 240 s). Running out of
+  that deadline is logged ("the hand-off let go before the next advance answered"); the page's nudge
+  and the lease recover the run.
+- Compose and "retry from this stage" start a run the same way: their first advance is a promise
+  handed to `after()` with the same deadline (both routes declare `maxDuration` 300), so the create or
+  retry invocation stays until the first stage has answered.
 - Progress reaches the page through the existing SSE route (polling `dossier_events`, `maxDuration` 300).
 
 ### 6.3 Data model (migration on the `shadow-admin` branch)
@@ -621,7 +631,9 @@ expired, or it is pending or waiting and its `nextAt` has passed (and no lease i
 calls `POST /api/dossiers/[id]/advance` when the frontier stage has been due for 5 s (the runner's
 own chain arrives exactly on time, so it normally wins), at most one call at a time; a 429 waits the
 `retryAfterS` it was given, any other failure backs off 15 s, doubling to 2 min; an error stage,
-a finished dossier or a 404 stops it.
+a finished dossier or a 404 stops it. A nudge holds its request until the stage it ran is recorded
+and answered (§6.2: an invocation whose caller leaves first can lose its hand-off); a page closed
+mid-call costs at most that hand-off, which the next nudge or the lease recovers.
 
 *The timeline.* The eight stages in stage order (Postgres returns the rows in no particular
 order), each status written in words beside a glyph (pending · running · waiting · ok · error ·

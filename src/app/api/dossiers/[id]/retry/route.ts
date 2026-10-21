@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { after, type NextRequest } from "next/server";
 import { z } from "zod/v4";
-import { chainAdvance } from "@/dossier/chain";
+import { chainAdvance, handoffDeadline } from "@/dossier/chain";
 import { retryStage } from "@/dossier/runner";
 import { STAGES } from "@/dossier/stages";
 import { errorResponse } from "@/platform/gateway/http";
@@ -16,6 +16,8 @@ import { visitorFromRequest } from "@/platform/visitor";
  */
 
 export const dynamic = "force-dynamic";
+// The answer is quick; the after() hand-off then holds until the first stage has answered.
+export const maxDuration = 300;
 
 const retryLimiter = createRateLimiter({ max: 5, windowMs: 3_600_000 });
 const bodySchema = z.strictObject({ stage: z.enum(STAGES) });
@@ -23,6 +25,7 @@ const bodySchema = z.strictObject({ stage: z.enum(STAGES) });
 type Context = { params: Promise<{ id: string }> };
 
 export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
+  const startedAt = Date.now();
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
@@ -71,8 +74,9 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
 
   const origin = req.nextUrl.origin;
   // A promise, not a function: Next runs a function given to after() only when the response
-  // closes, and a client gone before it is written would leave the run unstarted (spec 21 §6.2).
-  after(chainAdvance(origin, id, 0));
+  // closes, and a client gone before it is written would leave the run unstarted. It holds until the
+  // first stage has answered, up to this invocation's own deadline (spec 21 §6.2).
+  after(chainAdvance(origin, id, 0, handoffDeadline(startedAt, maxDuration)));
   return Response.json(
     { stage: body.data.stage, dossier: result.dossier },
     { headers: { "cache-control": "no-store", "x-request-id": requestId } },

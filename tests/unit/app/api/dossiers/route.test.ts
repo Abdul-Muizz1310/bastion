@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * `/api/dossiers` (spec 21 §3): POST composes a dossier (202, then the runner is started with
@@ -51,6 +51,9 @@ import { NextRequest } from "next/server";
 import * as route from "@/app/api/dossiers/route";
 
 const ID = "550e8400-e29b-41d4-a716-446655440000";
+const NOW = new Date("2026-10-21T12:00:00.000Z");
+/** The hand-off's deadline: this invocation's start + maxDuration (300 s) − the 15 s margin. */
+const DEADLINE = NOW.getTime() + 285_000;
 
 function post(body: string, contentType = "application/json") {
   return route.POST(
@@ -64,6 +67,8 @@ function post(body: string, contentType = "application/json") {
 const valid = JSON.stringify({ claim: "c", sources: ["hn"] });
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
   vi.stubEnv("IRON_SESSION_PASSWORD", "x".repeat(32));
   check.mockReset().mockResolvedValue({ success: true, limit: 3, remaining: 2 });
   createDossier.mockReset().mockImplementation(async (_i, ctx) => ({
@@ -77,7 +82,15 @@ beforeEach(() => {
   afterKinds.length = 0;
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("POST /api/dossiers", () => {
+  it("may stay until the first stage has answered (maxDuration 300)", () => {
+    expect(route.maxDuration).toBe(300);
+  });
+
   it("is dynamic and limited to 3 an hour per visitor", async () => {
     expect(route.dynamic).toBe("force-dynamic");
     expect(createRateLimiter).toHaveBeenCalledWith({ max: 3, windowMs: 3_600_000 });
@@ -92,7 +105,7 @@ describe("POST /api/dossiers", () => {
     expect(body).toEqual({ dossier_id: ID, request_id: res.headers.get("x-request-id"), url: `/d/${ID}` });
     expect(res.headers.get("cache-control")).toBe("no-store");
     await afterCallbacks[0]?.();
-    expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 0);
+    expect(chainAdvance).toHaveBeenCalledWith("https://bastion.test", ID, 0, DEADLINE);
   });
 
   it("hands after() the first advance as a promise, which a client gone before the 202 cannot drop", async () => {
@@ -100,7 +113,7 @@ describe("POST /api/dossiers", () => {
     // kept alive with waitUntil — the same form the advance route uses.
     await post(valid);
     expect(afterKinds).toEqual(["promise"]);
-    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0);
+    expect(chainAdvance).toHaveBeenCalledExactlyOnceWith("https://bastion.test", ID, 0, DEADLINE);
   });
 
   it("passes the parsed, defaulted input and the visitor to the service", async () => {
