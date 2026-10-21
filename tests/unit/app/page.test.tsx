@@ -25,6 +25,8 @@ vi.mock("@/platform/budget", () => ({
 }));
 
 import type { PublicDossier } from "@/dossier/gallery";
+import { SITE } from "@/lib/site/config";
+import { structuredData } from "@/lib/site/structured-data";
 import { PRODUCTS } from "@/platform/registry/products";
 import { links, sliceByAttr, textOf } from "../helpers/html";
 
@@ -63,6 +65,13 @@ describe("Home page (spec 21 §3.1)", () => {
     const html = await renderHome();
     const h1s = [...html.matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1>/g)].map((m) => textOf(m[1] ?? ""));
     expect(h1s).toEqual(["tools that hand you a receipt."]);
+  });
+
+  it("carries the site's structured data once (spec 20, case 15)", async () => {
+    const html = await renderHome();
+    const scripts = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
+    expect(scripts).toHaveLength(1);
+    expect(JSON.parse(scripts[0]?.[1] ?? "")).toEqual(structuredData(SITE));
   });
 
   it("is the map page of the nav", async () => {

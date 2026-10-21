@@ -4,7 +4,9 @@ import { connection } from "next/server";
 import type { ReactElement, ReactNode } from "react";
 import { PageFrame } from "@/components/terminal/PageFrame";
 import { WakeGate } from "@/components/tools/WakeGate";
-import { PRODUCTS, type ProductId } from "@/platform/registry/products";
+import { SITE } from "@/lib/site/config";
+import { pageMetadata } from "@/lib/site/metadata";
+import { PRODUCTS, type Product, type ProductId } from "@/platform/registry/products";
 import { BudgetProvider } from "../BudgetProvider";
 import { loadBudgets } from "../load";
 import { WorkbenchHeader } from "./WorkbenchHeader";
@@ -19,9 +21,21 @@ type Search = Promise<Record<string, string | string[] | undefined>>;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** A workbench is titled from its product alone: the title never reads the network. */
+/**
+ * A workbench is titled and described from its registry entry alone (the metadata never reads the
+ * network), and names itself as canonical.
+ */
 export function workbenchMetadata(id: ProductId): Metadata {
-  return { title: `${id} workbench` };
+  return pageMetadata(SITE, `/tools/${id}`, {
+    title: `${id} workbench`,
+    description: `${productOf(id).tagline} Operate it live in bastion and keep what it hands back.`,
+  });
+}
+
+function productOf(id: ProductId): Product {
+  const product = PRODUCTS.find((p) => p.id === id);
+  if (product === undefined) throw new Error(`tools: the registry has no ${id}`);
+  return product;
 }
 
 /**
@@ -33,8 +47,7 @@ export async function workbenchPage(
   searchParams: Search,
   render: (doc: string | null) => ReactNode,
 ): Promise<ReactElement> {
-  const product = PRODUCTS.find((p) => p.id === id);
-  if (product === undefined) throw new Error(`tools: the registry has no ${id}`);
+  const product = productOf(id);
 
   await connection();
   const [budgets, search] = await Promise.all([loadBudgets(), searchParams]);

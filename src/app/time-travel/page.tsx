@@ -8,8 +8,14 @@ import { allowRead } from "@/features/audit/read-limit";
 import { TimeTravelSlider } from "@/features/time-travel/components/TimeTravelSlider";
 import { toTimeTravelView } from "@/features/time-travel/to-view";
 import { getTimeTravelState } from "@/lib/audit/replay";
+import { SITE } from "@/lib/site/config";
+import { pageMetadata } from "@/lib/site/metadata";
 
-export const metadata: Metadata = { title: "time travel" };
+export const metadata: Metadata = pageMetadata(SITE, "/time-travel", {
+  title: "time travel",
+  description:
+    "Rewind the platform to any moment. Every dossier and capability is rebuilt from its latest event in the append-only log, with no snapshot to drift.",
+});
 
 /**
  * `/time-travel` (spec 07, spec 21 §3.2): the platform as it stood at any moment, rebuilt from the

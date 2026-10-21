@@ -4,9 +4,15 @@ import { PageFrame } from "@/components/terminal/PageFrame";
 import { HealthProvider } from "@/features/health/components/HealthProvider";
 import { WORKBENCH_ORDER, WORKBENCHES } from "@/features/tools/catalog";
 import { ProductHealth } from "@/features/tools/components/ProductHealth";
+import { SITE } from "@/lib/site/config";
+import { pageMetadata } from "@/lib/site/metadata";
 import { PRODUCTS, type Product } from "@/platform/registry/products";
 
-export const metadata: Metadata = { title: "workbenches", alternates: { canonical: "/tools" } };
+export const metadata: Metadata = pageMetadata(SITE, "/tools", {
+  title: "workbenches",
+  description:
+    "Operate each muizz-lab product live through bastion's gateway, rate-limited, budgeted and audited, and keep the receipt it hands back.",
+});
 
 /**
  * `/tools` (spec 21 §5.1): the eight workbenches in dossier order, each with its live health (the

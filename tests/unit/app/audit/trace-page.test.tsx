@@ -160,7 +160,7 @@ describe("/audit/[requestId]: not found", () => {
   it("is titled from the id alone", async () => {
     await expect(
       generateMetadata({ params: Promise.resolve({ requestId: "0f8a1c2e-4b6d-4e8f-9a0b-1c2d3e4f5a6b" }) }),
-    ).resolves.toEqual({ title: "request 0f8a1c2e" });
+    ).resolves.toEqual({ title: "request 0f8a1c2e", robots: { index: false } });
     expect(requestTrace).not.toHaveBeenCalled();
   });
 });

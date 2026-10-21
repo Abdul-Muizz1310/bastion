@@ -20,10 +20,13 @@ import { formatDuration, waterfall } from "@/features/audit/waterfall";
 
 type Params = Promise<{ requestId: string }>;
 
-/** Titled from the id alone: the title never reads the database. */
+/**
+ * Titled from the id alone: the title never reads the database. A trace is one request's log, not
+ * a page anyone searches for, so it stays out of search; it still previews when shared.
+ */
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { requestId } = await params;
-  return { title: `request ${shortRequest(requestId)}` };
+  return { title: `request ${shortRequest(requestId)}`, robots: { index: false } };
 }
 
 export default async function TracePage({ params }: { params: Params }) {

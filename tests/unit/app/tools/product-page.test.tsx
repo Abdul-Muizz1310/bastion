@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -47,7 +48,7 @@ import { links, textOf } from "../../helpers/html";
 
 type PageModule = {
   default: (props: { searchParams: Promise<Record<string, string>> }) => Promise<React.ReactElement>;
-  metadata: { title?: unknown };
+  metadata: Metadata;
 };
 
 const PAGES: Record<string, PageModule> = {
@@ -126,9 +127,17 @@ describe("/tools/[product]", () => {
     expect(await generateMetadata()).toEqual({ title: "workbench not found" });
   });
 
-  it.each(WORKBENCH_ORDER)("titles the %s workbench from its product alone", (id) => {
-    expect(PAGES[id]?.metadata).toEqual({ title: `${id} workbench` });
-  });
+  it.each(WORKBENCH_ORDER)(
+    "titles and describes the %s workbench from the registry alone, canonical (spec 20, case 14)",
+    (id) => {
+      const product = PRODUCTS.find((p) => p.id === id);
+      expect(PAGES[id]?.metadata).toEqual({
+        title: `${id} workbench`,
+        description: `${product?.tagline} Operate it live in bastion and keep what it hands back.`,
+        alternates: { canonical: `/tools/${id}` },
+      });
+    },
+  );
 
   it.each(WORKBENCH_ORDER)("ships only the %s workbench's code: its page imports no other", (id) => {
     const source = readFileSync(resolve(__dirname, `../../../../src/app/tools/${id}/page.tsx`), "utf8");

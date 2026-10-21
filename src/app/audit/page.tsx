@@ -19,8 +19,14 @@ import {
 import { serial } from "@/features/audit/format";
 import { type AuditState, loadAudit } from "@/features/audit/load";
 import type { AuditPage as Page } from "@/features/audit/view";
+import { SITE } from "@/lib/site/config";
+import { pageMetadata } from "@/lib/site/metadata";
 
-export const metadata: Metadata = { title: "audit log" };
+export const metadata: Metadata = pageMetadata(SITE, "/audit", {
+  title: "audit log",
+  description:
+    "Everything bastion did, in order: every gateway call and dossier step, in an append-only log the database refuses to update or delete.",
+});
 
 /**
  * `/audit` (spec 21 §3.2): the open, append-only log. Every visitor reads every event — nothing is

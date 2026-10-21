@@ -33,6 +33,53 @@ test.describe("20-e2e: site metadata", () => {
     await expect(page.locator('head meta[name="robots"]')).toHaveCount(0);
   });
 
+  test("case 17: / carries the site's structured data", async ({ page }) => {
+    await page.goto("/");
+    const scripts = page.locator('script[type="application/ld+json"]');
+    await expect(scripts).toHaveCount(1);
+    const graph = JSON.parse((await scripts.textContent()) ?? "")["@graph"];
+    expect(graph.map((node: { "@type": string }) => node["@type"])).toEqual([
+      "WebSite",
+      "WebApplication",
+      "Person",
+    ]);
+    expect(graph[0]).toMatchObject({ url: `${SITE.url}/`, name: SITE.name });
+  });
+
+  test("case 17: a workbench describes itself, names itself as canonical and has its own card", async ({
+    page,
+    request,
+  }) => {
+    await page.goto("/tools/magpie");
+    await expect(page).toHaveTitle("magpie workbench — bastion");
+    const description = await content(page, 'meta[name="description"]');
+    expect(description).toMatch(/^YAML scrapers that self-heal/);
+    expect(await content(page, 'meta[property="og:description"]')).toBe(description);
+    expect(await content(page, 'meta[name="twitter:description"]')).toBe(description);
+    await expect(page.locator('head link[rel="canonical"]')).toHaveAttribute(
+      "href",
+      `${SITE.url}/tools/magpie`,
+    );
+    const image = await content(page, 'meta[property="og:image"]');
+    expect(image).toMatch(new RegExp(`^${SITE.url}/tools/magpie/opengraph-image`));
+    expect(await content(page, 'meta[name="twitter:image"]')).toBe(image);
+    expect(await content(page, 'meta[property="og:image:alt"]')).toBe(
+      "bastion — operate magpie live, keep the receipt.",
+    );
+
+    const card = await request.get("/tools/magpie/opengraph-image");
+    expect(card.status()).toBe(200);
+    expect(card.headers()["content-type"]).toMatch(/^image\/png/);
+  });
+
+  test("case 17: a request trace stays out of search", async ({ page }) => {
+    test.skip(Boolean(process.env.PLAYWRIGHT_BASE_URL), "the golden request is seeded only in the stub run");
+    await page.goto("/audit/req-dossier-1");
+    // Its own h1, so this is the trace and not a 404 (which Next marks noindex by itself).
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("request");
+    expect(await content(page, 'meta[name="robots"]')).toBe("noindex");
+  });
+
   test("case 12: every metadata route answers with its content type, without a session", async ({
     request,
   }) => {

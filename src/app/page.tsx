@@ -8,6 +8,8 @@ import { PageFrame } from "@/components/terminal/PageFrame";
 import { DossierGallery } from "@/features/dossier/components/DossierGallery";
 import { HealthProvider } from "@/features/health/components/HealthProvider";
 import { loadHome } from "@/features/home/load";
+import { SITE } from "@/lib/site/config";
+import { StructuredData } from "@/lib/site/structured-data";
 import { PRODUCTS, type ProductId, SERVICES } from "@/platform/registry/products";
 
 export const metadata: Metadata = { alternates: { canonical: "/" } };
@@ -41,6 +43,7 @@ export default async function Home() {
       active="map"
       statusRight={`${PRODUCTS.length} products · ${SERVICE_COUNT} services · ${REPO_COUNT} repos`}
     >
+      <StructuredData site={SITE} />
       <div className="space-y-20 md:space-y-24">
         {/* Spine and ledger side by side on a desktop; on a phone the map comes before the ledger. */}
         <div className="grid gap-x-12 gap-y-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,25rem)] lg:items-center lg:gap-y-24">

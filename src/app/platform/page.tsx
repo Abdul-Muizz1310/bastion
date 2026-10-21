@@ -17,10 +17,16 @@ import {
   type ServiceRow,
   serviceRows,
 } from "@/features/platform/registry-view";
+import { SITE } from "@/lib/site/config";
+import { pageMetadata } from "@/lib/site/metadata";
 import { BUDGET_KEYS, BUDGET_NOUN } from "@/platform/budget-keys";
 import { TOKEN_ISSUER, TOKEN_TTL_S } from "@/platform/gateway/token";
 
-export const metadata: Metadata = { title: "platform" };
+export const metadata: Metadata = pageMetadata(SITE, "/platform", {
+  title: "platform",
+  description:
+    "8 products, 15 repos and 6 services in one place: what runs where and at which commit, how every call is signed, and what is left of today's budgets.",
+});
 
 /**
  * `/platform` (spec 21 §3.2): the registry in one place — the services with their live health,

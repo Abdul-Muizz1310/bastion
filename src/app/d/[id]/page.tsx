@@ -18,6 +18,8 @@ import { VerifyProvider } from "@/features/dossier/components/verify-context";
 import { type DossierPageData, loadDossierPage } from "@/features/dossier/load";
 import { type DossierReceiptView, receiptView } from "@/features/dossier/receipt-view";
 import { onePerStage, type StepView, stepView } from "@/features/dossier/step-view";
+import { SITE } from "@/lib/site/config";
+import { pageMetadata } from "@/lib/site/metadata";
 
 /**
  * `/d/[id]` (spec 21 §3, §6.5, §6.6): a dossier at its own public URL. Rendered per request. A
@@ -29,10 +31,14 @@ import { onePerStage, type StepView, stepView } from "@/features/dossier/step-vi
 
 type Params = Promise<{ id: string }>;
 
-/** Titled from the id alone: the title never reads the database. */
+/** Titled and described from the id alone: the metadata never reads the database. */
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { id } = await params;
-  return { title: `dossier ${id.slice(0, 8)}`, alternates: { canonical: `/d/${id}` } };
+  return pageMetadata(SITE, `/d/${id}`, {
+    title: `dossier ${id.slice(0, 8)}`,
+    description:
+      "A dossier at its own public URL: one claim, its signed evidence, the debate's verdict and a sealed envelope you can re-verify right here.",
+  });
 }
 
 export default async function DossierPage({ params }: { params: Params }) {

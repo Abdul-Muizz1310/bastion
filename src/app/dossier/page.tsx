@@ -6,11 +6,14 @@ import { ComposeForm } from "@/features/dossier/components/ComposeForm";
 import { STAGE_INFO } from "@/features/dossier/timeline-view";
 import { BudgetProvider } from "@/features/tools/BudgetProvider";
 import { loadBudgets } from "@/features/tools/load";
+import { SITE } from "@/lib/site/config";
+import { pageMetadata } from "@/lib/site/metadata";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata(SITE, "/dossier", {
   title: "compose a dossier",
-  alternates: { canonical: "/dossier" },
-};
+  description:
+    "Check one claim against the web and your PDFs. Each piece of evidence is signed, debated, measured and sealed into one envelope anyone can re-verify.",
+});
 
 /**
  * `/dossier` (spec 21 §3, §6.6): compose a dossier — a claim checked against web sources and PDFs.

@@ -5,6 +5,11 @@
 > disallows `/api/` only; the sitemap lists the public pages (below); the share card reads
 > `8 products · 1 signed receipt` over `tools that hand you a receipt.`; page titles follow the v2
 > routes (`tests/unit/app/page-titles.test.ts`); the e2e case runs against the stub (spec 21 §10.1).
+>
+> **Amended 2026-10-21: search.** Every indexable page now carries its own description and a
+> canonical naming itself, the home page carries structured data, a request trace is `noindex`,
+> and each workbench has its own share card. See "Amendment: search" at the end; it supersedes
+> "No page sets … a canonical of its own" and the "per-page share cards" non-goal.
 
 ## Purpose
 
@@ -180,6 +185,104 @@ answers 401.
 
 ## Non-goals
 
-- Per-page share cards: every page previews with the one card.
+- Per-page share cards: every page previews with the one card. (Superseded for the workbenches by "Amendment: search".)
 - A public landing page: `/` stays a session-gated console that redirects anonymous visitors.
 - `noindex` on gated pages: the redirect already keeps their content out of search.
+
+## Amendment: search (2026-10-21)
+
+Until now every page but the home page described itself with the site's description, so a search
+result or a shared link to `/tools/magpie` read as bastion's generic blurb, and most pages named
+no canonical. This amendment gives each indexable page its own words and makes the home page
+legible to a search engine as a site, an app and its author.
+
+### Indexable pages own their description and canonical
+
+`pageMetadata(site, route, { title, description })` (`src/lib/site/metadata.ts`) returns
+`{ title, description, alternates: { canonical: route } }`. It throws a `SiteConfigError` when the
+module loads, so bad copy fails the build, on:
+- an empty title, or a title that the template (` — bastion`) takes past 70 characters;
+- a description outside 50 to 160 characters.
+
+Open Graph and Twitter still come from the root: Next fills `og:description` and
+`twitter:description` from the page's description. No page sets `openGraph` or `twitter`.
+
+| Route | Title | Description | Canonical | Search |
+|---|---|---|---|---|
+| `/` | the site title | the site description | `/` | indexed |
+| `/tools` | `workbenches` | its own | `/tools` | indexed |
+| `/tools/<id>` | `<id> workbench` | the registry tagline + ` Operate it live in bastion and keep what it hands back.` | `/tools/<id>` | indexed |
+| `/dossier` | `compose a dossier` | its own | `/dossier` | indexed |
+| `/audit` | `audit log` | its own | `/audit` | indexed |
+| `/time-travel` | `time travel` | its own | `/time-travel` | indexed |
+| `/platform` | `platform` | its own | `/platform` | indexed |
+| `/d/[id]` | `dossier <first 8>` | one fixed sentence (the title never reads the database) | `/d/<id>` | indexed: the permanent public receipt |
+| `/audit/[requestId]` | `request <first 8>` | the site's | none | `noindex`: a trace is one request's log, not a page to find |
+
+Every indexable page's description differs from every other's. A query string never reaches a
+canonical: `/audit?service=…`, `/audit?request=…` and `/tools/<id>?doc=…` name the page without
+it, since a filtered view or a handed-off document is the same page, not one of its own to rank.
+
+### Structured data on the home page
+
+`/` renders one `<script type="application/ld+json">` holding a schema.org `@graph`
+(`src/lib/site/structured-data.tsx`), every value derived from the config:
+- `WebSite`: `@id` `<origin>/#website`, url, name, description, `inLanguage: "en"`, the author as
+  publisher. Google reads a site name from this, so a result says `bastion`, not `vercel.app`;
+- `WebApplication`: `@id` `<origin>/#app`, url, name, description,
+  `applicationCategory: "DeveloperApplication"`, `operatingSystem: "Any"`,
+  `isAccessibleForFree: true`, part of the website, by the author;
+- `Person`: the author, `@id` `https://github.com/Abdul-Muizz1310#person`, name and url.
+
+No rating, review or price is claimed: there are none. The JSON is serialised with every `<`
+escaped as `<`, so no value can close the script tag.
+
+### A share card per workbench
+
+Each `/tools/<id>` has its own `opengraph-image` (`src/app/tools/<id>/opengraph-image.tsx`),
+drawn by the same `ShareCard` from `workbenchSite(id)` (`src/features/tools/workbench-card.tsx`):
+bastion's name, icon and host, in the product's accent, with the comment `workbench · <id>`, the
+headline `operate <id> live, keep the receipt.` and `<id>` highlighted. The alt text is
+`bastion — operate <id> live, keep the receipt.`
+
+| Product | Accent | From |
+|---|---|---|
+| bastion | `#a78bfa` | bastion's own |
+| feathers | `#60a5fa` | no frontend: a hue no other product uses |
+| inkgrid | `#a3e635` | no frontend: a hue no other product uses |
+| inkthread | `#e879f9` | inkthread-frontend's |
+| inkprint | `#e0b55e` | inkprint-frontend's |
+| magpie | `#34d399` | magpie-frontend's |
+| paper-trail | `#22d3ee` | paper-trail-frontend's |
+| slowquery | `#f97316` | slowquery-dashboard-frontend's |
+
+The eight accents are distinct. A dossier still previews with the root card.
+
+### Test cases (amendment)
+
+13. `pageMetadata` returns the title, the description and the route as canonical; it rejects an
+    empty title, a title the template takes past 70, and a description under 50 or over 160,
+    each naming the reason (`tests/unit/lib/site/metadata.test.ts`).
+14. Every route in the table exports exactly that metadata; the dynamic routes still never read
+    the database or the network; every sitemap route is an indexable page whose canonical is the
+    route, and no two of their descriptions are equal (`tests/unit/app/page-titles.test.ts`,
+    `tests/unit/app/tools/product-page.test.tsx`).
+15. The structured data: the graph above, derived from the config; its serialisation escapes `<`
+    and parses back to the same value; the home page renders it once
+    (`tests/unit/lib/site/structured-data.test.tsx`, `tests/unit/app/page.test.tsx`).
+16. The workbench cards: each `workbenchSite(id)` keeps bastion's name and origin, takes the
+    product's accent and card copy, passes `defineSite`, and fits its headline on two lines; the
+    eight accents are distinct; each workbench's image module exports its alt, the card size and
+    `image/png` (`tests/unit/features/tools/workbench-card.test.tsx`).
+17. (E2E, built app) `/tools/magpie` carries its own description in `description`,
+    `og:description` and `twitter:description`, a canonical on the production origin, and
+    `og:image` at `/tools/magpie/opengraph-image`, which answers `image/png`; `/` carries the
+    structured data; `/audit/<requestId>` is `noindex` (`tests/e2e/metadata.spec.ts`).
+
+### Non-goals (amendment)
+
+- A card per dossier: a dossier is drawn per request from the database; its link previews with
+  the root card.
+- `lastmod` in the sitemap: no page has an accurate last-modified date, and a build date would
+  claim every page changed on every deploy.
+- A rating, review or price in the structured data.
