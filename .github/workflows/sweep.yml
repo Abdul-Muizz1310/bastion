@@ -1,0 +1,24 @@
+# Drives every dossier whose next stage is due (spec 21 §6.2 "The sweep"). A run whose chain was
+# lost, with no page open to nudge it, finishes within a sweep or two. The route is token-gated:
+# the repository secret BASTION_SWEEP_TOKEN must equal the Vercel environment variable of the same
+# name. curl -f fails the run on any non-2xx answer; --max-time stays under the route's 300 s.
+name: sweep
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: sweep
+  cancel-in-progress: false
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Drive the due dossiers
+        env:
+          BASTION_SWEEP_TOKEN: ${{ secrets.BASTION_SWEEP_TOKEN }}
+        run: |
+          test -n "$BASTION_SWEEP_TOKEN" || { echo "::error::the BASTION_SWEEP_TOKEN secret is not set"; exit 1; }
+          curl -fsS --max-time 290 -X POST -H "Authorization: Bearer $BASTION_SWEEP_TOKEN" https://bastion-six.vercel.app/api/dossiers/sweep
