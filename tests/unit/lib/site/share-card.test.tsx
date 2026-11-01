@@ -5,7 +5,7 @@ import { SITE } from "@/lib/site/config";
 import {
   fitsIn,
   HEADLINE_SIZES,
-  headlineSize,
+  GLYPH_ADVANCE, headlineSize, LETTER_SPACING_EM, wrapLines,
   headlineWords,
   rgba,
   SHARE_CARD_SIZE,
@@ -76,6 +76,38 @@ describe("20-site: headline fit (case 8)", () => {
 
   it("fits the real headline on two lines", () => {
     expect(headlineSize(SITE.card.headline)).toBe(96);
+  });
+});
+
+describe("20-site: headline glyph advance (case 8)", () => {
+  const CONTENT_WIDTH = 1200 - 2 * 72;
+
+  it("is Geist Mono's 0.6 em minus the card's letter spacing", () => {
+    expect(LETTER_SPACING_EM).toBe(-0.02);
+    expect(GLYPH_ADVANCE).toBeCloseTo(0.58, 10);
+  });
+
+  it("renders the headline with the letter spacing the model counts", () => {
+    const html = renderToStaticMarkup(<ShareCard site={SITE} icon="data:image/png;base64,AAAA" />);
+    expect(html).toContain(`letter-spacing:${LETTER_SPACING_EM}em`);
+  });
+
+  it("agrees with a column count computed from 0.58 em at every size", () => {
+    for (const px of HEADLINE_SIZES) {
+      const columns = Math.floor(CONTENT_WIDTH / (0.58 * px));
+      const edge = `${"a".repeat(columns)} ${"b".repeat(columns)}`;
+      expect(headlineSize(edge)).toBeGreaterThanOrEqual(px);
+      // the smallest size is the fallback, so nothing is smaller than it
+      if (px !== HEADLINE_SIZES.at(-1)) expect(headlineSize(`${edge}b`)).toBeLessThan(px);
+    }
+  });
+
+  it("never leaves a one-letter word at the end of line one", () => {
+    const size = headlineSize(SITE.card.headline);
+    const columns = Math.floor(CONTENT_WIDTH / (0.58 * size));
+    const lines = wrapLines(SITE.card.headline.split(" "), columns);
+    expect(lines.length).toBeLessThanOrEqual(2);
+    for (const line of lines.slice(0, -1)) expect(line.at(-1)?.length).toBeGreaterThan(1);
   });
 });
 
